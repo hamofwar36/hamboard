@@ -1,6 +1,8 @@
 # 🐹 햄보드
 만화 · 글 원고 작업을 위한 창작 보조 데스크톱 앱
 
+[📦최신 버전 다운 받기](https://github.com/hamofwar36/hamboard/releases/download/v1.0.2/hamboard_1.0.2_x64-setup.exe)
+
 ## 🎯 주요 기능
 **- 작품 (플롯 짜기, 상세 줄거리 관리)
 - 마인드맵 (여러 요소들을 보드에 늘어놓고 브레인스토밍 하기)

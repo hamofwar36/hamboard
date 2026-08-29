@@ -2,7 +2,7 @@
 
 만화 · 글 원고 작업을 위한 창작 보조 데스크톱 앱
 
-[📦 최신 버전 다운 받기](https://github.com/hamofwar36/hamboard/releases/download/v1.0.5/hamboard_1.0.5_x64-setup.exe)
+[📦 최신 버전 다운 받기](https://github.com/hamofwar36/hamboard/releases/download/v1.0.6/hamboard_v1.0.6.exe)
 
 ## 🎯 주요 기능
 

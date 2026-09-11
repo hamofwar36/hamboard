@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="햄보드 — 콘티 짜기용 개인 제작 프로그램">
+  <meta name="description" content="햄보드 — 만화·글 원고 작업을 위한 개인 제작 창작 보조 데스크톱 앱">
   <title>햄보드 · Hamboard</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <header class="site-header">
     <div class="wrap header-inner">
-      <a class="brand" href="./">Hamboard</a>
+      <a class="brand" href="./">🐹 햄보드</a>
       <nav class="nav">
+        <a href="#features">기능</a>
         <a href="./privacy.html">Privacy</a>
         <a href="./terms.html">Terms</a>
       </nav>
@@ -22,40 +23,114 @@
     <section class="hero wrap">
       <p class="badge">개인 제작 · 무료 배포</p>
       <h1>햄보드</h1>
-      <p class="lead">
-        글쓰기, 자료 정리, 마인드맵, 일정과 간단한 작업 도구를
-        한곳에 모아둔 Windows 앱입니다.
-      </p>
+      <p class="lead">만화 · 글 원고 작업을 위한 창작 보조 데스크톱 앱</p>
       <p class="sub">
-        기본 데이터는 내 PC에 저장되고, 필요하면 Google Drive에 백업할 수 있습니다.
+        작품 정리부터 노트, 마인드맵, 참고 자료와 간단한 작업 도구까지
+        한곳에서 사용할 수 있게 만든 Windows 앱입니다.
       </p>
 
-      <div class="actions">        <a class="button primary" href="https://github.com/hamofwar36/hamboard/releases/latest/download/hamboard_Setup.exe">다운로드</a>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/hamofwar36/hamboard/releases/latest">
+          최신 버전
+        </a>
+        <a class="button" href="https://github.com/hamofwar36/hamboard">
+          GitHub
+        </a>
       </div>
     </section>
 
-    <section class="wrap simple-grid" aria-label="주요 기능">
-      <div>
-        <h2>쓰기</h2>
-        <p>작품과 노트를 정리하고 필요한 문서를 빠르게 오갈 수 있습니다.</p>
+    <section class="wrap section" id="features">
+      <h2>주요 기능</h2>
+
+      <div class="feature-list">
+        <div>
+          <strong>작품</strong>
+          <p>플롯부터 세부 장면까지 파트와 블록을 이용해 계층형으로 정리합니다.</p>
+        </div>
+        <div>
+          <strong>마인드맵</strong>
+          <p>인물 관계, 사건 흐름, 세계관과 이미지를 자유롭게 배치하고 연결합니다.</p>
+        </div>
+        <div>
+          <strong>노트</strong>
+          <p>소설이나 설정, 각종 줄글을 작성합니다.</p>
+        </div>
+        <div>
+          <strong>참고 자료 · 캐릭터</strong>
+          <p>이미지와 메모, 캐릭터 프로필과 이미지를 작품과 함께 관리합니다.</p>
+        </div>
+        <div>
+          <strong>내부 링크</strong>
+          <p><code>[[ ]]</code> 내부 링크와 태그 등을 이용해 자료끼리 연결하고 바로 열어볼 수 있습니다.</p>
+        </div>
+        <div>
+          <strong>작업 도구</strong>
+          <p>캘린더, 타이머, 스톱워치, 뽀모도로, 작업 기록과 퀵메모 등 각종 작업 도구들도 사용할 수 있습니다.</p>
+        </div>
       </div>
-      <div>
-        <h2>정리</h2>
-        <p>마인드맵과 참고 자료로 아이디어와 자료를 한곳에 모을 수 있습니다.</p>
+    </section>
+
+    <section class="wrap section compact">
+      <h2>문서 사용</h2>
+
+      <div class="text-block">
+        <h3>작품</h3>
+        <p>
+          <b>파트</b>로 큰 흐름을 나누고, <b>일반 블록</b>으로 사건과 장면을 계층형으로 정리할 수 있습니다.
+          <b>스크립트 블록</b>에서는 지문, 대사, 연출, 페이지, 컷을 구분해 작성합니다.
+        </p>
       </div>
-      <div>
-        <h2>관리</h2>
-        <p>캘린더, 타이머, 스톱워치와 작업 기록을 함께 사용할 수 있습니다.</p>
+
+      <div class="text-block">
+        <h3>마인드맵</h3>
+        <p>
+          노드와 이미지를 자유롭게 배치하고 연결하며 브레인 스토밍을 할 수 있습니다.
+          또는 레퍼런스 보드로서 사용할 수도 있습니다.
+        </p>
       </div>
+
+      <div class="text-block">
+        <h3>노트</h3>
+        <p>
+          자유롭게 글을 작성하고 HTML / Markdown으로 내보낼 수 있습니다.
+          기본적인 줄글 작성 기능과 함께 각종 서식, 맞춤법 교정 도우미, 글자 수 세기 등이 가능합니다.
+        </p>
+      </div>
+    </section>
+
+    <section class="wrap section compact">
+      <h2>그 밖의 기능</h2>
+      <ul class="plain-list">
+        <li><b>캘린더</b> — 일정, 반복 일정, D-day, 작품 연결, 일정 미리 알림</li>
+        <li><b>캐릭터 저장소</b> — 여러 작품에서 공통으로 쓰는 캐릭터 관리</li>
+        <li><b>참고 자료</b> — 이미지와 메모를 카드 형태로 관리하고 작업 중 따로 띄워 보기</li>
+        <li><b>퀵메모</b> — 어디서나 빠르게 메모하고 고정</li>
+        <li><b>타이머</b> — 일반 / 반복 타이머, 스톱워치, 뽀모도로</li>
+        <li><b>작업 기록</b> — 등록한 프로그램의 작업 시간 측정 및 PIP</li>
+        <li><b>펫</b> — 화면 위를 돌아다니거나 고정할 수 있는 데스크톱 펫</li>
+        <li><b>사전</b> — 문서에서 단어를 선택한 뒤 우클릭해 바로 검색</li>
+        <li><b>홈</b> — 자주 쓰는 문서와 유틸리티를 위젯으로 배치</li>
+        <li><b>기타</b> — 태그 기능, 분할 화면 기능 등 다양한 편의 기능이 있습니다.</li>
+      </ul>
     </section>
 
     <section class="wrap note">
-      <h2>Google Drive 백업</h2>
+      <h2>데이터와 백업</h2>
       <p>
-        Google 계정 연결은 선택 사항입니다. 연결하면 햄보드의 백업 데이터를
-        Google Drive의 앱 전용 저장 공간에 저장하고 다시 불러올 수 있습니다.
+        작성한 데이터는 기본적으로 내 PC에 저장됩니다.
+        로컬 백업을 만들 수 있고, 원하는 경우 Google 계정을 연결해 Google Drive에 클라우드 백업할 수 있습니다.
       </p>
-      <a href="./privacy.html">자세히 보기</a>
+      <a href="./privacy.html">Google Drive 데이터 처리 방식 보기</a>
+    </section>
+
+    <section class="wrap closing">
+      <p>🐹 햄보드는 혼자 조금씩 만들어가고 있는 앱입니다.</p>
+      <p>불편한 점이나 원하는 기능이 있다면 의견을 남겨주세요.</p>
+      <p class="small">이 프로그램은 바이브코딩으로 만들어졌습니다.</p>
+      <div class="actions">
+        <a class="button" href="https://naver.me/GQGfA3U0">의견 내기</a>
+      </div>
+      <p class="cheer">🐹 오늘도 원고 화이팅!</p>
     </section>
   </main>
 

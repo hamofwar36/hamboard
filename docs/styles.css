@@ -288,12 +288,12 @@ code {
 .feature-list > div:nth-child(5) { transform: rotate(-0.4deg); }
 .feature-list > div:nth-child(6) { transform: rotate(0.6deg); }
 
-.feature-list > div:nth-child(1)::before { background: var(--butter); }
-.feature-list > div:nth-child(2)::before { background: var(--butter); }
-.feature-list > div:nth-child(3)::before { background: var(--butter); }                                       
-.feature-list > div:nth-child(4)::before { background: var(--butter); }                                          
+.feature-list > div:nth-child(1)::before { background: var(--mint); }
+.feature-list > div:nth-child(2)::before { background: var(--pink); }
+.feature-list > div:nth-child(3)::before { background: var(--mint); }                                       
+.feature-list > div:nth-child(4)::before { background: var(--lavender); }                                          
 .feature-list > div:nth-child(5)::before { background: var(--butter); }                                          
-.feature-list > div:nth-child(6)::before { background: var(--butter); }
+.feature-list > div:nth-child(6)::before { background: var(--lavender); }
                                           
 
 .feature-list strong {

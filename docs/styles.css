@@ -278,7 +278,7 @@ code {
 .feature-list > div:nth-child(2),
 .feature-list > div:nth-child(3),
 .feature-list > div:nth-child(5){
-  background: var(--lavender);
+  background: rgba(232, 230, 230);
 }
 
 .feature-list > div:nth-child(1) { transform: rotate(-0.6deg); }

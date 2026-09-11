@@ -274,14 +274,11 @@ code {
 
 .feature-list > div:nth-child(1),
 .feature-list > div:nth-child(4),
-.feature-list > div:nth-child(6) {
-  background: var(--butter);
-}
-
+.feature-list > div:nth-child(6),
 .feature-list > div:nth-child(2),
 .feature-list > div:nth-child(3),
-.feature-list > div:nth-child(5) {
-  background: var(--lavender);
+.feature-list > div:nth-child(5){
+  background: var(--butter);
 }
 
 .feature-list > div:nth-child(1) { transform: rotate(-0.6deg); }

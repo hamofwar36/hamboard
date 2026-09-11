@@ -1,14 +1,30 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
+@font-face {
+    font-family: 'Cafe24Surround';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/Cafe24Ssurround.woff') format('woff');
+    font-weight: normal;
+    font-display: swap;
+}
+
 :root {
-  --bg: #fffafc;
+  /* Hamboard 기본 cotton-candy 테마 */
+  --paper: #fbfbfd;
   --surface: #ffffff;
-  --pink: #f7dbe7;
-  --pink-strong: #d98eaa;
-  --blue: #dceffc;
-  --blue-strong: #7daec9;
-  --text: #2f3138;
-  --muted: #777b85;
-  --line: #ebe7ec;
-  --max: 760px;
+  --ink: #292b38;
+  --ink-soft: rgba(41, 43, 56, 0.56);
+  --line: #e6e8ed;
+
+  --mint: #b8dbff;
+  --mint-deep: color-mix(in srgb, #b8dbff 75%, #292b38);
+  --lavender: color-mix(in srgb, #ffb4cf 30%, #ffffff);
+  --lavender-deep: color-mix(in srgb, #ffb4cf 75%, #292b38);
+  --pink: #ffb4cf;
+  --pink-deep: color-mix(in srgb, #ffb4cf 75%, #292b38);
+  --butter: color-mix(in srgb, #b8dbff 30%, #ffffff);
+  --butter-deep: color-mix(in srgb, #b8dbff 75%, #292b38);
+
+  --max: 780px;
+  --radius: 16px;
 }
 
 * {
@@ -21,12 +37,12 @@ html {
 
 body {
   margin: 0;
-  background: linear-gradient(180deg, var(--bg) 0, #ffffff 280px);
-  color: var(--text);
-  font-family: Pretendard, "Noto Sans KR", "Segoe UI", Arial, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Pretendard Variable", Pretendard, "Noto Sans KR", "Segoe UI", Arial, sans-serif;
   font-size: 16px;
   line-height: 1.75;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 a {
@@ -35,10 +51,11 @@ a {
 }
 
 code {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--blue);
-  font-family: Consolas, monospace;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--lavender);
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.9em;
 }
 
@@ -47,13 +64,19 @@ code {
   margin: 0 auto;
 }
 
+/* ---------- header ---------- */
+
 .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(251, 249, 255, 0.86);
+  backdrop-filter: blur(8px);
 }
 
 .header-inner {
-  min-height: 62px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -61,182 +84,308 @@ code {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: "Cafe24Surround", "Pretendard Variable", sans-serif;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .nav {
   display: flex;
-  gap: 18px;
+  align-items: center;
+  gap: 22px;
   font-size: 14px;
-  color: var(--muted);
+  color: var(--ink-soft);
+}
+
+.nav a {
+  position: relative;
+  padding: 4px 0;
 }
 
 .nav a:hover,
 .nav a.active {
-  color: var(--text);
+  color: var(--ink);
 }
 
+.nav a.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--pink-deep);
+}
+
+/* ---------- hero ---------- */
+
 .hero {
-  padding: 88px 0 68px;
+  padding: 76px 0 20px;
+}
+
+.hero-copy {
+  max-width: 460px;
 }
 
 .badge {
   display: inline-block;
-  margin: 0 0 18px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--pink);
-  color: #7d4f61;
-  font-size: 12px;
+  position: relative;
+  margin: 0 0 22px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  background: var(--butter);
+  color: var(--ink);
+  font-size: 12.5px;
   font-weight: 700;
+  transform: rotate(-2deg);
+}
+
+.badge::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 18px;
+  width: 26px;
+  height: 12px;
+  background: color-mix(in srgb, var(--pink) 55%, transparent);
+  transform: rotate(-4deg);
 }
 
 .hero h1,
 .legal h1 {
   margin: 0;
-  font-size: 44px;
-  line-height: 1.15;
-  letter-spacing: -0.055em;
+  font-family: "Cafe24Surround", "Pretendard Variable", sans-serif;
+  font-weight: 700;
+  font-size: 52px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .lead {
-  max-width: 620px;
-  margin: 20px 0 0;
-  font-size: 20px;
+  max-width: 420px;
+  margin: 18px 0 0;
+  font-size: 19px;
   line-height: 1.7;
-}
-
-.sub {
-  max-width: 640px;
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 14px;
+  color: var(--ink);
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 26px;
+  margin-top: 28px;
 }
 
 .button {
-  min-height: 42px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 0 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
   background: var(--surface);
-  font-size: 14px;
+  color: var(--ink);
+  font-size: 14.5px;
   font-weight: 700;
+  transition: transform 0.15s ease;
 }
 
 .button:hover {
-  background: #fafafa;
+  transform: translateY(-2px);
 }
 
 .button.primary {
-  border-color: #c9e2f2;
-  background: var(--blue);
-  color: #365f75;
+  border-color: var(--mint-deep);
+  background: var(--mint);
+  color: var(--ink);
 }
 
+/* ---------- sections ---------- */
+
 .section {
-  padding: 56px 0;
+  padding: 60px 0;
   border-top: 1px solid var(--line);
 }
 
 .section > h2,
 .note h2 {
-  margin: 0 0 24px;
-  font-size: 20px;
-  letter-spacing: -0.035em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 28px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
+
+.section > h2::before,
+.note h2::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--pink-deep);
+  flex: none;
+}
+
+.compact {
+  padding-top: 52px;
+  padding-bottom: 52px;
+}
+
+/* ---------- feature cards ---------- */
 
 .feature-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0 28px;
+  gap: 20px 22px;
 }
 
 .feature-list > div {
-  padding: 18px 0;
-  border-top: 3px solid var(--blue);
+  position: relative;
+  padding: 20px 18px 18px;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
-.feature-list > div:nth-child(2n) {
-  border-top-color: var(--pink);
+.feature-list > div::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 22px;
+  width: 34px;
+  height: 13px;
+  border-radius: 2px;
+  opacity: 0.7;
+  transform: rotate(-3deg);
+  background: var(--mint);
 }
+
+.feature-list > div:nth-child(1) { transform: rotate(-0.6deg); }
+.feature-list > div:nth-child(2) { transform: rotate(0.5deg); }
+.feature-list > div:nth-child(3) { transform: rotate(0.4deg); }
+.feature-list > div:nth-child(4) { transform: rotate(-0.5deg); }
+.feature-list > div:nth-child(5) { transform: rotate(-0.4deg); }
+.feature-list > div:nth-child(6) { transform: rotate(0.6deg); }
+
+.feature-list > div:nth-child(4n+2)::before { background: var(--lavender); }
+.feature-list > div:nth-child(4n+3)::before { background: var(--pink); }
+.feature-list > div:nth-child(4n)::before { background: var(--butter); }
 
 .feature-list strong {
   font-size: 15px;
+  font-weight: 700;
 }
 
 .feature-list p,
 .text-block p,
 .note p {
-  margin: 5px 0 0;
-  color: var(--muted);
+  margin: 6px 0 0;
+  color: var(--ink-soft);
   font-size: 14px;
 }
 
-.compact {
-  padding-top: 48px;
-  padding-bottom: 48px;
+/* ---------- text blocks (문서 사용) ---------- */
+
+.text-block {
+  padding: 4px 0 4px 18px;
+  border-left: 3px solid var(--mint);
 }
 
+.text-block:nth-child(3) { border-left-color: var(--lavender-deep); }
+.text-block:nth-child(4) { border-left-color: var(--pink-deep); }
+
 .text-block + .text-block {
-  margin-top: 28px;
+  margin-top: 26px;
 }
 
 .text-block h3 {
   margin: 0 0 6px;
-  font-size: 16px;
+  font-size: 16.5px;
+  font-weight: 700;
 }
+
+/* ---------- plain list (그 밖의 기능) ---------- */
 
 .plain-list {
   margin: 0;
   padding: 0;
   list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 20px;
 }
 
 .plain-list li {
-  padding: 9px 0;
+  position: relative;
+  padding: 11px 0 11px 20px;
   border-bottom: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 14px;
 }
 
-.plain-list li:first-child {
-  border-top: 1px solid var(--line);
+.plain-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 18px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mint-deep);
 }
+
+.plain-list li:nth-child(4n+2)::before { background: var(--lavender-deep); }
+.plain-list li:nth-child(4n+3)::before { background: var(--pink-deep); }
+.plain-list li:nth-child(4n)::before { background: var(--butter-deep); }
 
 .plain-list b {
-  color: var(--text);
+  color: var(--ink);
 }
 
+/* ---------- note (데이터와 백업) ---------- */
+
 .note {
-  margin-top: 18px;
-  margin-bottom: 62px;
-  padding: 22px 24px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(247, 219, 231, 0.48), rgba(220, 239, 252, 0.58));
+  margin-top: 16px;
+  margin-bottom: 66px;
+  padding: 26px 26px 24px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--mint) 0%, var(--lavender) 100%);
+}
+
+.note h2::before {
+  background: var(--surface);
+}
+
+.note p {
+  color: var(--ink);
 }
 
 .note a {
-  display: inline-block;
-  margin-top: 12px;
-  color: #547f98;
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 14px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--lavender-deep);
+  font-size: 13.5px;
   font-weight: 700;
 }
 
+/* ---------- closing ---------- */
+
 .closing {
-  padding: 10px 0 68px;
+  padding: 8px 0 72px;
   text-align: center;
 }
 
@@ -245,32 +394,37 @@ code {
 }
 
 .closing .small {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 13px;
 }
 
 .closing .actions {
   justify-content: center;
-  margin-top: 18px;
+  margin-top: 20px;
 }
 
 .cheer {
-  margin-top: 26px !important;
+  margin-top: 30px !important;
+  font-family: "Cafe24Surround", sans-serif;
   font-weight: 700;
+  font-size: 20px;
+  color: var(--pink-deep);
 }
+
+/* ---------- legal pages ---------- */
 
 .legal {
   max-width: 720px;
-  padding: 72px 0 84px;
+  padding: 68px 0 84px;
 }
 
 .legal h1 {
-  font-size: 36px;
+  font-size: 34px;
 }
 
 .date {
-  margin: 10px 0 38px;
-  color: var(--muted);
+  margin: 10px 0 40px;
+  color: var(--ink-soft);
   font-size: 13px;
 }
 
@@ -279,7 +433,7 @@ code {
 }
 
 .legal a {
-  color: #557f99;
+  color: var(--lavender-deep);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -287,29 +441,33 @@ code {
 .contact {
   padding-top: 18px;
   border-top: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 14px;
 }
 
+/* ---------- footer ---------- */
+
 .footer {
-  min-height: 92px;
+  min-height: 90px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
 }
 
 .footer div {
   display: flex;
-  gap: 16px;
+  gap: 18px;
 }
 
 .footer a:hover {
-  color: var(--text);
+  color: var(--ink);
 }
+
+/* ---------- responsive ---------- */
 
 @media (max-width: 640px) {
   .nav a:first-child {
@@ -317,27 +475,44 @@ code {
   }
 
   .hero {
-    padding: 62px 0 52px;
+    padding: 52px 0 16px;
   }
 
-  .hero h1 {
-    font-size: 38px;
+
+  .hero-copy {
+    max-width: none;
+    text-align: center;
   }
 
   .lead {
-    font-size: 18px;
+    max-width: none;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero h1 {
+    font-size: 42px;
+  }
+
+  .lead {
+    font-size: 17px;
   }
 
   .actions {
-    flex-direction: column;
+    justify-content: center;
   }
+
 
   .feature-list {
     grid-template-columns: 1fr;
   }
 
-  .feature-list > div:nth-child(2n) {
-    border-top-color: var(--pink);
+  .feature-list > div {
+    transform: none !important;
+  }
+
+  .plain-list {
+    grid-template-columns: 1fr;
   }
 
   .section {
@@ -349,7 +524,7 @@ code {
   }
 
   .legal {
-    padding: 54px 0 64px;
+    padding: 52px 0 64px;
   }
 
   .footer {

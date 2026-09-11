@@ -15,13 +15,13 @@
   --line: #e6e8ed;
 
   --mint: #b8dbff;
-  --mint-deep: color-mix(in srgb, #b8dbff 75%, #292b38);
+  --mint-deep: #b8dbff;
   --lavender: color-mix(in srgb, #ffb4cf 30%, #ffffff);
-  --lavender-deep: color-mix(in srgb, #ffb4cf 75%, #292b38);
+  --lavender-deep: #ffb4cf;
   --pink: #ffb4cf;
-  --pink-deep: color-mix(in srgb, #ffb4cf 75%, #292b38);
+  --pink-deep: #ffb4cf;
   --butter: color-mix(in srgb, #b8dbff 30%, #ffffff);
-  --butter-deep: color-mix(in srgb, #b8dbff 75%, #292b38);
+  --butter-deep: #b8dbff;
 
   --max: 780px;
   --radius: 16px;
@@ -270,6 +270,25 @@ code {
   background: var(--mint);
 }
 
+/* 포스트잇 배경: 주요 문서 3개는 base, 보조 기능 3개는 soft */
+.feature-list > div:nth-child(1),
+.feature-list > div:nth-child(3) {
+  background: var(--mint);
+}
+
+.feature-list > div:nth-child(2) {
+  background: var(--pink);
+}
+
+.feature-list > div:nth-child(4),
+.feature-list > div:nth-child(6) {
+  background: var(--butter);
+}
+
+.feature-list > div:nth-child(5) {
+  background: var(--lavender);
+}
+
 .feature-list > div:nth-child(1) { transform: rotate(-0.6deg); }
 .feature-list > div:nth-child(2) { transform: rotate(0.5deg); }
 .feature-list > div:nth-child(3) { transform: rotate(0.4deg); }
@@ -301,8 +320,8 @@ code {
   border-left: 3px solid var(--mint);
 }
 
-.text-block:nth-child(3) { border-left-color: var(--lavender-deep); }
-.text-block:nth-child(4) { border-left-color: var(--pink-deep); }
+.text-block:nth-child(3) { border-left-color: var(--pink); }
+.text-block:nth-child(4) { border-left-color: var(--mint); }
 
 .text-block + .text-block {
   margin-top: 26px;
@@ -359,11 +378,11 @@ code {
   margin-bottom: 66px;
   padding: 26px 26px 24px;
   border-radius: 20px;
-  background: linear-gradient(135deg, var(--mint) 0%, var(--lavender) 100%);
+  background: linear-gradient(135deg, var(--butter) 0%, var(--lavender) 100%);
 }
 
 .note h2::before {
-  background: var(--surface);
+  background: var(--pink);
 }
 
 .note p {

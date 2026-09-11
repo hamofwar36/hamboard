@@ -278,7 +278,7 @@ code {
 .feature-list > div:nth-child(2),
 .feature-list > div:nth-child(3),
 .feature-list > div:nth-child(5){
-  background: rgba(232, 230, 230, 0.1);
+  background: rgba(232, 230, 230, 0.2);
 }
 
 .feature-list > div:nth-child(1) { transform: rotate(-0.6deg); }
@@ -291,9 +291,9 @@ code {
 .feature-list > div:nth-child(1)::before { background: var(--mint); }
 .feature-list > div:nth-child(2)::before { background: var(--pink); }
 .feature-list > div:nth-child(3)::before { background: var(--pink); }                                       
-.feature-list > div:nth-child(4)::before { background: var(--butter); }                                          
-.feature-list > div:nth-child(5)::before { background: var(--butter); }                                          
-.feature-list > div:nth-child(6)::before { background: var(--lavender); }
+.feature-list > div:nth-child(4)::before { background: var(--mint); }                                          
+.feature-list > div:nth-child(5)::before { background: var(--mint); }                                          
+.feature-list > div:nth-child(6)::before { background: var(--pink); }
                                           
 
 .feature-list strong {

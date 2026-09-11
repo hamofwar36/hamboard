@@ -1,0 +1,272 @@
+:root {
+  --bg: #fffafc;
+  --surface: #ffffff;
+  --pink: #f7dbe7;
+  --pink-strong: #d98eaa;
+  --blue: #dceffc;
+  --blue-strong: #7daec9;
+  --text: #2f3138;
+  --muted: #777b85;
+  --line: #ebe7ec;
+  --max: 760px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(180deg, var(--bg) 0, #ffffff 260px);
+  color: var(--text);
+  font-family: Pretendard, "Noto Sans KR", "Segoe UI", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wrap {
+  width: min(calc(100% - 32px), var(--max));
+  margin: 0 auto;
+}
+
+.site-header {
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.header-inner {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.nav {
+  display: flex;
+  gap: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.nav a:hover,
+.nav a.active {
+  color: var(--text);
+}
+
+.hero {
+  padding: 92px 0 74px;
+}
+
+.badge {
+  display: inline-block;
+  margin: 0 0 18px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: #7d4f61;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hero h1,
+.legal h1 {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.15;
+  letter-spacing: -0.055em;
+}
+
+.lead {
+  max-width: 620px;
+  margin: 22px 0 0;
+  font-size: 20px;
+  line-height: 1.7;
+}
+
+.sub {
+  max-width: 620px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.button:hover {
+  background: #fafafa;
+}
+
+.button.primary {
+  border-color: #c9e2f2;
+  background: var(--blue);
+  color: #365f75;
+}
+
+.simple-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  padding: 0 0 74px;
+}
+
+.simple-grid > div {
+  padding-top: 18px;
+  border-top: 3px solid var(--blue);
+}
+
+.simple-grid > div:nth-child(2) {
+  border-top-color: var(--pink);
+}
+
+.simple-grid h2,
+.note h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.simple-grid p,
+.note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.note {
+  margin-bottom: 80px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(247, 219, 231, 0.48), rgba(220, 239, 252, 0.58));
+}
+
+.note a {
+  display: inline-block;
+  margin-top: 12px;
+  color: #547f98;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.legal {
+  max-width: 720px;
+  padding: 72px 0 84px;
+}
+
+.legal h1 {
+  font-size: 36px;
+}
+
+.date {
+  margin: 10px 0 38px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.legal > p:not(.date) {
+  margin: 0 0 24px;
+}
+
+.legal a {
+  color: #557f99;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.contact {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.footer {
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.footer div {
+  display: flex;
+  gap: 16px;
+}
+
+.footer a:hover {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 64px 0 56px;
+  }
+
+  .hero h1 {
+    font-size: 38px;
+  }
+
+  .lead {
+    font-size: 18px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  .simple-grid {
+    grid-template-columns: 1fr;
+    padding-bottom: 56px;
+  }
+
+  .note {
+    margin-bottom: 60px;
+  }
+
+  .legal {
+    padding: 54px 0 64px;
+  }
+
+  .footer {
+    padding: 24px 0;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

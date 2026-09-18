@@ -10,10 +10,12 @@ const clientId=String(process.env.HAMBOARD_GOOGLE_OAUTH_CLIENT_ID||"").trim();
 
 await rm(outputRoot,{recursive:true,force:true});
 await mkdir(resolve(outputRoot,"shared"),{recursive:true});
+await mkdir(resolve(outputRoot,"vendor"),{recursive:true});
 
 let html=await readFile(resolve(mobileRoot,"index.html"),"utf8");
 html=html
   .replaceAll('src="../shared/','src="./shared/')
+  .replace('src="../../../window/web/assets/vendor/lucide/lucide.min.js"','src="./vendor/lucide/lucide.min.js"')
   .replace('  <script src="./mobile-google-drive.js"></script>','  <script src="./mobile-config.js"></script>\n  <script src="./mobile-google-drive.js"></script>');
 
 await Promise.all([
@@ -23,6 +25,7 @@ await Promise.all([
   cp(resolve(mobileRoot,"mobile-google-drive.js"),resolve(outputRoot,"mobile-google-drive.js")),
   cp(resolve(sharedRoot,"sync-state-model.js"),resolve(outputRoot,"shared/sync-state-model.js")),
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
+  cp(resolve(projectRoot,"../window/web/assets/vendor/lucide"),resolve(outputRoot,"vendor/lucide"),{recursive:true}),
   cp(resolve(projectRoot,"web/favicon.ico"),resolve(outputRoot,"favicon.ico")),
   writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({googleOAuthClientId:${JSON.stringify(clientId)}});\n`)
 ]);

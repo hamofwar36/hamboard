@@ -161,7 +161,7 @@
     };
     return {
       kind:"노트",icon:safeIcon(item.icon,"notebook-text"),color:safeColor(item.color,"#F6D872"),subtitle:String(item.subtitle||""),folder,
-      meta:stripHtml(item.content||"").slice(0,80)
+      meta:""
     }
   }
 

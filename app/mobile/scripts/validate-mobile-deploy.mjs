@@ -17,6 +17,8 @@ check("menu is a full mobile screen rather than a popover",()=>{assert.match(htm
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("public OAuth client id is injected without a secret",()=>{assert.match(config,/qa-web-client\.apps\.googleusercontent\.com/);assert.doesNotMatch(config,/secret/i)});
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"1\.0\.0"/));
+check("settings screen exposes display and diagnostics controls",()=>{assert.match(html,/id="settingsScreen"/);assert.match(html,/id="themeChoiceGrid"/);assert.match(html,/id="diagnosticsLog"/);assert.match(app,/function applyMobileTheme/);assert.match(app,/function renderDiagnostics/)});
 check("Vercel builds the isolated mobile output",()=>{assert.equal(vercel.installCommand,"node --version");assert.equal(vercel.buildCommand,"npm run mobile:build");assert.equal(vercel.outputDirectory,"dist-mobile")});
 check("desktop application is absent from deployment output",()=>{assert.equal(files.includes("src-tauri"),false);assert.equal(files.includes("package.json"),false)});
 console.log(`Hamboard mobile deployment QA passed (${checks.length} checks).`);

@@ -573,8 +573,6 @@ svg.lucide{stroke:currentColor}
 .sheet-close{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:12px;background:transparent;color:var(--ui-muted)}
 .sheet-close:active{background:var(--surface-hover);color:var(--on-surface-hover)}
 .sheet-close svg{width:19px;height:19px}
-.create-chooser-close{margin:4px 6px 2px auto}
-
 .create-list{display:grid;border-top:1px solid var(--border)}
 .create-list button{
   width:100%;min-height:52px;display:grid;grid-template-columns:24px minmax(0,1fr) 20px;align-items:center;gap:10px;
@@ -588,15 +586,26 @@ svg.lucide{stroke:currentColor}
   --ui-fg:var(--on-secondary-soft);--ui-muted:var(--on-secondary-soft-muted)
 }
 .create-list button>svg:first-child{width:19px;height:19px;color:var(--ui-muted)}
-.create-list button>svg:last-child{width:16px;height:16px;justify-self:end;color:var(--ui-muted)}
 .create-list strong{font-size:var(--fs-sm);font-weight:700}
+
+.create-sheet-backdrop:not(.form-open){
+  display:block;padding:0;background:transparent;backdrop-filter:none
+}
+.create-sheet-backdrop:not(.form-open) .create-sheet-panel{
+  position:absolute;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  width:min(300px,calc(100vw - 24px));max-height:calc(100dvh - 96px);
+  padding:4px 0;overflow:hidden;border-radius:16px
+}
+.create-sheet-backdrop:not(.form-open) .create-list{border-top:0}
+.create-sheet-backdrop:not(.form-open) .create-list button{
+  grid-template-columns:24px minmax(0,1fr)
+}
 
 .nav-sheet-backdrop.form-open{align-items:center;padding:16px}
 .nav-sheet-backdrop.form-open .create-sheet-panel{
   width:min(100%,460px);max-height:min(620px,calc(100dvh - 32px));padding:16px;
   overflow-y:auto;border-radius:20px
 }
-.nav-sheet-backdrop.form-open .create-chooser-close{display:none}
 .create-form{display:grid;gap:12px}
 .create-form-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px}
 .create-form-header .sheet-close{flex:0 0 auto;background:var(--surface-subtle)}

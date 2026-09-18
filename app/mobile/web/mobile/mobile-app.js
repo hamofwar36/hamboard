@@ -15,6 +15,7 @@
   const noteReaderScreen=$("#noteReaderScreen");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
   const menuScreen=$("#menuScreen");
+  const settingsScreen=$("#settingsScreen");
   const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
   const title=$("#mobileTitle");
@@ -28,6 +29,20 @@
   const menuNav=$("#menuNav");
   const createSheet=$("#createSheet");
   const menuCloud=$("#menuCloud");
+  const menuSettings=$("#menuSettings");
+  const modeSetting=$("#modeSetting");
+  const themeChoiceGrid=$("#themeChoiceGrid");
+  const customThemeBlock=$("#customThemeBlock");
+  const themePrimaryColor=$("#themePrimaryColor");
+  const themeSecondaryColor=$("#themeSecondaryColor");
+  const themeSwapButton=$("#themeSwapButton");
+  const themePairSwap=$("#themePairSwap");
+  const mobileVersion=$("#mobileVersion");
+  const statusNetwork=$("#statusNetwork");
+  const statusCloud=$("#statusCloud");
+  const statusDocuments=$("#statusDocuments");
+  const diagnosticsLog=$("#diagnosticsLog");
+  const diagnosticsClear=$("#diagnosticsClear");
   const cloudDisconnect=$("#cloudDisconnect");
   const cloudSourceStatus=$("#cloudSourceStatus");
   const syncSourceMeta=$("#syncSourceMeta");
@@ -42,7 +57,18 @@
   let cloudReturnView="library";
   let silentReconnectFailed=false;
   let silentReconnectPromise=null;
-
+  const diagnostics=[];
+  const MOBILE_THEMES=Object.freeze({
+    "cotton-candy":{name:"코튼캔디",a:"#B8DBFF",b:"#FFB4CF"},
+    "mint-butter":{name:"멜론커스터드",a:"#BDE7C4",b:"#F7E28E"},
+    "lilac-peach":{name:"포도복숭아",a:"#D7C0FF",b:"#FFD0AE"},
+    "matcha-strawberry":{name:"딸기말차",a:"#C8E0B0",b:"#FFBEDA"},
+    "lavender-mint":{name:"포도민트",a:"#CBB8FF",b:"#AEE9C8"},
+    "coral-turquoise":{name:"자몽소다",a:"#FFB8AE",b:"#9DE8D8"},
+    "choco-strawberry":{name:"초코딸기",a:"#F0B7C8",b:"#D8B9A2"},
+    "apricot-sage":{name:"살구피스타치오",a:"#F3C58F",b:"#B4D6B8"},
+    "butter-lilac":{name:"블루베리버터",a:"#F2DB8F",b:"#C6B2E8"}
+  });
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
   const element=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node};
   const safeColor=(value,fallback="#FFB8AE")=>/^#[0-9a-f]{6}$/i.test(String(value||""))?String(value):fallback;
@@ -74,6 +100,109 @@
   const allBlocks=unit=>{const result=[],walk=nodes=>(nodes||[]).forEach(node=>{result.push(node);walk(node.children)});for(const stage of unit?.stageDefs||[])walk(unit?.stages?.[stage.id]);return result};
   const projectStats=project=>{const units=project.kind==="long"?(project.episodes||[]):[project],blocks=units.flatMap(allBlocks);return {units:units.length,blocks:blocks.length,completed:blocks.filter(block=>block.completed).length}};
   const scriptLabels={dialogue:"대사",narration:"지문",background:"배경",shot:"구도",page:"페이지",cut:"컷"};
+
+  function logDiagnostic(level,area,message,error=null){
+    diagnostics.unshift({
+      time:new Date().toISOString(),
+      level:String(level||"info"),
+      area:String(area||"APP"),
+      message:String(message||""),
+      detail:error?String(error?.message||error):""
+    });
+    if(diagnostics.length>80)diagnostics.length=80;
+    if(settingsScreen&&!settingsScreen.hidden)renderDiagnostics()
+  }
+
+  function renderDiagnostics(){
+    if(!diagnosticsLog)return;
+    diagnosticsLog.replaceChildren();
+    if(!diagnostics.length){
+      diagnosticsLog.append(element("div","diagnostics-empty","현재 실행 중 기록된 진단 로그가 없습니다."));
+      return
+    }
+    for(const entry of diagnostics){
+      const row=element("div",`diagnostics-entry diagnostics-${entry.level}`);
+      const head=element("div","diagnostics-entry-head");
+      head.append(
+        element("strong","",entry.area),
+        element("time","",new Intl.DateTimeFormat("ko-KR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(entry.time)))
+      );
+      row.append(head,element("div","diagnostics-entry-message",entry.message));
+      if(entry.detail)row.append(element("div","diagnostics-entry-detail",entry.detail));
+      diagnosticsLog.append(row)
+    }
+  }
+
+  function normalizedThemeSettings(state=snapshot()){
+    const source=state?.settings&&typeof state.settings==="object"?state.settings:{};
+    const theme=source.theme==="custom"||MOBILE_THEMES[source.theme]?source.theme:"cotton-candy";
+    return {
+      theme,
+      themeCustomA:safeColor(source.themeCustomA,"#D7C0FF"),
+      themeCustomB:safeColor(source.themeCustomB,"#FFD0AE"),
+      themeSwapped:!!source.themeSwapped,
+      mode:source.mode==="dark"?"dark":"light"
+    }
+  }
+
+  function applyMobileTheme(){
+    const settings=normalizedThemeSettings();
+    document.body.dataset.mode=settings.mode;
+    document.body.dataset.theme=settings.theme;
+    document.body.dataset.themeSwapped=String(settings.themeSwapped);
+    document.documentElement.style.setProperty("--custom-primary",settings.themeCustomA);
+    document.documentElement.style.setProperty("--custom-secondary",settings.themeCustomB);
+    const pair=settings.theme==="custom"
+      ?{a:settings.themeCustomA,b:settings.themeCustomB}
+      :MOBILE_THEMES[settings.theme]||MOBILE_THEMES["cotton-candy"];
+    const primary=settings.themeSwapped?pair.b:pair.a;
+    const secondary=settings.themeSwapped?pair.a:pair.b;
+    document.documentElement.style.setProperty("--theme-primary-base",primary);
+    document.documentElement.style.setProperty("--theme-secondary-base",secondary);
+    const meta=document.querySelector('meta[name="theme-color"]');
+    if(meta)meta.setAttribute("content",settings.mode==="dark"?"#15171c":"#fbfbfd")
+  }
+
+  async function saveThemeSettings(patch){
+    const state=snapshot(),current=state.settings&&typeof state.settings==="object"?state.settings:{};
+    state.settings={...current,...patch};
+    await repository.replaceState(state);
+    applyMobileTheme();
+    renderSettings()
+  }
+
+  function renderSettings(){
+    const settings=normalizedThemeSettings(),cloud=googleDrive?.status?.()||{};
+    for(const button of modeSetting?.querySelectorAll("[data-mode-value]")||[]){
+      button.classList.toggle("active",button.dataset.modeValue===settings.mode)
+    }
+    themeChoiceGrid?.replaceChildren();
+    if(themeChoiceGrid){
+      for(const [key,theme] of Object.entries(MOBILE_THEMES)){
+        const button=element("button",`theme-choice${settings.theme===key?" active":""}`);
+        button.type="button";
+        button.dataset.themeKey=key;
+        button.innerHTML=`<span class="theme-choice-preview" style="--theme-a:${theme.a};--theme-b:${theme.b}"></span><span>${theme.name}</span>`;
+        button.onclick=()=>saveThemeSettings({theme:key});
+        themeChoiceGrid.append(button)
+      }
+      const custom=element("button",`theme-choice${settings.theme==="custom"?" active":""}`);
+      custom.type="button";
+      custom.dataset.themeKey="custom";
+      custom.innerHTML='<span class="theme-choice-preview theme-choice-custom"><i data-lucide="palette" aria-hidden="true"></i></span><span>직접 선택</span>';
+      custom.onclick=()=>saveThemeSettings({theme:"custom"});
+      themeChoiceGrid.append(custom)
+    }
+    customThemeBlock.hidden=settings.theme!=="custom";
+    themePrimaryColor.value=settings.themeCustomA;
+    themeSecondaryColor.value=settings.themeCustomB;
+    mobileVersion.textContent=String(window.HAMBOARD_MOBILE_CONFIG?.version||"1.0.0");
+    statusNetwork.textContent=navigator.onLine===false?"오프라인":"온라인";
+    statusCloud.textContent=cloud.connected?"연결됨":cloud.authorized?"재연결 가능":"로그인 안 됨";
+    statusDocuments.textContent=`${documentCount()}개`;
+    renderDiagnostics();
+    refreshLucideIcons()
+  }
 
   function cloudErrorMessage(error){
     const text=String(error?.message||error||"");
@@ -109,7 +238,7 @@
     history[replace?"replaceState":"pushState"](state,"",appRouteUrl(state))
   }
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
-  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,cloudSourceScreen])screen.hidden=true}
+  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,settingsScreen,cloudSourceScreen])screen.hidden=true}
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
     hideAllScreens();
@@ -461,11 +590,25 @@
     writeRoute({view:"menu"},{replace})
   }
 
+  function renderSettingsScreen(){
+    activeDocumentType="";
+    activeDocumentId="";
+    activeEpisodeId="";
+    showScreen(settingsScreen,{heading:"설정",back:true,account:false,nav:"menu"});
+    renderSettings()
+  }
+
+  function openSettings({replace=false}={}){
+    renderSettingsScreen();
+    writeRoute({view:"settings"},{replace})
+  }
+
   async function importCanonicalState(source){
     const canonical=source?.format==="hamboard-cloud-backup"&&source.state?source.state:source?.state&&typeof source.state==="object"?source.state:source;
     if(!canonical||typeof canonical!=="object"||Array.isArray(canonical))throw new Error("mobile-state-invalid");
     const projection=syncModel.projectCanonicalState(canonical,syncModel.CLIENT_PROFILES.mobileCore);
     await repository.replaceState(projection,{markBaseline:true});
+    applyMobileTheme();
     renderAccountButton();
     renderLibrary();
     return snapshot()
@@ -474,6 +617,7 @@
   async function applyCloudCommits(commits=[]){
     for(const commit of commits)await repository.applyCommit(commit);
     repository.markSynced();
+    applyMobileTheme();
     renderAccountButton();
     renderLibrary();
     return snapshot()
@@ -532,6 +676,7 @@
       projected=result.state
     }
     await repository.replaceState(projected,{markBaseline:true});
+    applyMobileTheme();
     cloudSyncListing=listing;
     renderAccountButton();
     openLibrary();
@@ -702,6 +847,7 @@
     if(!route||route.hamboard!==true){renderHome();return}
     if(route.view==="document"){renderDocument(route.type,route.id);return}
     if(route.view==="menu"){renderMenu();return}
+    if(route.view==="settings"){renderSettingsScreen();return}
     if(route.view==="cloud"){
       cloudReturnView=route.returnView==="menu"?"menu":"library";
       showScreen(cloudSourceScreen,{heading:"데이터 불러오기",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
@@ -720,6 +866,8 @@
   async function start(){
     try{
       await repository.load();
+      applyMobileTheme();
+      logDiagnostic("info","APP","모바일 저장소를 열었습니다.");
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
@@ -740,6 +888,16 @@
   createSheet.onclick=event=>{if(event.target===createSheet)closeBottomSheet(createSheet)};
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
+  menuSettings.onclick=()=>openSettings();
+  modeSetting.onclick=event=>{
+    const button=event.target.closest("[data-mode-value]");
+    if(button)saveThemeSettings({mode:button.dataset.modeValue==="dark"?"dark":"light"})
+  };
+  themePrimaryColor.oninput=()=>saveThemeSettings({theme:"custom",themeCustomA:safeColor(themePrimaryColor.value,"#D7C0FF")});
+  themeSecondaryColor.oninput=()=>saveThemeSettings({theme:"custom",themeCustomB:safeColor(themeSecondaryColor.value,"#FFD0AE")});
+  themeSwapButton.onclick=()=>saveThemeSettings({theme:"custom",themeCustomA:themeSecondaryColor.value,themeCustomB:themePrimaryColor.value});
+  themePairSwap.onclick=()=>saveThemeSettings({themeSwapped:!normalizedThemeSettings().themeSwapped});
+  diagnosticsClear.onclick=()=>{diagnostics.length=0;renderDiagnostics()};
   indicator.onclick=()=>openCloudSources("library");
   loadSyncSource.onclick=loadSelectedSync;
   cloudDisconnect.onclick=()=>{
@@ -758,14 +916,18 @@
     }
   });
   window.addEventListener("online",()=>{
+    logDiagnostic("info","NETWORK","온라인 상태로 전환되었습니다.");
     silentReconnectFailed=false;
     renderAccountButton();
     restoreGoogleConnection();
     if(!libraryScreen.hidden)offlineWarning.hidden=true
   });
   window.addEventListener("offline",()=>{
+    logDiagnostic("warn","NETWORK","오프라인 상태로 전환되었습니다.");
     renderAccountButton()
   });
+  window.addEventListener("error",event=>logDiagnostic("error","RUNTIME","실행 오류",event.error||event.message));
+  window.addEventListener("unhandledrejection",event=>logDiagnostic("error","RUNTIME","처리되지 않은 비동기 오류",event.reason));
   fileInput.onchange=async()=>{
     const file=fileInput.files?.[0];fileInput.value="";
     if(!file)return;
@@ -779,7 +941,7 @@
   };
 
   window.HamboardMobileApp=Object.freeze({
-    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openCloudSources,refreshCloudSources,snapshot
+    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSettings,openCloudSources,refreshCloudSources,snapshot
   });
   start();
 })();

@@ -23,8 +23,7 @@ check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/\/api\/session/);
   assert.match(transport,/\/api\/token/);
   assert.match(transport,/https:\/\/www\.googleapis\.com\/drive\/v3\/files/);
-  assert.doesNotMatch(transport,/localStorage\\.setItem|google\\.accounts\\.oauth2|HAMBOARD_GOOGLE_OAUTH_CLIENT_ID/)
-});
+  assert.doesNotMatch(transport,/localStorage|google\\.accounts\\.oauth2|HAMBOARD_GOOGLE_OAUTH_CLIENT_ID/);
 check("auth Worker stores only auth-session records and exposes no file proxy",()=>{
   assert.match(authWorker,/refresh_token_ciphertext/);
   assert.match(authWorker,/AES-GCM/);

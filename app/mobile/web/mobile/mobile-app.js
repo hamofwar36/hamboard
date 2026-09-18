@@ -15,7 +15,6 @@
   const noteReaderScreen=$("#noteReaderScreen");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
   const menuScreen=$("#menuScreen");
-  const searchScreen=$("#searchScreen");
   const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
   const title=$("#mobileTitle");
@@ -26,7 +25,6 @@
   const createNav=$("#createNav");
   const menuNav=$("#menuNav");
   const createSheet=$("#createSheet");
-  const menuSearch=$("#menuSearch");
   const menuCloud=$("#menuCloud");
   const cloudDisconnect=$("#cloudDisconnect");
   const cloudSourceStatus=$("#cloudSourceStatus");
@@ -98,9 +96,16 @@
     return type==="project"?projectReaderScreen:type==="note"?noteReaderScreen:type==="mindmap"?mindmapReaderScreen:null
   }
   function hideDocumentScreens(){for(const screen of [projectReaderScreen,noteReaderScreen,mindmapReaderScreen])screen.hidden=true}
-  function setDocumentHash(type,id){history.replaceState({type,id},"",`#${type}/${encodeURIComponent(id)}`)}
+  const appBaseUrl=()=>location.pathname+location.search;
+  function appRouteUrl(route){
+    return route?.view==="document"&&route.type&&route.id?`${appBaseUrl()}#${route.type}/${encodeURIComponent(route.id)}`:appBaseUrl()
+  }
+  function writeRoute(route,{replace=false}={}){
+    const state={hamboard:true,...route};
+    history[replace?"replaceState":"pushState"](state,"",appRouteUrl(state))
+  }
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
-  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,searchScreen,cloudSourceScreen])screen.hidden=true}
+  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,cloudSourceScreen])screen.hidden=true}
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
     hideAllScreens();
@@ -156,11 +161,21 @@
   }
 
   function renderLibrary(){
-    const state=snapshot(),documents=libraryDocuments(state),host=$("#libraryList");
+    const state=snapshot(),query=librarySearch.value.trim().toLocaleLowerCase("ko"),allDocuments=libraryDocuments(state);
+    const documents=query?allDocuments.filter(({type,item})=>{
+      const descriptor=documentDescriptor(type,item,state);
+      const extra=type==="note"?stripHtml(item.content||""):type==="mindmap"?(item.nodes||[]).map(node=>`${node.title||""} ${node.text||""}`).join(" "):"";
+      return `${item.title||""} ${descriptor.subtitle} ${descriptor.folder} ${extra}`.toLocaleLowerCase("ko").includes(query)
+    }):allDocuments;
+    const host=$("#libraryList");
     host.replaceChildren();
-    if(!documents.length){
+    if(!allDocuments.length){
       setStatus("동기화된 작품, 노트 또는 마인드맵이 아직 없습니다.",{action:"데이터 파일 불러오기",run:()=>fileInput.click()});
       refreshLucideIcons();
+      return
+    }
+    if(query&&!documents.length){
+      setStatus("검색 결과가 없습니다.");
       return
     }
     hideStatus();
@@ -191,28 +206,6 @@
       button.append(veil,folder,heading);
       if(descriptor.subtitle)button.append(element("div","work-card-subtitle",descriptor.subtitle));
       if(descriptor.meta)button.append(element("div","project-meta",descriptor.meta));
-      button.onclick=()=>openDocument(type,item.id);
-      host.append(button)
-    }
-    refreshLucideIcons()
-  }
-
-  function renderSearchResults(){
-    const query=librarySearch.value.trim().toLocaleLowerCase("ko"),host=$("#searchResults"),state=snapshot();
-    host.replaceChildren();
-    if(!query){host.append(element("div","search-empty","검색어를 입력하세요."));return}
-    const results=libraryDocuments(state).filter(({type,item})=>{
-      const descriptor=documentDescriptor(type,item,state);
-      const extra=type==="note"?stripHtml(item.content||""):type==="mindmap"?(item.nodes||[]).map(node=>`${node.title||""} ${node.text||""}`).join(" "):"";
-      return `${item.title||""} ${descriptor.subtitle} ${descriptor.folder} ${extra}`.toLocaleLowerCase("ko").includes(query)
-    });
-    if(!results.length){host.append(element("div","search-empty","검색 결과가 없습니다."));return}
-    for(const {type,item} of results){
-      const descriptor=documentDescriptor(type,item,state),button=element("button","search-result");
-      button.type="button";
-      button.innerHTML=`<i data-lucide="${descriptor.icon}" aria-hidden="true"></i><span><strong></strong><small></small></span><i data-lucide="chevron-right" aria-hidden="true"></i>`;
-      button.querySelector("strong").textContent=item.title||"제목 없음";
-      button.querySelector("small").textContent=[descriptor.kind,descriptor.folder].filter(Boolean).join(" · ");
       button.onclick=()=>openDocument(type,item.id);
       host.append(button)
     }
@@ -389,10 +382,10 @@
     }
   }
 
-  function openDocument(type,id){
+  function renderDocument(type,id){
     const state=snapshot(),key=String(id||"");
     const item=type==="project"?(state.projects||[]).find(entry=>String(entry?.id||"")===key):type==="note"?(state.notes||[]).find(entry=>String(entry?.id||"")===key):(state.mindmaps||[]).find(entry=>String(entry?.id||"")===key);
-    if(!item)return;
+    if(!item){renderHome();return}
     activeDocumentType=type;
     activeDocumentId=key;
     activeEpisodeId="";
@@ -400,35 +393,40 @@
     showScreen(screen,{heading:item.title||(type==="project"?"작품":type==="note"?"노트":"마인드맵"),back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
-    else renderMindmap(item);
-    setDocumentHash(type,key)
+    else renderMindmap(item)
   }
 
-  function openLibrary({clearHistory=true}={}){
+  function renderHome(){
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
-    showScreen(libraryScreen,{heading:"보관함",back:false,account:true,nav:"library"});
+    showScreen(libraryScreen,{heading:"홈",back:false,account:true,nav:"library"});
     renderAccountButton();
-    renderLibrary();
-    if(clearHistory)history.replaceState({},"",location.pathname+location.search)
+    renderLibrary()
   }
 
-  function closeDocument(){openLibrary()}
+  function openDocument(type,id,{replace=false}={}){
+    renderDocument(type,id);
+    writeRoute({view:"document",type,id:String(id||"")},{replace})
+  }
 
-  function openMenu(){
+  function openLibrary({replace=false}={}){
+    renderHome();
+    writeRoute({view:"home"},{replace})
+  }
+
+  function closeDocument(){history.back()}
+
+  function renderMenu(){
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
-    history.replaceState({},"",location.pathname+location.search);
     showScreen(menuScreen,{heading:"메뉴",back:true,account:false,nav:"menu"})
   }
 
-  function openSearch(){
-    librarySearch.value="";
-    renderSearchResults();
-    showScreen(searchScreen,{heading:"검색",back:true,account:false,nav:"menu"});
-    requestAnimationFrame(()=>librarySearch.focus())
+  function openMenu({replace=false}={}){
+    renderMenu();
+    writeRoute({view:"menu"},{replace})
   }
 
   async function importCanonicalState(source){
@@ -497,7 +495,7 @@
     let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
     for(let index=0;index<topology.path.length;index++){
       const percent=Math.round(((index+1)/topology.path.length)*100);
-      cloudSourceStatus.textContent=`동기화 데이터를 불러오는 중입니다. ${percent}% (${index+1}/${topology.path.length})`;
+      cloudSourceStatus.textContent=`동기화 데이터를 불러오는 중입니다. ${percent}%`;
       const commit=await readCloudCommit(topology.path[index]),result=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore);
       projected=result.state
     }
@@ -523,6 +521,7 @@
     for(const entry of entries){
       const button=element("button","backup-source-entry");
       button.type="button";
+      button.dataset.remoteObjectId=String(entry.remoteObjectId||"");
       const icon=element("span","backup-source-icon");
       icon.innerHTML='<i data-lucide="archive-restore" aria-hidden="true"></i>';
       const copy=element("span","backup-source-copy");
@@ -590,6 +589,15 @@
 
   async function loadBackupSource(entry){
     setCloudSourceBusy(true);
+    const activeButton=[...backupSourceList.querySelectorAll(".backup-source-entry")].find(button=>button.dataset.remoteObjectId===String(entry.remoteObjectId||""));
+    if(activeButton){
+      activeButton.classList.add("loading");
+      const statusText=activeButton.querySelector(".backup-source-copy small");
+      const arrow=activeButton.querySelector(".backup-source-arrow");
+      if(statusText)statusText.textContent="불러오는 중…";
+      if(arrow)arrow.innerHTML='<i data-lucide="loader-circle" aria-hidden="true"></i>';
+      refreshLucideIcons()
+    }
     cloudSourceStatus.hidden=false;
     cloudSourceStatus.textContent="선택한 백업을 불러오는 중입니다.";
     try{
@@ -600,6 +608,7 @@
     }catch(error){
       console.error("모바일 백업 불러오기 실패",error);
       cloudSourceStatus.textContent=cloudErrorMessage(error);
+      renderBackupSources(cloudBackupEntries);
       if(String(error?.message||"").includes("reconnect"))renderAccountButton()
     }finally{
       setCloudSourceBusy(false)
@@ -620,11 +629,11 @@
     }
   }
 
-  async function openCloudSources(returnView="library"){
+  async function openCloudSources(returnView="library",{replace=false}={}){
     cloudReturnView=returnView==="menu"?"menu":"library";
     let status=renderAccountButton();
     if(!status.configured){
-      if(cloudReturnView==="menu")openMenu();else openLibrary();
+      cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
     if(!status.connected){
@@ -635,30 +644,43 @@
       }catch(error){
         console.error("모바일 클라우드 로그인 실패",error);
         setIndicator("error","오류");
-        if(cloudReturnView==="menu")openMenu();else openLibrary();
+        cloudReturnView==="menu"?renderMenu():renderHome();
         return
       }
     }
     showScreen(cloudSourceScreen,{heading:"데이터 불러오기",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
+    writeRoute({view:"cloud",returnView:cloudReturnView},{replace});
     await refreshCloudSources()
   }
 
   function openBottomSheet(sheet){if(sheet){sheet.hidden=false;refreshLucideIcons()}}
   function closeBottomSheet(sheet){if(sheet)sheet.hidden=true}
 
+  function renderRoute(route){
+    if(!route||route.hamboard!==true){renderHome();return}
+    if(route.view==="document"){renderDocument(route.type,route.id);return}
+    if(route.view==="menu"){renderMenu();return}
+    if(route.view==="cloud"){
+      cloudReturnView=route.returnView==="menu"?"menu":"library";
+      showScreen(cloudSourceScreen,{heading:"데이터 불러오기",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
+      if(googleDrive?.status?.().connected)refreshCloudSources();
+      else cloudReturnView==="menu"?renderMenu():renderHome();
+      return
+    }
+    renderHome()
+  }
+
   function handleBack(){
-    if(activeDocumentId){openLibrary();return}
-    if(!searchScreen.hidden){openMenu();return}
-    if(!cloudSourceScreen.hidden){cloudReturnView==="menu"?openMenu():openLibrary();return}
-    if(!menuScreen.hidden){openLibrary();return}
-    openLibrary()
+    if(history.state?.hamboard&&history.state.view!=="home")history.back();
+    else renderHome()
   }
 
   async function start(){
     try{
       await repository.load();
-      openLibrary({clearHistory:false});
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
+      history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
+      renderHome();
       if(match)openDocument(match[1],decodeURIComponent(match[2]));
       refreshLucideIcons()
     }catch(error){
@@ -668,13 +690,12 @@
   }
 
   backButton.onclick=handleBack;
-  libraryNav.onclick=()=>openLibrary();
+  libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>openBottomSheet(createSheet);
-  menuNav.onclick=openMenu;
+  menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
   $("#createSheetClose").onclick=()=>closeBottomSheet(createSheet);
   createSheet.onclick=event=>{if(event.target===createSheet)closeBottomSheet(createSheet)};
-  menuSearch.onclick=openSearch;
-  librarySearch.addEventListener("input",renderSearchResults);
+  librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
   indicator.onclick=()=>openCloudSources("library");
   loadSyncSource.onclick=loadSelectedSync;
@@ -685,7 +706,13 @@
     renderAccountButton();
     openLibrary()
   };
-  window.addEventListener("popstate",()=>{if(activeDocumentId)openLibrary({clearHistory:false})});
+  window.addEventListener("popstate",event=>{
+    if(event.state?.hamboard)renderRoute(event.state);
+    else{
+      history.pushState({hamboard:true,view:"home"},"",appBaseUrl());
+      renderHome()
+    }
+  });
   fileInput.onchange=async()=>{
     const file=fileInput.files?.[0];fileInput.value="";
     if(!file)return;
@@ -699,7 +726,7 @@
   };
 
   window.HamboardMobileApp=Object.freeze({
-    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSearch,openCloudSources,refreshCloudSources,snapshot
+    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openCloudSources,refreshCloudSources,snapshot
   });
   start();
 })();

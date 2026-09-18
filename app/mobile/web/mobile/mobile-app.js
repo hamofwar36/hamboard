@@ -716,10 +716,10 @@
   async function refreshCloudSources(){
     if(!googleDrive?.status?.().connected)return;
     cloudSourceStatus.hidden=false;
-    cloudSourceStatus.textContent="불러올 데이터를 확인하고 있습니다.";
+    cloudSourceStatus.textContent="클라우드 데이터를 확인하고 있습니다.";
     syncSourceMeta.textContent="확인 중…";
     loadSyncSource.disabled=true;
-    backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 목록을 확인하고 있습니다."));
+    backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 복원 목록을 확인하고 있습니다."));
     const [syncResult,backupResult]=await Promise.allSettled([googleDrive.listSyncObjects(),googleDrive.listBackups()]);
     const problems=[];
 
@@ -754,7 +754,7 @@
     }else{
       console.error("모바일 백업 목록 확인 실패",backupResult.reason);
       logDiagnostic("error","CLOUD","수동 백업 목록 확인에 실패했습니다.",backupResult.reason);
-      backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 목록을 확인하지 못했습니다."));
+      backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 복원 목록을 확인하지 못했습니다."));
       problems.push("수동 백업")
     }
 
@@ -842,7 +842,7 @@
         return
       }
     }
-    showScreen(cloudSourceScreen,{heading:"데이터 불러오기",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
+    showScreen(cloudSourceScreen,{heading:"클라우드",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
     writeRoute({view:"cloud",returnView:cloudReturnView},{replace});
     await refreshCloudSources()
   }
@@ -857,7 +857,7 @@
     if(route.view==="settings"){renderSettingsScreen();return}
     if(route.view==="cloud"){
       cloudReturnView=route.returnView==="menu"?"menu":"library";
-      showScreen(cloudSourceScreen,{heading:"데이터 불러오기",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
+      showScreen(cloudSourceScreen,{heading:"클라우드",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
       if(googleDrive?.status?.().connected)refreshCloudSources();
       else cloudReturnView==="menu"?renderMenu():renderHome();
       return

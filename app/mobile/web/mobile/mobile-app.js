@@ -14,6 +14,9 @@
   const projectReaderScreen=$("#projectReaderScreen");
   const noteReaderScreen=$("#noteReaderScreen");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
+  const menuScreen=$("#menuScreen");
+  const searchScreen=$("#searchScreen");
+  const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
   const title=$("#mobileTitle");
   const indicator=$("#syncIndicator");
@@ -23,18 +26,19 @@
   const createNav=$("#createNav");
   const menuNav=$("#menuNav");
   const createSheet=$("#createSheet");
-  const mainMenuSheet=$("#mainMenuSheet");
-  const searchSheet=$("#searchSheet");
   const menuSearch=$("#menuSearch");
   const menuCloud=$("#menuCloud");
-  const cloudSheet=$("#cloudSheet");
-  const cloudMessage=$("#cloudSheetMessage");
-  const cloudConnect=$("#cloudConnect");
   const cloudDisconnect=$("#cloudDisconnect");
+  const cloudSourceStatus=$("#cloudSourceStatus");
+  const syncSourceMeta=$("#syncSourceMeta");
+  const loadSyncSource=$("#loadSyncSource");
+  const backupSourceList=$("#backupSourceList");
 
   let activeDocumentType="";
   let activeDocumentId="";
   let activeEpisodeId="";
+  let cloudSyncListing=null;
+  let cloudBackupEntries=[];
 
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
   const element=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node};
@@ -70,14 +74,14 @@
 
   function cloudErrorMessage(error){
     const text=String(error?.message||error||"");
-    if(text.includes("web-client-id-not-configured"))return "Google 로그인 설정을 불러오지 못했습니다. 배포 설정을 확인해 주세요.";
-    if(text.includes("secure-origin-required"))return "Google 로그인은 HTTPS 주소에서 사용할 수 있습니다.";
-    if(text.includes("popup_closed")||text.includes("popup-failed"))return "Google 로그인 창이 닫혔습니다. 다시 시도해 주세요.";
-    if(text.includes("access_denied"))return "Google Drive 접근 권한이 허용되지 않았습니다.";
-    if(text.includes("branched-history"))return "클라우드 동기화 기록이 갈라져 있어 PC에서 먼저 동기화 충돌을 해결해야 합니다.";
-    if(text.includes("download-integrity")||text.includes("commit-"))return "클라우드 데이터 검증에 실패했습니다. PC에서 다시 동기화한 뒤 시도해 주세요.";
-    if(text.includes("http-401")||text.includes("reconnect-required"))return "Google 연결이 만료되었습니다. 다시 로그인해 주세요.";
-    return "Google Drive에서 데이터를 불러오지 못했습니다. 네트워크와 로그인 상태를 확인해 주세요."
+    if(text.includes("web-client-id-not-configured"))return "로그인 설정을 불러오지 못했습니다. 배포 설정을 확인해 주세요.";
+    if(text.includes("secure-origin-required"))return "로그인은 보안 연결에서만 사용할 수 있습니다.";
+    if(text.includes("popup_closed")||text.includes("popup-failed"))return "로그인 창이 닫혔습니다. 다시 시도해 주세요.";
+    if(text.includes("access_denied"))return "클라우드 접근 권한이 허용되지 않았습니다.";
+    if(text.includes("branched-history"))return "동기화 기록이 갈라져 있어 PC에서 먼저 충돌을 해결해야 합니다.";
+    if(text.includes("download-integrity")||text.includes("commit-")||text.includes("backup-"))return "클라우드 데이터 검증에 실패했습니다. PC에서 다시 저장한 뒤 시도해 주세요.";
+    if(text.includes("http-401")||text.includes("reconnect-required")||text.includes("not-connected"))return "계정 연결이 만료되었습니다. 다시 연결해 주세요.";
+    return "클라우드에서 데이터를 불러오지 못했습니다. 네트워크와 연결 상태를 확인해 주세요."
   }
 
   function setIndicator(state,text){indicator.dataset.state=state;indicator.textContent=text}
@@ -95,6 +99,29 @@
   function hideDocumentScreens(){for(const screen of [projectReaderScreen,noteReaderScreen,mindmapReaderScreen])screen.hidden=true}
   function setDocumentHash(type,id){history.replaceState({type,id},"",`#${type}/${encodeURIComponent(id)}`)}
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
+  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,searchScreen,cloudSourceScreen])screen.hidden=true}
+  function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
+  function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
+    hideAllScreens();
+    screen.hidden=false;
+    backButton.hidden=!back;
+    indicator.hidden=!account;
+    title.textContent=heading;
+    activateNav(nav);
+    window.scrollTo(0,0);
+    refreshLucideIcons()
+  }
+  function renderAccountButton(){
+    const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false};
+    if(!status.configured){setIndicator("error","설정 필요");return status}
+    if(status.connected){setIndicator("connected","연결됨");return status}
+    setIndicator("local",status.authorized?"연결":"로그인");
+    return status
+  }
+  function formatCloudTime(value){
+    const numeric=Number(value),date=Number.isFinite(numeric)&&numeric>0?new Date(numeric):new Date(String(value||""));
+    return Number.isNaN(date.getTime())?"날짜 정보 없음":new Intl.DateTimeFormat("ko-KR",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(date)
+  }
 
   function libraryDocuments(state=snapshot()){
     const items=[];
@@ -183,7 +210,7 @@
       button.innerHTML=`<i data-lucide="${descriptor.icon}" aria-hidden="true"></i><span><strong></strong><small></small></span><i data-lucide="chevron-right" aria-hidden="true"></i>`;
       button.querySelector("strong").textContent=item.title||"제목 없음";
       button.querySelector("small").textContent=[descriptor.kind,descriptor.folder].filter(Boolean).join(" · ");
-      button.onclick=()=>{closeBottomSheet(searchSheet);openDocument(type,item.id)};
+      button.onclick=()=>openDocument(type,item.id);
       host.append(button)
     }
     refreshLucideIcons()
@@ -366,33 +393,38 @@
     activeDocumentType=type;
     activeDocumentId=key;
     activeEpisodeId="";
-    libraryScreen.hidden=true;
-    hideDocumentScreens();
     const screen=documentScreen(type);
-    if(screen)screen.hidden=false;
-    backButton.hidden=false;
-    libraryNav.classList.remove("active");
-    title.textContent=item.title||(type==="project"?"작품":type==="note"?"노트":"마인드맵");
+    showScreen(screen,{heading:item.title||(type==="project"?"작품":type==="note"?"노트":"마인드맵"),back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
     else renderMindmap(item);
-    setDocumentHash(type,key);
-    window.scrollTo(0,0);
-    refreshLucideIcons()
+    setDocumentHash(type,key)
   }
 
-  function closeDocument(){
+  function openLibrary({clearHistory=true}={}){
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
-    hideDocumentScreens();
-    libraryScreen.hidden=false;
-    backButton.hidden=true;
-    libraryNav.classList.add("active");
-    title.textContent="보관함";
-    history.replaceState({},"",location.pathname+location.search);
+    showScreen(libraryScreen,{heading:"보관함",back:false,account:true,nav:"library"});
+    renderAccountButton();
     renderLibrary();
-    window.scrollTo(0,0)
+    if(clearHistory)history.replaceState({},"",location.pathname+location.search)
+  }
+
+  function closeDocument(){openLibrary()}
+
+  function openMenu(){
+    activeDocumentType="";
+    activeDocumentId="";
+    activeEpisodeId="";
+    showScreen(menuScreen,{heading:"메뉴",back:true,account:false,nav:"menu"})
+  }
+
+  function openSearch(){
+    librarySearch.value="";
+    renderSearchResults();
+    showScreen(searchScreen,{heading:"검색",back:true,account:false,nav:"menu"});
+    requestAnimationFrame(()=>librarySearch.focus())
   }
 
   async function importCanonicalState(source){
@@ -400,16 +432,16 @@
     if(!canonical||typeof canonical!=="object"||Array.isArray(canonical))throw new Error("mobile-state-invalid");
     const projection=syncModel.projectCanonicalState(canonical,syncModel.CLIENT_PROFILES.mobileCore);
     await repository.replaceState(projection,{markBaseline:true});
-    setIndicator("synced","불러옴");
-    closeDocument();
+    renderAccountButton();
+    renderLibrary();
     return snapshot()
   }
 
   async function applyCloudCommits(commits=[]){
     for(const commit of commits)await repository.applyCommit(commit);
     repository.markSynced();
-    setIndicator("synced","동기화");
-    closeDocument();
+    renderAccountButton();
+    renderLibrary();
     return snapshot()
   }
 

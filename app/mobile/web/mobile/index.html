@@ -73,12 +73,63 @@
             <span class="page-menu-copy"><strong>클라우드</strong><small>계정 연결과 데이터 불러오기를 관리합니다.</small></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
-          <button type="button" disabled>
+          <button id="menuSettings" type="button">
             <span class="page-menu-icon"><i data-lucide="settings" aria-hidden="true"></i></span>
-            <span class="page-menu-copy"><strong>설정</strong><small>모바일 햄보드 설정을 관리합니다.</small></span>
+            <span class="page-menu-copy"><strong>설정</strong><small>디스플레이와 앱 정보를 관리합니다.</small></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
         </div>
+      </section>
+
+      <section id="settingsScreen" class="mobile-screen page-screen" hidden>
+        <section class="settings-category" aria-labelledby="displaySettingsTitle">
+          <h2 id="displaySettingsTitle">디스플레이</h2>
+
+          <div class="settings-row">
+            <div class="settings-copy"><strong>화면 모드</strong><small>라이트 또는 다크 모드를 선택합니다.</small></div>
+            <div class="settings-segment" id="modeSetting" role="group" aria-label="화면 모드">
+              <button type="button" data-mode-value="light">라이트</button>
+              <button type="button" data-mode-value="dark">다크</button>
+            </div>
+          </div>
+
+          <div class="settings-block">
+            <div class="settings-copy"><strong>테마 색상</strong><small>Windows 햄보드와 같은 테마 설정을 사용합니다.</small></div>
+            <div class="theme-choice-grid" id="themeChoiceGrid"></div>
+          </div>
+
+          <div class="settings-block" id="customThemeBlock" hidden>
+            <div class="settings-copy"><strong>직접 색상 선택</strong><small>주 색상과 보조 색상을 직접 지정합니다.</small></div>
+            <div class="theme-color-editor">
+              <label><span>주 색상</span><input id="themePrimaryColor" type="color" value="#D7C0FF"></label>
+              <button class="theme-swap-button" id="themeSwapButton" type="button" aria-label="주 색상과 보조 색상 바꾸기" title="주 색상과 보조 색상 바꾸기"><i data-lucide="arrow-left-right" aria-hidden="true"></i></button>
+              <label><span>보조 색상</span><input id="themeSecondaryColor" type="color" value="#FFD0AE"></label>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-copy"><strong>주 색상 · 보조 색상</strong><small>현재 테마의 두 색 역할을 서로 바꿉니다.</small></div>
+            <button class="settings-action-button" id="themePairSwap" type="button"><i data-lucide="arrow-left-right" aria-hidden="true"></i><span>바꾸기</span></button>
+          </div>
+        </section>
+
+        <section class="settings-category" aria-labelledby="infoSettingsTitle">
+          <h2 id="infoSettingsTitle">정보</h2>
+          <div class="info-list">
+            <div class="info-row"><span>모바일 햄보드 버전</span><strong id="mobileVersion">-</strong></div>
+            <div class="info-row"><span>네트워크</span><strong id="statusNetwork">-</strong></div>
+            <div class="info-row"><span>클라우드</span><strong id="statusCloud">-</strong></div>
+            <div class="info-row"><span>로컬 문서</span><strong id="statusDocuments">-</strong></div>
+          </div>
+
+          <div class="diagnostics-panel">
+            <div class="diagnostics-head">
+              <div class="settings-copy"><strong>진단 로그</strong><small>현재 실행 중 발생한 주요 오류와 연결 상태를 표시합니다.</small></div>
+              <button id="diagnosticsClear" type="button">지우기</button>
+            </div>
+            <div class="diagnostics-log" id="diagnosticsLog"></div>
+          </div>
+        </section>
       </section>
 
       <section id="cloudSourceScreen" class="mobile-screen page-screen" hidden>

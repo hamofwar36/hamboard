@@ -997,7 +997,8 @@
       cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
-    if(!status.connected&&!silentReconnectFailed){
+    if(!status.connected){
+      if(silentReconnectFailed)silentReconnectFailed=false;
       await restoreGoogleConnection();
       status=renderAccountButton()
     }

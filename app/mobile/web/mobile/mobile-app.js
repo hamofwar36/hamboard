@@ -418,6 +418,7 @@
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
+    history.replaceState({},"",location.pathname+location.search);
     showScreen(menuScreen,{heading:"메뉴",back:true,account:false,nav:"menu"})
   }
 

@@ -13,12 +13,16 @@
       <button class="icon-button" id="mobileBack" type="button" aria-label="이전 화면으로" hidden>
         <i data-lucide="arrow-left" aria-hidden="true"></i>
       </button>
-      <div class="mobile-heading"><h1 id="mobileTitle">보관함</h1></div>
+      <div class="mobile-heading"><h1 id="mobileTitle">홈</h1></div>
       <button class="sync-indicator" id="syncIndicator" data-state="local" type="button">로그인</button>
     </header>
 
     <main class="mobile-main">
       <section id="libraryScreen" class="mobile-screen" aria-labelledby="mobileTitle">
+        <label class="home-search-field">
+          <i data-lucide="search" aria-hidden="true"></i>
+          <input id="librarySearch" type="search" placeholder="문서 검색" autocomplete="off">
+        </label>
         <div id="libraryStatus" class="status-card" role="status">문서 데이터를 확인하고 있습니다.</div>
         <div id="libraryList" class="library-list"></div>
       </section>
@@ -61,11 +65,6 @@
 
       <section id="menuScreen" class="mobile-screen page-screen" hidden>
         <div class="page-menu-list">
-          <button id="menuSearch" type="button">
-            <span class="page-menu-icon"><i data-lucide="search" aria-hidden="true"></i></span>
-            <span class="page-menu-copy"><strong>검색</strong><small>보관함 전체에서 문서를 찾습니다.</small></span>
-            <i data-lucide="chevron-right" aria-hidden="true"></i>
-          </button>
           <button id="menuCloud" type="button">
             <span class="page-menu-icon"><i data-lucide="cloud" aria-hidden="true"></i></span>
             <span class="page-menu-copy"><strong>클라우드</strong><small>계정 연결과 데이터 불러오기를 관리합니다.</small></span>
@@ -77,14 +76,6 @@
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
         </div>
-      </section>
-
-      <section id="searchScreen" class="mobile-screen page-screen" hidden>
-        <label class="search-field">
-          <i data-lucide="search" aria-hidden="true"></i>
-          <input id="librarySearch" type="search" placeholder="작품, 노트, 마인드맵 검색" autocomplete="off">
-        </label>
-        <div class="search-results" id="searchResults"></div>
       </section>
 
       <section id="cloudSourceScreen" class="mobile-screen page-screen" hidden>
@@ -116,9 +107,9 @@
     </main>
 
     <nav class="mobile-bottom-nav" aria-label="주요 탐색">
-      <button class="bottom-nav-button active" id="libraryNav" type="button" aria-label="보관함">
+      <button class="bottom-nav-button active" id="libraryNav" type="button" aria-label="홈">
         <span class="bottom-nav-icon"><i data-lucide="library" aria-hidden="true"></i></span>
-        <span>보관함</span>
+        <span>홈</span>
       </button>
       <button class="bottom-nav-button bottom-nav-create" id="createNav" type="button" aria-label="새로 만들기">
         <span class="bottom-nav-icon"><i data-lucide="plus" aria-hidden="true"></i></span>

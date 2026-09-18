@@ -50,7 +50,7 @@
     return luminance>.48?"#27232d":"#ffffff"
   };
   const snapshot=()=>repository.snapshot();
-  const folderName=id=>snapshot().folders?.find(folder=>String(folder?.id||"")===String(id||""))?.name||"";
+  const folderName=(id,state)=>state?.folders?.find(folder=>String(folder?.id||"")===String(id||""))?.name||"";
   const allBlocks=unit=>{const result=[],walk=nodes=>(nodes||[]).forEach(node=>{result.push(node);walk(node.children)});for(const stage of unit?.stageDefs||[])walk(unit?.stages?.[stage.id]);return result};
   const projectStats=project=>{const units=project.kind==="long"?(project.episodes||[]):[project],blocks=units.flatMap(allBlocks);return {units:units.length,blocks:blocks.length,completed:blocks.filter(block=>block.completed).length}};
   const scriptLabels={dialogue:"대사",narration:"지문",background:"배경",shot:"구도",page:"페이지",cut:"컷"};
@@ -83,16 +83,16 @@
   function setDocumentHash(type,id){history.replaceState({type,id},"",`#${type}/${encodeURIComponent(id)}`)}
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
 
-  function libraryDocuments(){
-    const state=snapshot(),items=[];
+  function libraryDocuments(state=snapshot()){
+    const items=[];
     (state.projects||[]).forEach((item,index)=>items.push({type:"project",item,fallback:index}));
     (state.mindmaps||[]).forEach((item,index)=>items.push({type:"mindmap",item,fallback:10000+index}));
     (state.notes||[]).forEach((item,index)=>items.push({type:"note",item,fallback:20000+index}));
     return items.sort((left,right)=>(Date.parse(right.item?.updatedAt||"")||0)-(Date.parse(left.item?.updatedAt||"")||0)||left.fallback-right.fallback)
   }
 
-  function documentDescriptor(type,item){
-    const folder=item.folderId?folderName(item.folderId):"";
+  function documentDescriptor(type,item,state=snapshot()){
+    const folder=item.folderId?folderName(item.folderId,state):"";
     if(type==="project"){
       const stats=projectStats(item);
       return {
@@ -115,7 +115,7 @@
   }
 
   function renderLibrary(){
-    const documents=libraryDocuments(),host=$("#libraryList");
+    const state=snapshot(),documents=libraryDocuments(state),host=$("#libraryList");
     host.replaceChildren();
     if(!documents.length){
       setStatus("동기화된 작품, 노트 또는 마인드맵이 아직 없습니다.",{action:"데이터 파일 불러오기",run:()=>fileInput.click()});
@@ -124,7 +124,7 @@
     }
     hideStatus();
     for(const entry of documents){
-      const {type,item}=entry,descriptor=documentDescriptor(type,item),button=element("button",`project-card ${type==="project"?"story-card":type==="note"?"note-card":"mindmap-card"}`);
+      const {type,item}=entry,descriptor=documentDescriptor(type,item,state),button=element("button",`project-card ${type==="project"?"story-card":type==="note"?"note-card":"mindmap-card"}`);
       button.type="button";
       button.dataset.documentType=type;
       button.dataset.documentId=String(item.id||"");
@@ -155,17 +155,17 @@
   }
 
   function renderSearchResults(){
-    const query=librarySearch.value.trim().toLocaleLowerCase("ko"),host=$("#searchResults");
+    const query=librarySearch.value.trim().toLocaleLowerCase("ko"),host=$("#searchResults"),state=snapshot();
     host.replaceChildren();
     if(!query){host.append(element("div","search-empty","검색어를 입력하세요."));return}
-    const results=libraryDocuments().filter(({type,item})=>{
-      const descriptor=documentDescriptor(type,item);
+    const results=libraryDocuments(state).filter(({type,item})=>{
+      const descriptor=documentDescriptor(type,item,state);
       const extra=type==="note"?stripHtml(item.content||""):type==="mindmap"?(item.nodes||[]).map(node=>`${node.title||""} ${node.text||""}`).join(" "):"";
       return `${item.title||""} ${descriptor.subtitle} ${descriptor.folder} ${extra}`.toLocaleLowerCase("ko").includes(query)
     });
     if(!results.length){host.append(element("div","search-empty","검색 결과가 없습니다."));return}
     for(const {type,item} of results){
-      const descriptor=documentDescriptor(type,item),button=element("button","search-result");
+      const descriptor=documentDescriptor(type,item,state),button=element("button","search-result");
       button.type="button";
       button.innerHTML=`<i data-lucide="${descriptor.icon}" aria-hidden="true"></i><span><strong></strong><small></small></span><i data-lucide="chevron-right" aria-hidden="true"></i>`;
       button.querySelector("strong").textContent=item.title||"제목 없음";

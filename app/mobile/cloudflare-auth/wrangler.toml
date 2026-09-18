@@ -10,4 +10,4 @@ GOOGLE_OAUTH_REDIRECT_URI = "https://auth.hamboard.net/oauth/callback"
 [[d1_databases]]
 binding = "DB"
 database_name = "hamboard-auth"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "8c9dccf7-2235-473d-89a7-08e178c2ed81"

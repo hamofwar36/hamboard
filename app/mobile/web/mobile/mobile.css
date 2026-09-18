@@ -133,18 +133,36 @@ svg.lucide{stroke:currentColor}
   margin:0;font-size:var(--fs-base);font-weight:700;line-height:1.2;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
+.sync-status-wrap{
+  position:relative;justify-self:end;width:max-content;max-width:max-content
+}
 .sync-indicator{
-  min-width:42px;height:26px;padding:0 8px;
-  border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--ui-fg);
-  font-size:var(--fs-compact-10);font-weight:700;line-height:1;text-align:center;
+  width:max-content;min-width:0;max-width:max-content;height:24px;display:inline-flex;align-items:center;justify-content:center;
+  padding:0 7px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--ui-fg);
+  font-size:var(--fs-compact-10);font-weight:700;line-height:1;white-space:nowrap;text-align:center;
   --ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
 }
 .sync-indicator:active{background:var(--surface-hover);color:var(--on-surface-hover)}
 .sync-indicator[data-state="connected"]{
-  background:var(--status-success-bg);border-color:color-mix(in srgb,var(--on-success) 20%,var(--border));color:var(--on-success)
+  background:var(--status-success-bg);border-color:color-mix(in srgb,var(--on-success) 22%,var(--border));color:var(--on-success)
 }
 .sync-indicator[data-state="busy"]{background:var(--primary-soft);color:var(--on-primary-soft)}
-.sync-indicator[data-state="error"]{background:var(--status-error-bg);color:var(--on-error)}
+.sync-indicator[data-state="error"]{
+  background:var(--status-error-bg);border-color:color-mix(in srgb,var(--on-error) 22%,var(--border));color:var(--on-error)
+}
+.offline-warning{
+  position:absolute;z-index:80;top:calc(100% + 10px);right:0;
+  width:min(260px,calc(100vw - 28px));padding:10px 12px;
+  border:1px solid color-mix(in srgb,var(--on-error) 22%,var(--border));border-radius:12px;
+  background:var(--status-error-bg);color:var(--on-error);
+  box-shadow:var(--soft-shadow);font-size:var(--fs-xs);font-weight:400;line-height:1.5;text-align:left
+}
+.offline-warning::before{
+  content:"";position:absolute;right:16px;top:-6px;width:10px;height:10px;
+  border-left:1px solid color-mix(in srgb,var(--on-error) 22%,var(--border));
+  border-top:1px solid color-mix(in srgb,var(--on-error) 22%,var(--border));
+  background:var(--status-error-bg);transform:rotate(45deg)
+}
 
 .mobile-main{
   width:min(100%,var(--mobile-content-max));margin:0 auto;

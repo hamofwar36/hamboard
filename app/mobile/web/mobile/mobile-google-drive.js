@@ -89,7 +89,7 @@
       url.searchParams.set("spaces","appDataFolder");
       url.searchParams.set("pageSize","1000");
       url.searchParams.set("orderBy","createdTime asc");
-      url.searchParams.set("q","trashed=false and appProperties has { key='hamboardKind' and value='sync' }");
+      url.searchParams.set("q","trashed = false and appProperties has { key='hamboardKind' and value='sync' }");
       url.searchParams.set("fields","nextPageToken,files(id,size,appProperties)");
       if(pageToken)url.searchParams.set("pageToken",pageToken);
       const value=await (await authorizedFetch(url)).json();
@@ -135,7 +135,7 @@
       url.searchParams.set("spaces","appDataFolder");
       url.searchParams.set("pageSize","100");
       url.searchParams.set("orderBy","createdTime desc");
-      url.searchParams.set("q","trashed=false and appProperties has { key='hamboardKind' and value='manifest' }");
+      url.searchParams.set("q","trashed = false and appProperties has { key='hamboardKind' and value='manifest' }");
       url.searchParams.set("fields","nextPageToken,files(id,size,createdTime,appProperties)");
       if(pageToken)url.searchParams.set("pageToken",pageToken);
       const value=await (await authorizedFetch(url)).json();

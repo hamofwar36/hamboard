@@ -10,10 +10,10 @@
 <body>
   <div class="mobile-app" id="mobileApp">
     <header class="mobile-topbar">
-      <button class="icon-button" id="mobileBack" type="button" aria-label="보관함으로 돌아가기" hidden>
+      <button class="icon-button" id="mobileBack" type="button" aria-label="이전 화면으로" hidden>
         <i data-lucide="arrow-left" aria-hidden="true"></i>
       </button>
-      <div class="mobile-heading"><span class="mobile-eyebrow">HAMBOARD</span><h1 id="mobileTitle">보관함</h1></div>
+      <div class="mobile-heading"><h1 id="mobileTitle">보관함</h1></div>
       <button class="sync-indicator" id="syncIndicator" data-state="local" type="button">로그인</button>
     </header>
 
@@ -58,18 +58,74 @@
           </div>
         </div>
       </section>
+
+      <section id="menuScreen" class="mobile-screen page-screen" hidden>
+        <div class="page-menu-list">
+          <button id="menuSearch" type="button">
+            <span class="page-menu-icon"><i data-lucide="search" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>검색</strong><small>보관함 전체에서 문서를 찾습니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
+          <button id="menuCloud" type="button">
+            <span class="page-menu-icon"><i data-lucide="cloud" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>클라우드</strong><small>계정 연결과 데이터 불러오기를 관리합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
+          <button type="button" disabled>
+            <span class="page-menu-icon"><i data-lucide="settings" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>설정</strong><small>모바일 햄보드 설정을 관리합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+      </section>
+
+      <section id="searchScreen" class="mobile-screen page-screen" hidden>
+        <label class="search-field">
+          <i data-lucide="search" aria-hidden="true"></i>
+          <input id="librarySearch" type="search" placeholder="작품, 노트, 마인드맵 검색" autocomplete="off">
+        </label>
+        <div class="search-results" id="searchResults"></div>
+      </section>
+
+      <section id="cloudSourceScreen" class="mobile-screen page-screen" hidden>
+        <div class="cloud-account-card">
+          <span class="cloud-account-icon"><i data-lucide="cloud-check" aria-hidden="true"></i></span>
+          <span class="cloud-account-copy"><strong>계정 연결됨</strong><small>클라우드에 저장된 데이터를 선택해서 불러올 수 있습니다.</small></span>
+          <button id="cloudDisconnect" type="button">연결 해제</button>
+        </div>
+
+        <div class="cloud-source-status" id="cloudSourceStatus" role="status">불러올 데이터를 확인하고 있습니다.</div>
+
+        <section class="cloud-source-card">
+          <div class="cloud-source-head">
+            <span class="cloud-source-icon"><i data-lucide="refresh-cw" aria-hidden="true"></i></span>
+            <div><h2>동기화 데이터</h2><p>PC에서 자동으로 동기화된 최신 상태를 불러옵니다.</p></div>
+          </div>
+          <div class="cloud-source-meta" id="syncSourceMeta">확인 중…</div>
+          <button class="cloud-source-primary" id="loadSyncSource" type="button" disabled>동기화 데이터 불러오기</button>
+        </section>
+
+        <section class="cloud-source-card">
+          <div class="cloud-source-head">
+            <span class="cloud-source-icon"><i data-lucide="archive" aria-hidden="true"></i></span>
+            <div><h2>수동 백업</h2><p>PC에서 직접 만든 백업 중 원하는 시점을 선택합니다.</p></div>
+          </div>
+          <div class="backup-source-list" id="backupSourceList"></div>
+        </section>
+      </section>
     </main>
 
     <nav class="mobile-bottom-nav" aria-label="주요 탐색">
       <button class="bottom-nav-button active" id="libraryNav" type="button" aria-label="보관함">
-        <i data-lucide="library" aria-hidden="true"></i>
+        <span class="bottom-nav-icon"><i data-lucide="library" aria-hidden="true"></i></span>
         <span>보관함</span>
       </button>
-      <button class="bottom-nav-create" id="createNav" type="button" aria-label="새로 만들기">
-        <i data-lucide="plus" aria-hidden="true"></i>
+      <button class="bottom-nav-button bottom-nav-create" id="createNav" type="button" aria-label="새로 만들기">
+        <span class="bottom-nav-icon"><i data-lucide="plus" aria-hidden="true"></i></span>
+        <span>새로 만들기</span>
       </button>
       <button class="bottom-nav-button" id="menuNav" type="button" aria-label="메뉴">
-        <i data-lucide="menu" aria-hidden="true"></i>
+        <span class="bottom-nav-icon"><i data-lucide="menu" aria-hidden="true"></i></span>
         <span>메뉴</span>
       </button>
     </nav>
@@ -78,48 +134,12 @@
   <div class="nav-sheet-backdrop" id="createSheet" hidden>
     <section class="nav-sheet" role="dialog" aria-modal="true" aria-labelledby="createSheetTitle">
       <div class="nav-sheet-handle" aria-hidden="true"></div>
-      <header class="nav-sheet-header"><div><span>NEW</span><h2 id="createSheetTitle">새로 만들기</h2></div><button class="sheet-close" id="createSheetClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></header>
+      <header class="nav-sheet-header"><h2 id="createSheetTitle">새로 만들기</h2><button class="sheet-close" id="createSheetClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></header>
       <div class="create-grid" aria-label="생성할 항목">
         <button type="button" disabled><i data-lucide="folder-plus" aria-hidden="true"></i><span><strong>폴더</strong><small>다음 단계에서 연결</small></span></button>
         <button type="button" disabled><i data-lucide="scroll-text" aria-hidden="true"></i><span><strong>작품</strong><small>다음 단계에서 연결</small></span></button>
         <button type="button" disabled><i data-lucide="notebook-text" aria-hidden="true"></i><span><strong>노트</strong><small>다음 단계에서 연결</small></span></button>
         <button type="button" disabled><i data-lucide="network" aria-hidden="true"></i><span><strong>마인드맵</strong><small>다음 단계에서 연결</small></span></button>
-      </div>
-    </section>
-  </div>
-
-  <div class="nav-sheet-backdrop" id="mainMenuSheet" hidden>
-    <section class="nav-sheet" role="dialog" aria-modal="true" aria-labelledby="mainMenuTitle">
-      <div class="nav-sheet-handle" aria-hidden="true"></div>
-      <header class="nav-sheet-header"><div><span>HAMBOARD</span><h2 id="mainMenuTitle">메뉴</h2></div><button class="sheet-close" id="mainMenuClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></header>
-      <div class="main-menu-list">
-        <button id="menuSearch" type="button"><i data-lucide="search" aria-hidden="true"></i><span><strong>검색</strong><small>보관함 전체에서 찾기</small></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
-        <button id="menuCloud" type="button"><i data-lucide="cloud-download" aria-hidden="true"></i><span><strong>클라우드 동기화</strong><small>Google Drive 연결 및 불러오기</small></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
-        <button type="button" disabled><i data-lucide="settings" aria-hidden="true"></i><span><strong>설정</strong><small>다음 단계에서 구성</small></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
-      </div>
-    </section>
-  </div>
-
-  <div class="nav-sheet-backdrop" id="searchSheet" hidden>
-    <section class="nav-sheet search-sheet" role="dialog" aria-modal="true" aria-labelledby="searchSheetTitle">
-      <div class="nav-sheet-handle" aria-hidden="true"></div>
-      <header class="nav-sheet-header"><div><span>SEARCH</span><h2 id="searchSheetTitle">검색</h2></div><button class="sheet-close" id="searchSheetClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></header>
-      <label class="search-field">
-        <i data-lucide="search" aria-hidden="true"></i>
-        <input id="librarySearch" type="search" placeholder="작품, 노트, 마인드맵 검색" autocomplete="off">
-      </label>
-      <div class="search-results" id="searchResults"></div>
-    </section>
-  </div>
-
-  <div class="cloud-sheet-backdrop" id="cloudSheet" hidden>
-    <section class="cloud-sheet" role="dialog" aria-modal="true" aria-labelledby="cloudSheetTitle">
-      <div class="cloud-sheet-handle" aria-hidden="true"></div>
-      <header><div><span>GOOGLE DRIVE</span><h2 id="cloudSheetTitle">클라우드 연결</h2></div><button id="cloudSheetClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></header>
-      <p id="cloudSheetMessage">PC에서 동기화한 햄보드 데이터를 같은 Google 계정으로 불러옵니다.</p>
-      <div class="cloud-actions">
-        <button class="cloud-secondary" id="cloudDisconnect" type="button" hidden>연결 해제</button>
-        <button class="cloud-primary" id="cloudConnect" type="button">Google로 로그인</button>
       </div>
     </section>
   </div>

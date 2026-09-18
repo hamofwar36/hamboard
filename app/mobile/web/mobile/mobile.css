@@ -561,23 +561,22 @@ svg.lucide{stroke:currentColor}
 .bottom-nav-create:active .bottom-nav-icon{transform:translateY(1px)}
 
 .nav-sheet-backdrop{
-  position:fixed;z-index:110;inset:0;display:flex;align-items:flex-end;justify-content:center;padding:16px;
-  background:rgba(25,20,30,.38);backdrop-filter:blur(5px)
+  position:fixed;z-index:110;inset:0;display:flex;align-items:flex-end;justify-content:center;
+  padding:0 max(12px,calc((100vw - var(--mobile-content-max))/2)) calc(env(safe-area-inset-bottom) + 68px);
+  background:transparent
 }
 .nav-sheet{
-  width:min(100%,560px);max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;
-  border:1px solid var(--border);border-radius:20px;background:var(--surface);box-shadow:var(--popup-shadow);
+  width:min(100%,420px);max-height:calc(100dvh - 96px);overflow-y:auto;overscroll-behavior:contain;
+  border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:var(--popup-shadow);
   color:var(--ui-fg);--ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
 }
-.create-sheet-panel{padding:0 0 calc(env(safe-area-inset-bottom) + 4px);overflow:hidden}
+.create-sheet-panel{padding:4px 0;overflow:hidden}
 .sheet-close{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:12px;background:transparent;color:var(--ui-muted)}
 .sheet-close:active{background:var(--surface-hover);color:var(--on-surface-hover)}
 .sheet-close svg{width:19px;height:19px}
-.create-chooser-close{margin:4px 6px 2px auto}
-
-.create-list{display:grid;border-top:1px solid var(--border)}
+.create-list{display:grid}
 .create-list button{
-  width:100%;min-height:52px;display:grid;grid-template-columns:24px minmax(0,1fr) 20px;align-items:center;gap:10px;
+  width:100%;min-height:52px;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:10px;
   padding:0 16px;border:0;border-bottom:1px solid var(--border);border-radius:0;background:var(--surface);
   color:var(--ui-fg);text-align:left;
   --ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
@@ -588,7 +587,6 @@ svg.lucide{stroke:currentColor}
   --ui-fg:var(--on-secondary-soft);--ui-muted:var(--on-secondary-soft-muted)
 }
 .create-list button>svg:first-child{width:19px;height:19px;color:var(--ui-muted)}
-.create-list button>svg:last-child{width:16px;height:16px;justify-self:end;color:var(--ui-muted)}
 .create-list strong{font-size:var(--fs-sm);font-weight:700}
 
 .nav-sheet-backdrop.form-open{align-items:center;padding:16px}

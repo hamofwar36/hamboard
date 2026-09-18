@@ -182,25 +182,24 @@
   </div>
 
   <div class="nav-sheet-backdrop" id="createSheet" hidden>
-    <section class="nav-sheet create-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="createSheetTitle">
-      <div class="nav-sheet-handle" aria-hidden="true"></div>
-      <header class="nav-sheet-header">
-        <h2 id="createSheetTitle">새 문서</h2>
-        <button class="sheet-close" id="createSheetClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button>
-      </header>
+    <section class="nav-sheet create-sheet-panel" role="dialog" aria-modal="true" aria-label="새 문서 만들기">
+      <button class="sheet-close create-chooser-close" id="createSheetClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button>
 
-      <div class="create-grid" id="createChooser" aria-label="생성할 항목">
-        <button type="button" data-create-type="folder"><i data-lucide="folder-plus" aria-hidden="true"></i><span><strong>폴더</strong><small>문서를 묶어 정리합니다.</small></span></button>
-        <button type="button" data-create-type="project"><i data-lucide="scroll-text" aria-hidden="true"></i><span><strong>작품</strong><small>단편 또는 장편을 만듭니다.</small></span></button>
-        <button type="button" data-create-type="note"><i data-lucide="notebook-text" aria-hidden="true"></i><span><strong>노트</strong><small>자유로운 문서를 만듭니다.</small></span></button>
-        <button type="button" data-create-type="mindmap"><i data-lucide="network" aria-hidden="true"></i><span><strong>마인드맵</strong><small>아이디어 관계도를 만듭니다.</small></span></button>
+      <div class="create-list" id="createChooser" aria-label="생성할 항목">
+        <button type="button" data-create-type="folder"><i data-lucide="folder-plus" aria-hidden="true"></i><strong>폴더</strong><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <button type="button" data-create-type="project"><i data-lucide="scroll-text" aria-hidden="true"></i><strong>작품</strong><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <button type="button" data-create-type="note"><i data-lucide="notebook-text" aria-hidden="true"></i><strong>노트</strong><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <button type="button" data-create-type="mindmap"><i data-lucide="network" aria-hidden="true"></i><strong>마인드맵</strong><i data-lucide="chevron-right" aria-hidden="true"></i></button>
       </div>
 
       <form class="create-form" id="createForm" hidden>
-        <div class="create-form-kind">
-          <span class="create-form-kind-icon" id="createFormIcon"><i data-lucide="scroll-text" aria-hidden="true"></i></span>
-          <span><strong id="createFormKind">작품</strong><small id="createFormHint">새 문서 정보를 입력합니다.</small></span>
-        </div>
+        <header class="create-form-header">
+          <div class="create-form-kind">
+            <span class="create-form-kind-icon" id="createFormIcon"><i data-lucide="scroll-text" aria-hidden="true"></i></span>
+            <strong id="createFormKind">작품</strong>
+          </div>
+          <button class="sheet-close" id="createFormClose" type="button" aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button>
+        </header>
 
         <div class="create-project-kind" id="createProjectKind" role="group" aria-label="작품 종류" hidden>
           <button type="button" data-project-kind="short" class="active"><i data-lucide="file" aria-hidden="true"></i><span>단편</span></button>

@@ -15,37 +15,37 @@
   const configuredClientId=()=>String(root.HAMBOARD_MOBILE_CONFIG?.googleOAuthClientId||"").trim();
   const authorizedHint=()=>{try{return localStorage.getItem(AUTHORIZED_HINT_KEY)==="1"}catch{return false}};
   const setAuthorizedHint=value=>{try{if(value)localStorage.setItem(AUTHORIZED_HINT_KEY,"1");else localStorage.removeItem(AUTHORIZED_HINT_KEY)}catch{}};
-  const clearSessionToken=()=>{
+  const clearStoredToken=()=>{
     accessToken="";
     accessTokenExpiresAt=0;
-    try{sessionStorage.removeItem(ACCESS_TOKEN_KEY);sessionStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)}catch{}
+    try{localStorage.removeItem(ACCESS_TOKEN_KEY);localStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)}catch{}
   };
-  const persistSessionToken=(token,expiresInSeconds)=>{
+  const persistStoredToken=(token,expiresInSeconds)=>{
     accessToken=String(token||"");
     const ttl=Math.max(0,Number(expiresInSeconds)||0);
     accessTokenExpiresAt=Date.now()+Math.max(0,ttl*1000-30000);
     try{
       if(accessToken&&accessTokenExpiresAt>Date.now()){
-        sessionStorage.setItem(ACCESS_TOKEN_KEY,accessToken);
-        sessionStorage.setItem(ACCESS_TOKEN_EXPIRES_KEY,String(accessTokenExpiresAt))
-      }else clearSessionToken()
+        localStorage.setItem(ACCESS_TOKEN_KEY,accessToken);
+        localStorage.setItem(ACCESS_TOKEN_EXPIRES_KEY,String(accessTokenExpiresAt))
+      }else clearStoredToken()
     }catch{}
   };
-  const restoreSessionToken=()=>{
+  const restoreStoredToken=()=>{
     try{
-      const token=String(sessionStorage.getItem(ACCESS_TOKEN_KEY)||"");
-      const expiresAt=Number(sessionStorage.getItem(ACCESS_TOKEN_EXPIRES_KEY))||0;
+      const token=String(localStorage.getItem(ACCESS_TOKEN_KEY)||"");
+      const expiresAt=Number(localStorage.getItem(ACCESS_TOKEN_EXPIRES_KEY))||0;
       if(token&&expiresAt>Date.now()){accessToken=token;accessTokenExpiresAt=expiresAt;return true}
     }catch{}
-    clearSessionToken();
+    clearStoredToken();
     return false
   };
-  restoreSessionToken();
+  restoreStoredToken();
   const driveError=async response=>{let detail="";try{const body=await response.json();detail=String(body?.error?.message||body?.error||"")}catch{}const error=new Error(`google-drive-http-${response.status}${detail?`: ${detail}`:""}`);error.status=response.status;throw error};
   const authorizedFetch=async(url,options={})=>{
     if(!accessToken)throw new Error("google-drive-not-connected");
     const response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${accessToken}`}});
-    if(response.status===401){clearSessionToken();throw new Error("google-drive-reconnect-required")}
+    if(response.status===401){clearStoredToken();throw new Error("google-drive-reconnect-required")}
     if(!response.ok)return driveError(response);
     return response
   };
@@ -84,7 +84,7 @@
         if(response?.error){reject(new Error(`google-oauth-${response.error}`));return}
         const token=String(response?.access_token||"");
         if(!token){reject(new Error("google-oauth-access-token-missing"));return}
-        persistSessionToken(token,response?.expires_in);
+        persistStoredToken(token,response?.expires_in);
         setAuthorizedHint(true);
         resolve(status())
       };
@@ -95,7 +95,7 @@
 
   function disconnect(){
     const token=accessToken;
-    clearSessionToken();
+    clearStoredToken();
     setAuthorizedHint(false);
     if(token&&root.google?.accounts?.oauth2?.revoke)root.google.accounts.oauth2.revoke(token,()=>{});
     return status()

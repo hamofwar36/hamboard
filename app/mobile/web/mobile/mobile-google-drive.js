@@ -7,121 +7,145 @@
   const MAX_SYNC_OBJECTS=50000;
   const MAX_BACKUP_MANIFEST_BYTES=16*1024*1024;
   const MAX_BACKUPS=100;
-  const AUTHORIZED_HINT_KEY="hamboard.mobile.googleAuthorized";
-  const ACCESS_TOKEN_KEY="hamboard.mobile.googleAccessToken";
-  const ACCESS_TOKEN_EXPIRES_KEY="hamboard.mobile.googleAccessTokenExpiresAt";
-  let accessToken="",accessTokenExpiresAt=0,tokenClient=null,scriptPromise=null;
 
-  const configuredClientId=()=>String(root.HAMBOARD_MOBILE_CONFIG?.googleOAuthClientId||"").trim();
-  const authorizedHint=()=>{try{return localStorage.getItem(AUTHORIZED_HINT_KEY)==="1"}catch{return false}};
-  const setAuthorizedHint=value=>{try{if(value)localStorage.setItem(AUTHORIZED_HINT_KEY,"1");else localStorage.removeItem(AUTHORIZED_HINT_KEY)}catch{}};
-  const clearStoredToken=()=>{
-    accessToken="";
-    accessTokenExpiresAt=0;
-    try{localStorage.removeItem(ACCESS_TOKEN_KEY);localStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)}catch{}
-  };
-  const persistStoredToken=(token,expiresInSeconds)=>{
-    accessToken=String(token||"");
-    const ttl=Math.max(0,Number(expiresInSeconds)||0);
-    accessTokenExpiresAt=Date.now()+Math.max(0,ttl*1000-30000);
-    try{
-      if(accessToken&&accessTokenExpiresAt>Date.now()){
-        localStorage.setItem(ACCESS_TOKEN_KEY,accessToken);
-        localStorage.setItem(ACCESS_TOKEN_EXPIRES_KEY,String(accessTokenExpiresAt))
-      }else clearStoredToken()
-    }catch{}
-  };
-  const restoreStoredToken=()=>{
-    try{
-      const token=String(localStorage.getItem(ACCESS_TOKEN_KEY)||"");
-      const expiresAt=Number(localStorage.getItem(ACCESS_TOKEN_EXPIRES_KEY))||0;
-      if(token&&expiresAt>Date.now()){accessToken=token;accessTokenExpiresAt=expiresAt;return true}
-    }catch{}
-    clearStoredToken();
-    return false
-  };
-  restoreStoredToken();
-  const driveError=async response=>{let detail="";try{const body=await response.json();detail=String(body?.error?.message||body?.error||"")}catch{}const error=new Error(`google-drive-http-${response.status}${detail?`: ${detail}`:""}`);error.status=response.status;throw error};
-  const authorizedFetch=async(url,options={})=>{
-    if(!accessToken)throw new Error("google-drive-not-connected");
-    const response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${accessToken}`}});
-    if(response.status===401){clearStoredToken();throw new Error("google-drive-reconnect-required")}
-    if(!response.ok)return driveError(response);
-    return response
-  };
-  const sha256Hex=async bytes=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(value=>value.toString(16).padStart(2,"0")).join("");
-  const property=(properties,name,fallback="")=>String(properties?.[`hamboard${name}`]??fallback);
-  const validRemoteId=value=>/^[A-Za-z0-9_-]+$/.test(String(value||""));
-  const validSha=value=>/^[0-9a-f]{64}$/.test(String(value||"").toLowerCase());
+  let accessToken="";
+  let accessTokenExpiresAt=0;
+  let sessionAuthenticated=false;
+  let sessionChecked=false;
+  let sessionPromise=null;
+  let tokenPromise=null;
 
-  function loadIdentityScript(){
-    if(root.google?.accounts?.oauth2)return Promise.resolve();
-    if(scriptPromise)return scriptPromise;
-    scriptPromise=new Promise((resolve,reject)=>{
-      const existing=document.querySelector("script[data-hamboard-google-identity]"),script=existing||document.createElement("script");
-      const done=()=>root.google?.accounts?.oauth2?resolve():reject(new Error("google-identity-unavailable"));
-      script.addEventListener("load",done,{once:true});
-      script.addEventListener("error",()=>reject(new Error("google-identity-load-failed")),{once:true});
-      if(!existing){
-        script.src="https://accounts.google.com/gsi/client";
-        script.async=true;
-        script.defer=true;
-        script.dataset.hamboardGoogleIdentity="";
-        document.head.append(script)
-      }
-    }).catch(error=>{scriptPromise=null;throw error});
-    return scriptPromise
-  }
-
-  async function requestToken(prompt=""){
-    const clientId=configuredClientId();
-    if(!clientId)throw new Error("google-oauth-web-client-id-not-configured");
-    if(!root.isSecureContext&&!/^(localhost|127\.0\.0\.1)$/i.test(location.hostname))throw new Error("google-oauth-secure-origin-required");
-    await loadIdentityScript();
-    return new Promise((resolve,reject)=>{
-      if(!tokenClient)tokenClient=root.google.accounts.oauth2.initTokenClient({client_id:clientId,scope:DRIVE_SCOPE,callback:()=>{}});
-      tokenClient.callback=response=>{
-        if(response?.error){reject(new Error(`google-oauth-${response.error}`));return}
-        const token=String(response?.access_token||"");
-        if(!token){reject(new Error("google-oauth-access-token-missing"));return}
-        persistStoredToken(token,response?.expires_in);
-        setAuthorizedHint(true);
-        resolve(status())
-      };
-      tokenClient.error_callback=response=>reject(new Error(`google-oauth-${response?.type||"popup-failed"}`));
-      tokenClient.requestAccessToken({prompt})
-    })
-  }
-
-  async function reconnectSilently(){
-    const current=status();
-    if(current.connected||!current.authorized)return current;
-    return requestToken("")
-  }
-
-  async function connect(){
-    const current=status();
-    if(current.connected)return current;
-    return requestToken(current.authorized?"select_account":"consent")
-  }
-
-  function disconnect(){
-    const token=accessToken;
-    clearStoredToken();
-    setAuthorizedHint(false);
-    if(token&&root.google?.accounts?.oauth2?.revoke)root.google.accounts.oauth2.revoke(token,()=>{});
-    return status()
-  }
+  const configuredAuthBaseUrl=()=>String(root.HAMBOARD_MOBILE_CONFIG?.authBaseUrl||"").trim().replace(/\/$/,"");
+  const clearAccessToken=()=>{accessToken="";accessTokenExpiresAt=0};
 
   function status(){
     return {
       provider:"google-drive",
-      configured:!!configuredClientId(),
+      configured:!!configuredAuthBaseUrl(),
       connected:!!accessToken&&accessTokenExpiresAt>Date.now(),
-      authorized:authorizedHint(),
+      authorized:sessionAuthenticated,
+      checking:!sessionChecked,
       scope:"drive.appdata"
     }
   }
+
+  async function authFetch(path,options={}){
+    const base=configuredAuthBaseUrl();
+    if(!base)throw new Error("hamboard-auth-base-url-not-configured");
+    const response=await fetch(`${base}${path}`,{
+      ...options,
+      credentials:"include",
+      mode:"cors",
+      cache:"no-store",
+      headers:{Accept:"application/json",...(options.headers||{})}
+    });
+    return response
+  }
+
+  async function checkSession({force=false}={}){
+    if(sessionChecked&&!force)return status();
+    if(sessionPromise)return sessionPromise;
+    sessionPromise=(async()=>{
+      try{
+        const response=await authFetch("/api/session");
+        if(!response.ok)throw new Error(`hamboard-auth-session-http-${response.status}`);
+        const value=await response.json();
+        sessionAuthenticated=value?.authenticated===true;
+        sessionChecked=true;
+        if(!sessionAuthenticated)clearAccessToken();
+        return status()
+      }finally{sessionPromise=null}
+    })();
+    return sessionPromise
+  }
+
+  async function requestAccessToken({force=false}={}){
+    if(!force&&accessToken&&accessTokenExpiresAt>Date.now())return status();
+    if(tokenPromise)return tokenPromise;
+    tokenPromise=(async()=>{
+      try{
+        const session=await checkSession();
+        if(!session.authorized)throw new Error("hamboard-auth-session-required");
+        const response=await authFetch("/api/token",{method:"POST"});
+        if(response.status===401){
+          sessionAuthenticated=false;
+          sessionChecked=true;
+          clearAccessToken();
+          throw new Error("hamboard-auth-session-expired")
+        }
+        if(!response.ok)throw new Error(`hamboard-auth-token-http-${response.status}`);
+        const value=await response.json();
+        const token=String(value?.access_token||"");
+        if(!token)throw new Error("hamboard-auth-access-token-missing");
+        accessToken=token;
+        accessTokenExpiresAt=Date.now()+Math.max(0,(Number(value?.expires_in)||3600)*1000-30000);
+        sessionAuthenticated=true;
+        sessionChecked=true;
+        return status()
+      }finally{tokenPromise=null}
+    })();
+    return tokenPromise
+  }
+
+  async function reconnectSilently(){
+    const current=status();
+    if(current.connected)return current;
+    const session=await checkSession();
+    if(!session.authorized)return session;
+    return requestAccessToken()
+  }
+
+  async function connect(){
+    const base=configuredAuthBaseUrl();
+    if(!base)throw new Error("hamboard-auth-base-url-not-configured");
+    const returnTo=location.href;
+    const target=`${base}/oauth/start?return_to=${encodeURIComponent(returnTo)}`;
+    location.assign(target);
+    return {...status(),redirecting:true}
+  }
+
+  async function disconnect(){
+    try{
+      if(configuredAuthBaseUrl())await authFetch("/api/logout",{method:"POST"})
+    }finally{
+      clearAccessToken();
+      sessionAuthenticated=false;
+      sessionChecked=true
+    }
+    return status()
+  }
+
+  const driveError=async response=>{
+    let detail="";
+    try{
+      const body=await response.json();
+      detail=String(body?.error?.message||body?.error||"")
+    }catch{}
+    const error=new Error(`google-drive-http-${response.status}${detail?`: ${detail}`:""}`);
+    error.status=response.status;
+    throw error
+  };
+
+  async function authorizedFetch(url,options={},retry=true){
+    await requestAccessToken();
+    let response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${accessToken}`}});
+    if(response.status===401&&retry){
+      clearAccessToken();
+      await requestAccessToken({force:true});
+      response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${accessToken}`}})
+    }
+    if(response.status===401){
+      clearAccessToken();
+      throw new Error("google-drive-reconnect-required")
+    }
+    if(!response.ok)return driveError(response);
+    return response
+  }
+
+  const sha256Hex=async bytes=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(value=>value.toString(16).padStart(2,"0")).join("");
+  const property=(properties,name,fallback="")=>String(properties?.[`hamboard${name}`]??fallback);
+  const validRemoteId=value=>/^[A-Za-z0-9_-]+$/.test(String(value||""));
+  const validSha=value=>/^[0-9a-f]{64}$/.test(String(value||"").toLowerCase());
 
   async function listSyncObjects(){
     const objects=[];let pageToken="";
@@ -209,6 +233,6 @@
   }
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,listSyncObjects,getSyncObject,listBackups,getBackupManifest,configuredClientId,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

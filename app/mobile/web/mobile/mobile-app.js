@@ -276,6 +276,7 @@
       }catch(error){
         silentReconnectFailed=true;
         console.warn("모바일 클라우드 자동 재연결 실패",error);
+        logDiagnostic("warn","CLOUD","자동 재연결에 실패했습니다.",error);
         return googleDrive.status()
       }finally{
         silentReconnectPromise=null;
@@ -734,11 +735,13 @@
         }else syncSourceMeta.textContent="저장된 동기화 데이터가 없습니다."
       }catch(error){
         console.error("모바일 동기화 목록 확인 실패",error);
+        logDiagnostic("error","CLOUD","동기화 목록 확인에 실패했습니다.",error);
         syncSourceMeta.textContent="동기화 기록을 확인할 수 없습니다.";
         problems.push("동기화 데이터")
       }
     }else{
       console.error("모바일 동기화 목록 확인 실패",syncResult.reason);
+      logDiagnostic("error","CLOUD","동기화 데이터 확인에 실패했습니다.",syncResult.reason);
       syncSourceMeta.textContent="동기화 데이터를 확인하지 못했습니다.";
       problems.push("동기화 데이터")
     }
@@ -750,6 +753,7 @@
       if(backupResult.value.truncated)problems.push("일부 백업 목록")
     }else{
       console.error("모바일 백업 목록 확인 실패",backupResult.reason);
+      logDiagnostic("error","CLOUD","수동 백업 목록 확인에 실패했습니다.",backupResult.reason);
       backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 목록을 확인하지 못했습니다."));
       problems.push("수동 백업")
     }
@@ -784,6 +788,7 @@
       openLibrary()
     }catch(error){
       console.error("모바일 백업 불러오기 실패",error);
+      logDiagnostic("error","CLOUD","수동 백업 불러오기에 실패했습니다.",error);
       cloudSourceStatus.textContent=cloudErrorMessage(error);
       renderBackupSources(cloudBackupEntries);
       if(String(error?.message||"").includes("reconnect"))renderAccountButton()
@@ -799,6 +804,7 @@
       await syncFromCloud(cloudSyncListing)
     }catch(error){
       console.error("모바일 동기화 데이터 불러오기 실패",error);
+      logDiagnostic("error","CLOUD","동기화 데이터 불러오기에 실패했습니다.",error);
       renderAccountButton();
       cloudSourceStatus.textContent=cloudErrorMessage(error)
     }finally{
@@ -829,6 +835,7 @@
         status=renderAccountButton()
       }catch(error){
         console.error("모바일 클라우드 로그인 실패",error);
+        logDiagnostic("error","CLOUD","클라우드 로그인에 실패했습니다.",error);
         silentReconnectFailed=true;
         renderAccountButton();
         cloudReturnView==="menu"?renderMenu():renderHome();
@@ -876,6 +883,7 @@
       refreshLucideIcons()
     }catch(error){
       console.error("모바일 저장소를 열지 못했습니다.",error);
+      logDiagnostic("error","REPOSITORY","모바일 저장소를 열지 못했습니다.",error);
       setStatus("모바일 저장소를 열지 못했습니다. 브라우저의 사이트 데이터 설정을 확인해 주세요.")
     }
   }
@@ -936,6 +944,7 @@
       openLibrary()
     }catch(error){
       console.error("모바일 데이터 불러오기 실패",error);
+      logDiagnostic("error","IMPORT","파일 데이터 불러오기에 실패했습니다.",error);
       setStatus("파일에서 햄보드 데이터를 불러오지 못했습니다.",{action:"다시 선택",run:()=>fileInput.click()})
     }
   };

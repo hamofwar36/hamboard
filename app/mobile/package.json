@@ -1,0 +1,11 @@
+{
+  "name": "hamboard-mobile-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hamboard mobile web app deployment package",
+  "scripts": {
+    "mobile:build": "node scripts/prepare-mobile-deploy.mjs",
+    "mobile:preview": "npm run mobile:build && node scripts/serve.mjs dist-mobile",
+    "qa:mobile-deploy": "node scripts/validate-mobile-deploy.mjs"
+  }
+}

@@ -125,7 +125,7 @@
     offlineWarning.hidden=online;
     if(!online){setIndicator("error","오프라인");return {...status,online:false}}
     if(!status.configured){setIndicator("error","설정 필요");return {...status,online:true}}
-    if(status.connected){setIndicator("connected","동기화 중");return {...status,online:true}}
+    if(status.connected||status.authorized){setIndicator("connected","동기화 중");return {...status,online:true}}
     setIndicator("local","로그인");
     return {...status,online:true}
   }

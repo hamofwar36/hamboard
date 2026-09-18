@@ -28,6 +28,21 @@
   const createNav=$("#createNav");
   const menuNav=$("#menuNav");
   const createSheet=$("#createSheet");
+  const createChooser=$("#createChooser");
+  const createForm=$("#createForm");
+  const createFormIcon=$("#createFormIcon");
+  const createFormKind=$("#createFormKind");
+  const createFormHint=$("#createFormHint");
+  const createProjectKind=$("#createProjectKind");
+  const createTitleLabel=$("#createTitleLabel");
+  const createTitleInput=$("#createTitleInput");
+  const createSubtitleField=$("#createSubtitleField");
+  const createSubtitleInput=$("#createSubtitleInput");
+  const createFolderLabel=$("#createFolderLabel");
+  const createFolderSelect=$("#createFolderSelect");
+  const createFormBack=$("#createFormBack");
+  const createFormStatus=$("#createFormStatus");
+  const createSubmit=$("#createSubmit");
   const menuCloud=$("#menuCloud");
   const menuSettings=$("#menuSettings");
   const modeSetting=$("#modeSetting");
@@ -57,7 +72,17 @@
   let cloudReturnView="library";
   let silentReconnectFailed=false;
   let silentReconnectPromise=null;
+  let activeCreateType="";
+  let createProjectKindValue="short";
   const diagnostics=[];
+  const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
+  const DEFAULT_STAGE_COLORS=Object.freeze(["#A9D6FF","#BDE7C4","#F6D872","#FFB8AE"]);
+  const CREATE_TYPES=Object.freeze({
+    folder:{label:"폴더",icon:"folder-plus",hint:"문서를 묶어 정리할 폴더를 만듭니다.",defaultTitle:"새 폴더"},
+    project:{label:"작품",icon:"scroll-text",hint:"단편 또는 장편 작품을 만듭니다.",defaultTitle:"새 작품"},
+    note:{label:"노트",icon:"notebook-text",hint:"자유롭게 내용을 정리할 노트를 만듭니다.",defaultTitle:"새 노트"},
+    mindmap:{label:"마인드맵",icon:"network",hint:"아이디어와 관계를 정리할 마인드맵을 만듭니다.",defaultTitle:"새 마인드맵"}
+  });
   const MOBILE_THEMES=Object.freeze({
     "cotton-candy":{name:"코튼캔디",a:"#B8DBFF",b:"#FFB4CF"},
     "mint-butter":{name:"멜론커스터드",a:"#BDE7C4",b:"#F7E28E"},
@@ -100,6 +125,156 @@
   const allBlocks=unit=>{const result=[],walk=nodes=>(nodes||[]).forEach(node=>{result.push(node);walk(node.children)});for(const stage of unit?.stageDefs||[])walk(unit?.stages?.[stage.id]);return result};
   const projectStats=project=>{const units=project.kind==="long"?(project.episodes||[]):[project],blocks=units.flatMap(allBlocks);return {units:units.length,blocks:blocks.length,completed:blocks.filter(block=>block.completed).length}};
   const scriptLabels={dialogue:"대사",narration:"지문",background:"배경",shot:"구도",page:"페이지",cut:"컷"};
+
+  const uid=()=>globalThis.crypto?.randomUUID?.()||`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
+  const randomCardColor=()=>CARD_COLORS[Math.floor(Math.random()*CARD_COLORS.length)]||CARD_COLORS[0];
+
+  function defaultStoryStages(){
+    const stageDefs=["기","승","전","결"].map((name,index)=>({id:uid(),name,hint:"",color:DEFAULT_STAGE_COLORS[index]}));
+    const stages={};
+    for(const stage of stageDefs)stages[stage.id]=[];
+    return {stageDefs,stages}
+  }
+
+  function orderedFolders(state=snapshot()){
+    const folders=Array.isArray(state?.folders)?state.folders:[],children=new Map(),roots=[],seen=new Set();
+    for(const folder of folders){
+      const id=String(folder?.id||"");
+      if(!id)continue;
+      const parent=folder?.parentId?String(folder.parentId):"";
+      if(parent&&folders.some(item=>String(item?.id||"")===parent)){
+        if(!children.has(parent))children.set(parent,[]);
+        children.get(parent).push(folder)
+      }else roots.push(folder)
+    }
+    const rows=[];
+    const walk=(items,depth)=>{
+      for(const folder of items){
+        const id=String(folder?.id||"");
+        if(!id||seen.has(id))continue;
+        seen.add(id);
+        rows.push({id,name:String(folder.name||"이름 없는 폴더"),depth});
+        walk(children.get(id)||[],depth+1)
+      }
+    };
+    walk(roots,0);
+    for(const folder of folders){
+      const id=String(folder?.id||"");
+      if(id&&!seen.has(id))rows.push({id,name:String(folder.name||"이름 없는 폴더"),depth:0})
+    }
+    return rows
+  }
+
+  function fillCreateFolderOptions(forFolder=false){
+    createFolderSelect.replaceChildren();
+    const first=document.createElement("option");
+    first.value="";
+    first.textContent=forFolder?"최상위 폴더":"폴더 없음";
+    createFolderSelect.append(first);
+    for(const folder of orderedFolders()){
+      const option=document.createElement("option");
+      option.value=folder.id;
+      option.textContent=`${"　".repeat(Math.min(4,folder.depth))}${folder.name}`;
+      createFolderSelect.append(option)
+    }
+  }
+
+  function resetCreateSheet(){
+    activeCreateType="";
+    createProjectKindValue="short";
+    createChooser.hidden=false;
+    createForm.hidden=true;
+    createFormStatus.hidden=true;
+    createFormStatus.textContent="";
+    createTitleInput.value="";
+    createSubtitleInput.value="";
+    createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
+    $("#createSheetTitle").textContent="새 문서"
+  }
+
+  function openCreateForm(type){
+    const config=CREATE_TYPES[type];
+    if(!config)return;
+    activeCreateType=type;
+    createProjectKindValue="short";
+    createChooser.hidden=true;
+    createForm.hidden=false;
+    createProjectKind.hidden=type!=="project";
+    createSubtitleField.hidden=type==="folder";
+    createTitleLabel.textContent=type==="folder"?"폴더 이름":"제목";
+    createFolderLabel.innerHTML=type==="folder"?"상위 폴더 <small>· 선택</small>":"폴더 <small>· 선택</small>";
+    createFormKind.textContent=config.label;
+    createFormHint.textContent=config.hint;
+    createFormIcon.innerHTML=`<i data-lucide="${config.icon}" aria-hidden="true"></i>`;
+    createTitleInput.value=config.defaultTitle;
+    createSubtitleInput.value="";
+    fillCreateFolderOptions(type==="folder");
+    createFormStatus.hidden=true;
+    createFormStatus.textContent="";
+    $("#createSheetTitle").textContent=`새 ${config.label}`;
+    createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
+    refreshLucideIcons();
+    requestAnimationFrame(()=>{createTitleInput.focus();createTitleInput.select()})
+  }
+
+  async function createNewDocument(){
+    const type=activeCreateType,config=CREATE_TYPES[type];
+    if(!config)return;
+    const titleValue=createTitleInput.value.trim()||config.defaultTitle;
+    const subtitle=createSubtitleInput.value.trim(),folderId=createFolderSelect.value?String(createFolderSelect.value):null;
+    const state=snapshot(),now=new Date().toISOString(),color=randomCardColor(),id=uid();
+    state.folders=Array.isArray(state.folders)?state.folders:[];
+    state.projects=Array.isArray(state.projects)?state.projects:[];
+    state.notes=Array.isArray(state.notes)?state.notes:[];
+    state.mindmaps=Array.isArray(state.mindmaps)?state.mindmaps:[];
+
+    let createdType="",createdId=id;
+    if(type==="folder"){
+      state.folders.push({id,name:titleValue,subtitle:"",parentId:folderId})
+    }else if(type==="note"){
+      state.notes.push({
+        id,title:titleValue,subtitle,deadline:"",folderId,color,icon:"notebook-text",cardImageAssetId:"",
+        content:"",characters:[],resources:[],memos:[],updatedAt:now
+      });
+      createdType="note"
+    }else if(type==="mindmap"){
+      state.mindmaps.push({
+        id,title:titleValue,subtitle,deadline:"",folderId,color,icon:"network",cardImageAssetId:"",
+        nodes:[],groups:[],edges:[],viewport:{x:40,y:40,zoom:1},updatedAt:now
+      });
+      createdType="mindmap"
+    }else if(type==="project"){
+      const project={
+        id,title:titleValue,subtitle,deadline:"",folderId,color,icon:"scroll-text",cardImageAssetId:"",
+        kind:createProjectKindValue==="long"?"long":"short",characters:[],resources:[],memos:[],updatedAt:now
+      };
+      if(project.kind==="long")project.episodes=[];
+      else Object.assign(project,defaultStoryStages());
+      state.projects.push(project);
+      createdType="project"
+    }else return;
+
+    createSubmit.disabled=true;
+    createFormStatus.hidden=true;
+    try{
+      await repository.replaceState(state);
+      logDiagnostic("info","CREATE",`${config.label}을 만들었습니다.`);
+      closeBottomSheet(createSheet);
+      resetCreateSheet();
+      if(createdType)openDocument(createdType,createdId);
+      else{
+        renderHome();
+        setStatus("새 폴더를 만들었습니다.");
+        setTimeout(()=>{if(!libraryScreen.hidden)renderLibrary()},1600)
+      }
+    }catch(error){
+      logDiagnostic("error","REPOSITORY",`${config.label} 저장에 실패했습니다.`,error);
+      createFormStatus.textContent="저장하지 못했습니다. 다시 시도해 주세요.";
+      createFormStatus.hidden=false
+    }finally{
+      createSubmit.disabled=false
+    }
+  }
 
   function logDiagnostic(level,area,message,error=null){
     diagnostics.unshift({
@@ -890,10 +1065,22 @@
 
   backButton.onclick=handleBack;
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
-  createNav.onclick=()=>openBottomSheet(createSheet);
+  createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
-  $("#createSheetClose").onclick=()=>closeBottomSheet(createSheet);
-  createSheet.onclick=event=>{if(event.target===createSheet)closeBottomSheet(createSheet)};
+  $("#createSheetClose").onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
+  createSheet.onclick=event=>{if(event.target===createSheet){closeBottomSheet(createSheet);resetCreateSheet()}};
+  createChooser.onclick=event=>{
+    const button=event.target.closest("[data-create-type]");
+    if(button)openCreateForm(button.dataset.createType)
+  };
+  createFormBack.onclick=resetCreateSheet;
+  createProjectKind.onclick=event=>{
+    const button=event.target.closest("[data-project-kind]");
+    if(!button)return;
+    createProjectKindValue=button.dataset.projectKind==="long"?"long":"short";
+    createProjectKind.querySelectorAll("[data-project-kind]").forEach(item=>item.classList.toggle("active",item===button))
+  };
+  createForm.onsubmit=event=>{event.preventDefault();createNewDocument()};
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
   menuSettings.onclick=()=>openSettings();

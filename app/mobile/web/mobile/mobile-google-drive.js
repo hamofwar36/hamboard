@@ -73,7 +73,7 @@
     return scriptPromise
   }
 
-  async function connect(){
+  async function requestToken(prompt=""){
     const clientId=configuredClientId();
     if(!clientId)throw new Error("google-oauth-web-client-id-not-configured");
     if(!root.isSecureContext&&!/^(localhost|127\.0\.0\.1)$/i.test(location.hostname))throw new Error("google-oauth-secure-origin-required");
@@ -89,8 +89,20 @@
         resolve(status())
       };
       tokenClient.error_callback=response=>reject(new Error(`google-oauth-${response?.type||"popup-failed"}`));
-      tokenClient.requestAccessToken({prompt:authorizedHint()?"":"consent"})
+      tokenClient.requestAccessToken({prompt})
     })
+  }
+
+  async function reconnectSilently(){
+    const current=status();
+    if(current.connected||!current.authorized)return current;
+    return requestToken("")
+  }
+
+  async function connect(){
+    const current=status();
+    if(current.connected)return current;
+    return requestToken(current.authorized?"select_account":"consent")
   }
 
   function disconnect(){
@@ -197,6 +209,6 @@
   }
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,disconnect,listSyncObjects,getSyncObject,listBackups,getBackupManifest,configuredClientId,sha256Hex
+    status,connect,reconnectSilently,disconnect,listSyncObjects,getSyncObject,listBackups,getBackupManifest,configuredClientId,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

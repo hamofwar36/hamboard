@@ -1,0 +1,13 @@
+name = "hamboard-auth"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+APP_ORIGIN = "https://app.hamboard.net"
+SESSION_DAYS = "90"
+GOOGLE_OAUTH_REDIRECT_URI = "https://auth.hamboard.net/oauth/callback"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hamboard-auth"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"

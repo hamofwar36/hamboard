@@ -1,0 +1,22 @@
+{
+  "identifier": "mascot-desktop",
+  "description": "Minimal capability for always-on-top desktop mascot windows",
+  "windows": [
+    "mascot-desktop-*"
+  ],
+  "permissions": [
+    "core:event:allow-emit",
+    "core:window:allow-close",
+    "core:window:allow-set-position",
+    "fs:allow-read-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/assets/*"
+        }
+      ]
+    },
+    "sql:default"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "identifier": "work-tracker-pip",
+  "description": "Minimal capability for standalone work tracker PIP windows",
+  "windows": [
+    "work-tracker-pip-*"
+  ],
+  "permissions": [
+    "core:window:allow-close",
+    "core:window:allow-set-always-on-top"
+  ]
+}

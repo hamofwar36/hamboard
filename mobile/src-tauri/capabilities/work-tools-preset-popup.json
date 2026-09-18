@@ -1,0 +1,16 @@
+{
+  "identifier": "work-tools-preset-popup",
+  "description": "Minimal capability for the standalone work tools preset popup",
+  "windows": [
+    "work-tools-preset-popup"
+  ],
+  "permissions": [
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "core:window:allow-close",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
+  ]
+}

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f4fb">
+  <title>햄보드 모바일 · 작품</title>
+  <link rel="stylesheet" href="./mobile.css">
+</head>
+<body>
+  <div class="mobile-app" id="mobileApp">
+    <header class="mobile-topbar">
+      <button class="icon-button" id="mobileBack" type="button" aria-label="작품 목록으로 돌아가기" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <div class="mobile-heading"><span class="mobile-eyebrow">HAMBOARD</span><h1 id="mobileTitle">작품</h1></div>
+      <button class="sync-indicator" id="syncIndicator" data-state="local" type="button">로컬</button>
+    </header>
+
+    <main class="mobile-main">
+      <section id="projectListScreen" class="mobile-screen" aria-labelledby="mobileTitle">
+        <div class="list-intro"><div><h2>내 작품</h2><p id="projectCount">불러오는 중…</p></div></div>
+        <label class="search-field">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+          <input id="projectSearch" type="search" placeholder="작품 제목이나 부제 검색" autocomplete="off">
+        </label>
+        <div id="projectStatus" class="status-card" role="status">작품 데이터를 확인하고 있습니다.</div>
+        <div id="projectList" class="project-list"></div>
+      </section>
+
+      <section id="projectReaderScreen" class="mobile-screen" hidden>
+        <article class="project-hero">
+          <span class="project-kind" id="readerKind"></span>
+          <h2 id="readerTitle"></h2>
+          <p id="readerSubtitle"></p>
+          <div class="project-meta" id="readerMeta"></div>
+        </article>
+        <div id="episodeList" class="episode-list"></div>
+        <div id="projectContent" class="project-content"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="cloud-sheet-backdrop" id="cloudSheet" hidden>
+    <section class="cloud-sheet" role="dialog" aria-modal="true" aria-labelledby="cloudSheetTitle">
+      <div class="cloud-sheet-handle" aria-hidden="true"></div>
+      <header><div><span>GOOGLE DRIVE</span><h2 id="cloudSheetTitle">클라우드 연결</h2></div><button id="cloudSheetClose" type="button" aria-label="닫기">×</button></header>
+      <p id="cloudSheetMessage">PC에서 동기화한 햄보드 데이터를 같은 Google 계정으로 불러옵니다.</p>
+      <label class="cloud-client-field" id="cloudClientField"><span>Google 웹 OAuth 클라이언트 ID</span><input id="googleClientId" type="text" inputmode="url" autocomplete="off" placeholder="000000000000-….apps.googleusercontent.com"></label>
+      <p class="cloud-help" id="cloudHelp">모바일 웹용 클라이언트 ID를 한 번 저장하면 이 브라우저에만 보관됩니다.</p>
+      <div class="cloud-actions">
+        <button class="cloud-secondary" id="cloudDisconnect" type="button" hidden>연결 해제</button>
+        <button class="cloud-primary" id="cloudConnect" type="button">저장하고 Google 로그인</button>
+      </div>
+    </section>
+  </div>
+
+  <input id="mobileDataFile" type="file" accept="application/json,.json" hidden>
+  <script src="../shared/sync-state-model.js"></script>
+  <script src="../shared/project-repository.js"></script>
+  <script src="./mobile-google-drive.js"></script>
+  <script src="./mobile-app.js"></script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+{
+  "errors": [],
+  "tests": [
+    {
+      "name": "character normal",
+      "characters": [
+        {
+          "avatar": true,
+          "gallery": 1
+        }
+      ],
+      "assets": 2,
+      "discarded": 0,
+      "saveDisabled": null,
+      "created": 2,
+      "revoked": 2,
+      "unreleased": 0,
+      "replacementPresent": false,
+      "writes": 1
+    },
+    {
+      "name": "character cancel",
+      "characters": [],
+      "assets": 0,
+      "discarded": 0,
+      "saveDisabled": null,
+      "created": 2,
+      "revoked": 2,
+      "unreleased": 0,
+      "replacementPresent": false,
+      "writes": 0
+    },
+    {
+      "name": "character save-cancel",
+      "characters": [],
+      "assets": 0,
+      "discarded": 0,
+      "saveDisabled": null,
+      "created": 2,
+      "revoked": 2,
+      "unreleased": 0,
+      "replacementPresent": false,
+      "writes": 0
+    },
+    {
+      "name": "character save-replace",
+      "characters": [],
+      "assets": 0,
+      "discarded": 0,
+      "saveDisabled": null,
+      "created": 2,
+      "revoked": 2,
+      "unreleased": 0,
+      "replacementPresent": true,
+      "writes": 0
+    },
+    {
+      "name": "character save-during-upload",
+      "characters": [],
+      "assets": 0,
+      "discarded": 1,
+      "saveDisabled": null,
+      "created": 2,
+      "revoked": 2,
+      "unreleased": 0,
+      "replacementPresent": false,
+      "writes": 0
+    },
+    {
+      "name": "character save-failure",
+      "characters": [],
+      "assets": 0,
+      "discarded": 1,
+      "saveDisabled": false,
+      "created": 2,
+      "revoked": 0,
+      "unreleased": 2,
+      "replacementPresent": false,
+      "writes": 0
+    },
+    {
+      "name": "character double-save",
+      "characters": [
+        {
+          "avatar": true,
+          "gallery": 1
+        }
+      ],
+      "assets": 2,
+      "discarded": 0,
+      "saveDisabled": null,
+      "created": 2,
+      "revoked": 2,
+      "unreleased": 0,
+      "replacementPresent": false,
+      "writes": 1
+    },
+    {
+      "name": "mindmap real mouse free",
+      "before": {
+        "x": 120,
+        "y": 120
+      },
+      "after": {
+        "x": 210,
+        "y": 180
+      },
+      "trace": [
+        {
+          "type": "pointermove",
+          "x": 496.390625,
+          "y": 270.875,
+          "trusted": true,
+          "buttons": 1
+        },
+        {
+          "type": "pointermove",
+          "x": 505.390625,
+          "y": 276.875,
+          "trusted": true,
+          "buttons": 1
+        },
+        {
+          "type": "pointerup",
+          "x": 505.390625,
+          "y": 276.875,
+          "trusted": true,
+          "buttons": 0
+        }
+      ],
+      "renders": 12,
+      "edgePaths": 1
+    },
+    {
+      "name": "mindmap cancel free",
+      "before": {
+        "x": 210,
+        "y": 180
+      },
+      "after": {
+        "x": 210,
+        "y": 180,
+        "dragging": false
+      }
+    },
+    {
+      "name": "mindmap synchronous burst free",
+      "renders": 0
+    },
+    {
+      "name": "mindmap real mouse grid",
+      "before": {
+        "x": 138,
+        "y": 100
+      },
+      "after": {
+        "x": 138,
+        "y": 100
+      },
+      "trace": [
+        {
+          "type": "pointermove",
+          "x": 514.390625,
+          "y": 250.875,
+          "trusted": true,
+          "buttons": 1
+        },
+        {
+          "type": "pointermove",
+          "x": 523.390625,
+          "y": 256.875,
+          "trusted": true,
+          "buttons": 1
+        },
+        {
+          "type": "pointerup",
+          "x": 523.390625,
+          "y": 256.875,
+          "trusted": true,
+          "buttons": 0
+        }
+      ],
+      "renders": 12,
+      "edgePaths": 1
+    },
+    {
+      "name": "mindmap cancel grid",
+      "before": {
+        "x": 138,
+        "y": 100
+      },
+      "after": {
+        "x": 138,
+        "y": 100,
+        "dragging": false
+      }
+    },
+    {
+      "name": "mindmap synchronous burst grid",
+      "renders": 100
+    },
+    {
+      "name": "cancel free node",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "cancel free group",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "cancel free nodeResize",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "cancel free groupResize",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "cancel grid node",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "cancel grid group",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "cancel grid nodeResize",
+      "restored": true,
+      "foreignUnchanged": true,
+      "foreignCancelIgnored": true,
+      "stableAfterCancel": true,
+      "active": false,
+      "dragging": false
+    },
+    {
+      "name": "PIP real timer ON",
+      "today": 5,
+      "dday": 5,
+      "emit": 5
+    },
+    {
+      "name": "PIP real timer OFF",
+      "today": 0,
+      "dday": 0,
+      "emit": 5
+    },
+    {
+      "name": "static pet full startup, real mouse, IPC latency 0",
+      "sent": [
+        {
+          "x": 100,
+          "y": 100
+        },
+        {
+          "x": 110,
+          "y": 100
+        },
+        {
+          "x": 170,
+          "y": 100
+        }
+      ],
+      "completed": [
+        {
+          "x": 100,
+          "y": 100
+        },
+        {
+          "x": 110,
+          "y": 100
+        },
+        {
+          "x": 170,
+          "y": 100
+        }
+      ],
+      "saved": [
+        {
+          "id": "qa",
+          "x": 170,
+          "y": 100
+        }
+      ]
+    },
+    {
+      "name": "static pet full startup, real mouse, IPC latency 100",
+      "sent": [
+        {
+          "x": 100,
+          "y": 100
+        },
+        {
+          "x": 110,
+          "y": 100
+        },
+        {
+          "x": 170,
+          "y": 100
+        }
+      ],
+      "completed": [
+        {
+          "x": 100,
+          "y": 100
+        },
+        {
+          "x": 110,
+          "y": 100
+        },
+        {
+          "x": 170,
+          "y": 100
+        }
+      ],
+      "saved": [
+        {
+          "id": "qa",
+          "x": 170,
+          "y": 100
+        }
+      ]
+    }
+  ]
+}

@@ -408,7 +408,7 @@ svg.lucide{stroke:currentColor}
 .cloud-account-card>button:active{background:var(--surface-hover);color:var(--on-surface-hover)}
 
 .cloud-source-status{
-  margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--primary-soft);color:var(--on-primary-soft);
+  margin-top:0;padding:10px 12px;border-radius:12px;background:var(--primary-soft);color:var(--on-primary-soft);
   font-size:var(--fs-xs);font-weight:400;line-height:1.5
 }
 .cloud-source-card{
@@ -427,9 +427,9 @@ svg.lucide{stroke:currentColor}
   font-size:var(--fs-xs);font-weight:400
 }
 .cloud-source-primary{
-  width:100%;height:var(--button-primary-height);margin-top:9px;padding:0 var(--button-large-padding-x);
-  border:0;border-radius:12px;background:var(--primary-base);color:var(--on-primary);
-  font-size:var(--button-large-font-size);font-weight:var(--button-large-font-weight)
+  width:100%;height:var(--button-primary-height);margin-top:9px;padding:0 var(--button-primary-padding-x);
+  border:0;border-radius:10px;background:var(--primary-base);color:var(--on-primary);
+  font-size:var(--button-primary-font-size);font-weight:var(--button-primary-font-weight)
 }
 .cloud-source-primary:disabled{opacity:.5}
 .backup-source-list{margin-top:13px;overflow:hidden;border:1px solid var(--border);border-radius:12px}

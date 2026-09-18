@@ -85,16 +85,19 @@
         <section class="settings-category" aria-labelledby="displaySettingsTitle">
           <h2 id="displaySettingsTitle">디스플레이</h2>
 
-          <div class="settings-row">
+          <div class="settings-block settings-mode-block">
             <div class="settings-copy"><strong>화면 모드</strong><small>라이트 또는 다크 모드를 선택합니다.</small></div>
-            <div class="settings-segment" id="modeSetting" role="group" aria-label="화면 모드">
-              <button type="button" data-mode-value="light">라이트</button>
-              <button type="button" data-mode-value="dark">다크</button>
+            <div class="mode-choice-grid" id="modeSetting" role="group" aria-label="화면 모드">
+              <button type="button" data-mode-value="light"><i data-lucide="sun" aria-hidden="true"></i><strong>라이트 모드</strong></button>
+              <button type="button" data-mode-value="dark"><i data-lucide="moon" aria-hidden="true"></i><strong>다크 모드</strong></button>
             </div>
           </div>
 
           <div class="settings-block">
-            <div class="settings-copy"><strong>테마 색상</strong><small>Windows 햄보드와 같은 테마 설정을 사용합니다.</small></div>
+            <div class="settings-inline-head">
+              <div class="settings-copy"><strong>테마 색상</strong><small>Windows 햄보드와 같은 테마 설정을 사용합니다.</small></div>
+              <button class="theme-pair-swap" id="themePairSwap" type="button" aria-label="주 색상과 보조 색상 바꾸기" title="주 색상과 보조 색상 바꾸기"><i data-lucide="arrow-left-right" aria-hidden="true"></i></button>
+            </div>
             <div class="theme-choice-grid" id="themeChoiceGrid"></div>
           </div>
 
@@ -107,10 +110,6 @@
             </div>
           </div>
 
-          <div class="settings-row">
-            <div class="settings-copy"><strong>주 색상 · 보조 색상</strong><small>현재 테마의 두 색 역할을 서로 바꿉니다.</small></div>
-            <button class="settings-action-button" id="themePairSwap" type="button"><i data-lucide="arrow-left-right" aria-hidden="true"></i><span>바꾸기</span></button>
-          </div>
         </section>
 
         <section class="settings-category" aria-labelledby="infoSettingsTitle">
@@ -135,25 +134,25 @@
       <section id="cloudSourceScreen" class="mobile-screen page-screen" hidden>
         <div class="cloud-account-card">
           <span class="cloud-account-icon"><i data-lucide="cloud-check" aria-hidden="true"></i></span>
-          <span class="cloud-account-copy"><strong>계정 연결됨</strong><small>클라우드에 저장된 데이터를 선택해서 불러올 수 있습니다.</small></span>
+          <span class="cloud-account-copy"><strong>계정 연결됨</strong><small>클라우드에 저장된 햄보드 데이터를 불러옵니다.</small></span>
           <button id="cloudDisconnect" type="button">연결 해제</button>
         </div>
 
-        <div class="cloud-source-status" id="cloudSourceStatus" role="status">불러올 데이터를 확인하고 있습니다.</div>
+        <div class="cloud-source-status" id="cloudSourceStatus" role="status">클라우드 데이터를 확인하고 있습니다.</div>
 
         <section class="cloud-source-card">
           <div class="cloud-source-head">
             <span class="cloud-source-icon"><i data-lucide="refresh-cw" aria-hidden="true"></i></span>
-            <div><h2>동기화 데이터</h2><p>PC에서 자동으로 동기화된 최신 상태를 불러옵니다.</p></div>
+            <div><h2>동기화 데이터</h2><p>클라우드의 최신 자동 동기화 상태를 가져옵니다. 처음 불러올 때는 데이터 양에 따라 시간이 걸릴 수 있습니다.</p></div>
           </div>
           <div class="cloud-source-meta" id="syncSourceMeta">확인 중…</div>
-          <button class="cloud-source-primary" id="loadSyncSource" type="button" disabled>동기화 데이터 불러오기</button>
+          <button class="cloud-source-primary" id="loadSyncSource" type="button" disabled>최신 데이터 불러오기</button>
         </section>
 
         <section class="cloud-source-card">
           <div class="cloud-source-head">
             <span class="cloud-source-icon"><i data-lucide="archive" aria-hidden="true"></i></span>
-            <div><h2>수동 백업</h2><p>PC에서 직접 만든 백업 중 원하는 시점을 선택합니다.</p></div>
+            <div><h2>백업 복원</h2><p>클라우드에 저장된 수동 백업 중 복원할 시점을 선택합니다.</p></div>
           </div>
           <div class="backup-source-list" id="backupSourceList"></div>
         </section>

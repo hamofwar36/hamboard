@@ -123,18 +123,18 @@ svg.lucide{stroke:currentColor}
   --ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted);--ui-accent:var(--on-surface)
 }
 .icon-button{
-  width:42px;height:42px;display:grid;place-items:center;
+  grid-column:1;width:42px;height:42px;display:grid;place-items:center;
   border:0;border-radius:12px;background:transparent;color:var(--ui-muted)
 }
 .icon-button:active{background:var(--surface-hover);color:var(--on-surface-hover)}
 .icon-button svg{width:20px;height:20px}
-.mobile-heading{min-width:0}
+.mobile-heading{grid-column:2;min-width:0}
 .mobile-heading h1{
   margin:0;font-size:var(--fs-base);font-weight:700;line-height:1.2;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
 .sync-status-wrap{
-  position:relative;justify-self:end;width:max-content;max-width:max-content
+  grid-column:3;position:relative;justify-self:end;width:max-content;max-width:max-content
 }
 .sync-indicator{
   width:max-content;min-width:0;max-width:max-content;height:24px;display:inline-flex;align-items:center;justify-content:center;

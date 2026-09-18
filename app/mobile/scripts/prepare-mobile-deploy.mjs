@@ -6,7 +6,7 @@ const projectRoot=resolve(fileURLToPath(new URL("../",import.meta.url)));
 const outputRoot=resolve(projectRoot,"dist-mobile");
 const mobileRoot=resolve(projectRoot,"web/mobile");
 const sharedRoot=resolve(projectRoot,"../window/web/shared");
-const authBaseUrl=String(process.env.HAMBOARD_AUTH_BASE_URL||"").trim().replace(/\\\/$/,"");
+const authBaseUrl=String(process.env.HAMBOARD_AUTH_BASE_URL||"").trim().replace(/\/$/,"");
 const mobilePackage=JSON.parse(await readFile(resolve(projectRoot,"package.json"),"utf8"));
 const mobileVersion=String(mobilePackage.version||"1.0.0");
 

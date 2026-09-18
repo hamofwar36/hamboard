@@ -170,7 +170,9 @@
       button.dataset.documentType=type;
       button.dataset.documentId=String(item.id||"");
       button.style.setProperty("--card-color",descriptor.color);
-      button.style.setProperty("--card-fg",cardForeground(descriptor.color));
+      const cardInk=cardForeground(descriptor.color);
+      button.style.setProperty("--custom-on",cardInk);
+      button.style.setProperty("--custom-muted",cardInk);
 
       const veil=element("span","card-dark-veil");
       veil.setAttribute("aria-hidden","true");

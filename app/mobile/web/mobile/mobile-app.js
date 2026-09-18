@@ -18,7 +18,9 @@
   const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
   const title=$("#mobileTitle");
+  const syncStatusWrap=$("#syncStatusWrap");
   const indicator=$("#syncIndicator");
+  const offlineWarning=$("#offlineWarning");
   const librarySearch=$("#librarySearch");
   const fileInput=$("#mobileDataFile");
   const libraryNav=$("#libraryNav");
@@ -111,7 +113,7 @@
     hideAllScreens();
     screen.hidden=false;
     backButton.hidden=!back;
-    indicator.hidden=!account;
+    syncStatusWrap.hidden=!account;
     title.textContent=heading;
     activateNav(nav);
     window.scrollTo(0,0);
@@ -119,10 +121,13 @@
   }
   function renderAccountButton(){
     const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false};
-    if(!status.configured){setIndicator("error","설정 필요");return status}
-    if(status.connected){setIndicator("connected","연결됨");return status}
-    setIndicator("local",status.authorized?"연결":"로그인");
-    return status
+    const online=navigator.onLine!==false;
+    offlineWarning.hidden=online;
+    if(!online){setIndicator("error","오프라인");return {...status,online:false}}
+    if(!status.configured){setIndicator("error","설정 필요");return {...status,online:true}}
+    if(status.connected){setIndicator("connected","동기화 중");return {...status,online:true}}
+    setIndicator("local","로그인");
+    return {...status,online:true}
   }
   function formatCloudTime(value){
     const numeric=Number(value),date=Number.isFinite(numeric)&&numeric>0?new Date(numeric):new Date(String(value||""));
@@ -490,7 +495,7 @@
     const topology=commitTopology(listing.objects||[]);
     if(!topology.head)throw new Error("sync-import-empty");
 
-    setIndicator("busy","불러오는 중");
+    if(navigator.onLine!==false)setIndicator("connected","동기화 중");
     cloudSourceStatus.hidden=false;
     let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
     for(let index=0;index<topology.path.length;index++){
@@ -501,7 +506,7 @@
     }
     await repository.replaceState(projected,{markBaseline:true});
     cloudSyncListing=listing;
-    setIndicator("connected","연결됨");
+    renderAccountButton();
     openLibrary();
     return {empty:false,revision:String(topology.head.revision),state:snapshot()}
   }
@@ -603,7 +608,7 @@
     try{
       const manifest=await googleDrive.getBackupManifest(entry);
       await importCanonicalState(manifest);
-      setIndicator("connected","연결됨");
+      renderAccountButton();
       openLibrary()
     }catch(error){
       console.error("모바일 백업 불러오기 실패",error);
@@ -622,7 +627,7 @@
       await syncFromCloud(cloudSyncListing)
     }catch(error){
       console.error("모바일 동기화 데이터 불러오기 실패",error);
-      setIndicator(googleDrive?.status?.().connected?"connected":"error",googleDrive?.status?.().connected?"연결됨":"오류");
+      renderAccountButton();
       cloudSourceStatus.textContent=cloudErrorMessage(error)
     }finally{
       setCloudSourceBusy(false)
@@ -632,18 +637,22 @@
   async function openCloudSources(returnView="library",{replace=false}={}){
     cloudReturnView=returnView==="menu"?"menu":"library";
     let status=renderAccountButton();
+    if(!status.online){
+      cloudReturnView==="menu"?renderMenu():renderHome();
+      return
+    }
     if(!status.configured){
       cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
     if(!status.connected){
-      setIndicator("busy","연결 중");
+      setIndicator("local","로그인");
       try{
         await googleDrive.connect();
         status=renderAccountButton()
       }catch(error){
         console.error("모바일 클라우드 로그인 실패",error);
-        setIndicator("error","오류");
+        renderAccountButton();
         cloudReturnView==="menu"?renderMenu():renderHome();
         return
       }
@@ -712,6 +721,13 @@
       history.pushState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome()
     }
+  });
+  window.addEventListener("online",()=>{
+    renderAccountButton();
+    if(!libraryScreen.hidden)offlineWarning.hidden=true
+  });
+  window.addEventListener("offline",()=>{
+    renderAccountButton()
   });
   fileInput.onchange=async()=>{
     const file=fileInput.files?.[0];fileInput.value="";

@@ -7,6 +7,8 @@ const outputRoot=resolve(projectRoot,"dist-mobile");
 const mobileRoot=resolve(projectRoot,"web/mobile");
 const sharedRoot=resolve(projectRoot,"../window/web/shared");
 const clientId=String(process.env.HAMBOARD_GOOGLE_OAUTH_CLIENT_ID||"").trim();
+const mobilePackage=JSON.parse(await readFile(resolve(projectRoot,"package.json"),"utf8"));
+const mobileVersion=String(mobilePackage.version||"1.0.0");
 
 await rm(outputRoot,{recursive:true,force:true});
 await mkdir(resolve(outputRoot,"shared"),{recursive:true});
@@ -27,7 +29,7 @@ await Promise.all([
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
   cp(resolve(projectRoot,"../window/web/assets/vendor/lucide"),resolve(outputRoot,"vendor/lucide"),{recursive:true}),
   cp(resolve(projectRoot,"web/favicon.ico"),resolve(outputRoot,"favicon.ico")),
-  writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({googleOAuthClientId:${JSON.stringify(clientId)}});\n`)
+  writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({googleOAuthClientId:${JSON.stringify(clientId)},version:${JSON.stringify(mobileVersion)}});\n`)
 ]);
 
 console.log(`Hamboard mobile deployment prepared: ${outputRoot}`);

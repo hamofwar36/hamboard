@@ -1067,6 +1067,7 @@
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
+  $("#createSheetClose").onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
   createFormClose.onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
   createSheet.onclick=event=>{if(event.target===createSheet){closeBottomSheet(createSheet);resetCreateSheet()}};
   createChooser.onclick=event=>{

@@ -208,11 +208,11 @@ svg.lucide{stroke:currentColor}
   display:flex;align-items:center;gap:5px;min-width:0;margin-bottom:6px;
   color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700;letter-spacing:.06em
 }
-.project-card-icon{width:18px;height:18px;display:grid;place-items:center;flex:0 0 auto;color:var(--ui-muted)}
-.project-card-icon svg{width:18px;height:18px}
+.project-card-icon{width:12px;height:12px;display:grid;place-items:center;flex:0 0 auto;color:var(--ui-muted)}
+.project-card-icon svg{width:12px;height:12px}
 .project-kind{font-weight:700;color:var(--ui-fg)}
 .project-title{
-  max-width:92%;font-size:var(--fs-base);line-height:1.16;font-weight:700;letter-spacing:-.032em;
+  max-width:92%;font-size:var(--fs-lg);line-height:1.16;font-weight:700;letter-spacing:-.032em;
   word-break:keep-all;text-wrap:balance;overflow-wrap:anywhere
 }
 .work-card-subtitle{
@@ -498,7 +498,7 @@ svg.lucide{stroke:currentColor}
   .library-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .project-card{height:154px;padding:18px;border-radius:20px}
   .project-folder{font-size:var(--fs-xs);gap:7px;margin-bottom:11px}
-  .project-card-icon,.project-card-icon svg{width:19px;height:19px}
+  .project-card-icon,.project-card-icon svg{width:12px;height:12px}
   .project-title{font-size:var(--fs-lg)}
   .work-card-subtitle{font-size:var(--fs-xs);margin-top:9px}
   .project-meta{padding-top:14px;padding-right:58px}

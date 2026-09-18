@@ -583,7 +583,7 @@
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
-    showScreen(menuScreen,{heading:"메뉴",back:true,account:false,nav:"menu"})
+    showScreen(menuScreen,{heading:"메뉴",back:false,account:false,nav:"menu"})
   }
 
   function openMenu({replace=false}={}){

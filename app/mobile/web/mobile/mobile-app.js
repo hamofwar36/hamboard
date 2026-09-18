@@ -380,13 +380,12 @@
 
   function cloudErrorMessage(error){
     const text=String(error?.message||error||"");
-    if(text.includes("web-client-id-not-configured"))return "로그인 설정을 불러오지 못했습니다. 배포 설정을 확인해 주세요.";
-    if(text.includes("secure-origin-required"))return "로그인은 보안 연결에서만 사용할 수 있습니다.";
-    if(text.includes("popup_closed")||text.includes("popup-failed"))return "로그인 창이 닫혔습니다. 다시 시도해 주세요.";
-    if(text.includes("access_denied"))return "클라우드 접근 권한이 허용되지 않았습니다.";
+    if(text.includes("auth-base-url-not-configured"))return "로그인 서버 설정을 불러오지 못했습니다. 배포 설정을 확인해 주세요.";
+    if(text.includes("auth-session-expired")||text.includes("auth-session-required"))return "로그인 세션이 만료되었습니다. 다시 로그인해 주세요.";
+    if(text.includes("auth-session-http")||text.includes("auth-token-http"))return "로그인 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
     if(text.includes("branched-history"))return "동기화 기록이 갈라져 있어 PC에서 먼저 충돌을 해결해야 합니다.";
     if(text.includes("download-integrity")||text.includes("commit-")||text.includes("backup-"))return "클라우드 데이터 검증에 실패했습니다. PC에서 다시 저장한 뒤 시도해 주세요.";
-    if(text.includes("http-401")||text.includes("reconnect-required")||text.includes("not-connected"))return "계정 연결이 만료되었습니다. 다시 연결해 주세요.";
+    if(text.includes("http-401")||text.includes("reconnect-required")||text.includes("not-connected"))return "Google Drive 연결을 갱신하지 못했습니다. 다시 로그인해 주세요.";
     return "클라우드에서 데이터를 불러오지 못했습니다. 네트워크와 연결 상태를 확인해 주세요."
   }
 
@@ -425,32 +424,33 @@
     refreshLucideIcons()
   }
   function renderAccountButton(){
-    const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false};
+    const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false,checking:false};
     const online=navigator.onLine!==false;
     offlineWarning.hidden=online;
     if(!online){setIndicator("error","오프라인");return {...status,online:false}}
     if(!status.configured){setIndicator("error","설정 필요");return {...status,online:true}}
     if(status.connected){setIndicator("connected","동기화 중");return {...status,online:true}}
+    if(status.checking&&!silentReconnectFailed){setIndicator("local","연결 확인");return {...status,online:true,reconnecting:true}}
     if(status.authorized&&!silentReconnectFailed){setIndicator("connected","동기화 중");return {...status,online:true,reconnecting:true}}
     setIndicator("local","로그인");
     return {...status,online:true}
   }
 
   async function restoreGoogleConnection(){
-    const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false};
-    if(!status.configured||status.connected||!status.authorized||silentReconnectFailed||navigator.onLine===false)return status;
+    const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false,checking:false};
+    if(!status.configured||status.connected||silentReconnectFailed||navigator.onLine===false)return status;
+    if(status.checking===false&&!status.authorized)return status;
     if(silentReconnectPromise)return silentReconnectPromise;
-    silentReconnectFailed=false;
     renderAccountButton();
     silentReconnectPromise=(async()=>{
       try{
         const next=await googleDrive.reconnectSilently();
-        silentReconnectFailed=!next?.connected;
+        silentReconnectFailed=false;
         return next
       }catch(error){
         silentReconnectFailed=true;
-        console.warn("모바일 클라우드 자동 재연결 실패",error);
-        logDiagnostic("warn","CLOUD","자동 재연결에 실패했습니다.",error);
+        console.warn("모바일 클라우드 세션 복원 실패",error);
+        logDiagnostic("warn","CLOUD","로그인 세션 복원에 실패했습니다.",error);
         return googleDrive.status()
       }finally{
         silentReconnectPromise=null;
@@ -997,14 +997,15 @@
       cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
-    if(!status.connected&&status.authorized&&!silentReconnectFailed){
+    if(!status.connected&&!silentReconnectFailed){
       await restoreGoogleConnection();
       status=renderAccountButton()
     }
     if(!status.connected){
       setIndicator("local","로그인");
       try{
-        await googleDrive.connect();
+        const result=await googleDrive.connect();
+        if(result?.redirecting)return;
         silentReconnectFailed=false;
         status=renderAccountButton()
       }catch(error){
@@ -1052,7 +1053,6 @@
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
-      restoreGoogleConnection();
       if(match)openDocument(match[1],decodeURIComponent(match[2]));
       refreshLucideIcons()
     }catch(error){
@@ -1095,13 +1095,22 @@
   diagnosticsClear.onclick=()=>{diagnostics.length=0;renderDiagnostics()};
   indicator.onclick=()=>openCloudSources("library");
   loadSyncSource.onclick=loadSelectedSync;
-  cloudDisconnect.onclick=()=>{
-    googleDrive.disconnect();
-    silentReconnectFailed=false;
-    cloudSyncListing=null;
-    cloudBackupEntries=[];
-    renderAccountButton();
-    openLibrary()
+  cloudDisconnect.onclick=async()=>{
+    cloudDisconnect.disabled=true;
+    try{
+      await googleDrive.disconnect();
+      silentReconnectFailed=false;
+      cloudSyncListing=null;
+      cloudBackupEntries=[];
+      renderAccountButton();
+      openLibrary()
+    }catch(error){
+      console.error("모바일 클라우드 연결 해제 실패",error);
+      logDiagnostic("error","CLOUD","클라우드 연결 해제에 실패했습니다.",error);
+      renderAccountButton()
+    }finally{
+      cloudDisconnect.disabled=false
+    }
   };
   window.addEventListener("popstate",event=>{
     if(event.state?.hamboard)renderRoute(event.state);

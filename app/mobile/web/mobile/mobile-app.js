@@ -40,6 +40,8 @@
   let cloudSyncListing=null;
   let cloudBackupEntries=[];
   let cloudReturnView="library";
+  let silentReconnectFailed=false;
+  let silentReconnectPromise=null;
 
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
   const element=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node};
@@ -125,9 +127,33 @@
     offlineWarning.hidden=online;
     if(!online){setIndicator("error","오프라인");return {...status,online:false}}
     if(!status.configured){setIndicator("error","설정 필요");return {...status,online:true}}
-    if(status.connected||status.authorized){setIndicator("connected","동기화 중");return {...status,online:true}}
+    if(status.connected){setIndicator("connected","동기화 중");return {...status,online:true}}
+    if(status.authorized&&!silentReconnectFailed){setIndicator("connected","동기화 중");return {...status,online:true,reconnecting:true}}
     setIndicator("local","로그인");
     return {...status,online:true}
+  }
+
+  async function restoreGoogleConnection(){
+    const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false};
+    if(!status.configured||status.connected||!status.authorized||navigator.onLine===false)return status;
+    if(silentReconnectPromise)return silentReconnectPromise;
+    silentReconnectFailed=false;
+    renderAccountButton();
+    silentReconnectPromise=(async()=>{
+      try{
+        const next=await googleDrive.reconnectSilently();
+        silentReconnectFailed=!next?.connected;
+        return next
+      }catch(error){
+        silentReconnectFailed=true;
+        console.warn("모바일 클라우드 자동 재연결 실패",error);
+        return googleDrive.status()
+      }finally{
+        silentReconnectPromise=null;
+        renderAccountButton()
+      }
+    })();
+    return silentReconnectPromise
   }
   function formatCloudTime(value){
     const numeric=Number(value),date=Number.isFinite(numeric)&&numeric>0?new Date(numeric):new Date(String(value||""));
@@ -645,13 +671,19 @@
       cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
+    if(!status.connected&&status.authorized&&!silentReconnectFailed){
+      await restoreGoogleConnection();
+      status=renderAccountButton()
+    }
     if(!status.connected){
       setIndicator("local","로그인");
       try{
         await googleDrive.connect();
+        silentReconnectFailed=false;
         status=renderAccountButton()
       }catch(error){
         console.error("모바일 클라우드 로그인 실패",error);
+        silentReconnectFailed=true;
         renderAccountButton();
         cloudReturnView==="menu"?renderMenu():renderHome();
         return
@@ -690,6 +722,7 @@
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
+      restoreGoogleConnection();
       if(match)openDocument(match[1],decodeURIComponent(match[2]));
       refreshLucideIcons()
     }catch(error){
@@ -710,6 +743,7 @@
   loadSyncSource.onclick=loadSelectedSync;
   cloudDisconnect.onclick=()=>{
     googleDrive.disconnect();
+    silentReconnectFailed=false;
     cloudSyncListing=null;
     cloudBackupEntries=[];
     renderAccountButton();
@@ -723,7 +757,9 @@
     }
   });
   window.addEventListener("online",()=>{
+    silentReconnectFailed=false;
     renderAccountButton();
+    restoreGoogleConnection();
     if(!libraryScreen.hidden)offlineWarning.hidden=true
   });
   window.addEventListener("offline",()=>{

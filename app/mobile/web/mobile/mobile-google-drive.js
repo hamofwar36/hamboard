@@ -3,13 +3,11 @@
 
   const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.appdata";
   const DRIVE_FILES_URL="https://www.googleapis.com/drive/v3/files";
-  const CLIENT_ID_KEY="hamboard.mobile.googleClientId";
   const MAX_SYNC_OBJECT_BYTES=16*1024*1024;
   const MAX_SYNC_OBJECTS=50000;
   let accessToken="",tokenClient=null,scriptPromise=null;
 
-  const configuredClientId=()=>String(root.HAMBOARD_MOBILE_CONFIG?.googleOAuthClientId||localStorage.getItem(CLIENT_ID_KEY)||"").trim();
-  const saveClientId=value=>{const clientId=String(value||"").trim();if(clientId)localStorage.setItem(CLIENT_ID_KEY,clientId);else localStorage.removeItem(CLIENT_ID_KEY);tokenClient=null;accessToken="";return clientId};
+  const configuredClientId=()=>String(root.HAMBOARD_MOBILE_CONFIG?.googleOAuthClientId||"").trim();
   const driveError=async response=>{let detail="";try{const body=await response.json();detail=String(body?.error?.message||body?.error||"")}catch{}const error=new Error(`google-drive-http-${response.status}${detail?`: ${detail}`:""}`);error.status=response.status;throw error};
   const authorizedFetch=async(url,options={})=>{if(!accessToken)throw new Error("google-drive-not-connected");const response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${accessToken}`}});if(response.status===401){accessToken="";throw new Error("google-drive-reconnect-required")}if(!response.ok)return driveError(response);return response};
   const sha256Hex=async bytes=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(value=>value.toString(16).padStart(2,"0")).join("");
@@ -58,5 +56,5 @@
     return {objectKey,content,contentSha256:expectedSha,byteSize:expectedSize}
   }
 
-  root.HamboardMobileGoogleDrive=Object.freeze({status,connect,disconnect,listSyncObjects,getSyncObject,configuredClientId,saveClientId,sha256Hex});
+  root.HamboardMobileGoogleDrive=Object.freeze({status,connect,disconnect,listSyncObjects,getSyncObject,configuredClientId,sha256Hex});
 })(typeof globalThis!=="undefined"?globalThis:this);

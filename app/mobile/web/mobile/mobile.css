@@ -166,7 +166,7 @@ svg.lucide{stroke:currentColor}
 
 .mobile-main{
   width:min(100%,var(--mobile-content-max));margin:0 auto;
-  padding:18px 14px calc(86px + env(safe-area-inset-bottom))
+  padding:18px 8px calc(86px + env(safe-area-inset-bottom))
 }
 .mobile-screen{min-width:0}
 .page-screen{min-height:calc(100dvh - 150px)}
@@ -191,7 +191,7 @@ svg.lucide{stroke:currentColor}
 .home-search-field:focus-within{border-color:var(--border);box-shadow:none}
 .home-search-field svg{width:16px;height:16px;flex:0 0 auto}
 .home-search-field input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--ui-fg);font-size:var(--fs-sm);font-weight:400}
-.library-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.library-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .project-card{
   position:relative;width:100%;min-width:0;height:120px;display:flex;flex-direction:column;overflow:hidden;
   padding:12px;border:1px solid var(--border);border-radius:16px;
@@ -206,23 +206,23 @@ svg.lucide{stroke:currentColor}
 .card-dark-veil{display:none}
 .project-folder{
   display:flex;align-items:center;gap:5px;min-width:0;margin-bottom:6px;
-  color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700;letter-spacing:.06em
+  color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700;letter-spacing:.06em
 }
 .project-card-icon{width:18px;height:18px;display:grid;place-items:center;flex:0 0 auto;color:var(--ui-muted)}
 .project-card-icon svg{width:18px;height:18px}
 .project-kind{font-weight:700;color:var(--ui-fg)}
 .project-title{
-  max-width:92%;font-size:var(--fs-lg);line-height:1.16;font-weight:700;letter-spacing:-.032em;
+  max-width:92%;font-size:var(--fs-base);line-height:1.16;font-weight:700;letter-spacing:-.032em;
   word-break:keep-all;text-wrap:balance;overflow-wrap:anywhere
 }
 .work-card-subtitle{
   max-width:92%;margin-top:5px;color:var(--ui-fg);
-  font-size:var(--fs-xs);line-height:1.45;font-weight:400;
+  font-size:var(--fs-compact-10);line-height:1.45;font-weight:400;
   display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere
 }
 .project-meta{
   margin-top:auto;padding-top:6px;padding-right:28px;display:flex;gap:6px;align-items:center;
-  color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400;line-height:1.4;
+  color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:400;line-height:1.4;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
 
@@ -494,13 +494,13 @@ svg.lucide{stroke:currentColor}
 .create-grid small{color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400}
 
 @media (min-width:700px){
-  .mobile-main{padding:26px 20px 96px}
-  .library-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .mobile-main{padding:26px 12px 96px}
+  .library-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .project-card{height:154px;padding:18px;border-radius:20px}
-  .project-folder{font-size:var(--fs-sm);gap:7px;margin-bottom:11px}
+  .project-folder{font-size:var(--fs-xs);gap:7px;margin-bottom:11px}
   .project-card-icon,.project-card-icon svg{width:19px;height:19px}
-  .project-title{font-size:var(--fs-display)}
-  .work-card-subtitle{font-size:var(--fs-sm);margin-top:9px}
+  .project-title{font-size:var(--fs-lg)}
+  .work-card-subtitle{font-size:var(--fs-xs);margin-top:9px}
   .project-meta{padding-top:14px;padding-right:58px}
   .mobile-topbar{
     padding-left:max(24px,calc((100vw - var(--mobile-content-max))/2));

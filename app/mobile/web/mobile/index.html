@@ -13,14 +13,14 @@
       <button class="icon-button" id="mobileBack" type="button" aria-label="작품 목록으로 돌아가기" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
       </button>
-      <div class="mobile-heading"><span class="mobile-eyebrow">HAMBOARD</span><h1 id="mobileTitle">작품</h1></div>
+      <div class="mobile-heading"><span class="mobile-eyebrow">HAMBOARD</span><h1 id="mobileTitle">보관함</h1></div>
       <button class="sync-indicator" id="syncIndicator" data-state="local" type="button">로그인</button>
     </header>
 
     <main class="mobile-main">
       <section id="projectListScreen" class="mobile-screen" aria-labelledby="mobileTitle">
         <div class="list-intro"><div><h2>내 작품</h2><p id="projectCount">불러오는 중…</p></div></div>
-        <label class="search-field">
+        <label class="search-field" id="projectSearchField" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
           <input id="projectSearch" type="search" placeholder="작품 제목이나 부제 검색" autocomplete="off">
         </label>
@@ -39,6 +39,45 @@
         <div id="projectContent" class="project-content"></div>
       </section>
     </main>
+
+    <nav class="mobile-bottom-nav" aria-label="주요 탐색">
+      <button class="bottom-nav-button active" id="libraryNav" type="button" aria-label="보관함">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h6l2 2h10v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 9h18"/></svg>
+        <span>보관함</span>
+      </button>
+      <button class="bottom-nav-create" id="createNav" type="button" aria-label="새로 만들기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="bottom-nav-button" id="menuNav" type="button" aria-label="메뉴">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
+        <span>메뉴</span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="nav-sheet-backdrop" id="createSheet" hidden>
+    <section class="nav-sheet" role="dialog" aria-modal="true" aria-labelledby="createSheetTitle">
+      <div class="nav-sheet-handle" aria-hidden="true"></div>
+      <header class="nav-sheet-header"><div><span>NEW</span><h2 id="createSheetTitle">새로 만들기</h2></div><button class="sheet-close" id="createSheetClose" type="button" aria-label="닫기">×</button></header>
+      <div class="create-grid" aria-label="생성할 항목">
+        <button type="button" disabled><strong>폴더</strong><span>다음 단계에서 연결</span></button>
+        <button type="button" disabled><strong>작품</strong><span>다음 단계에서 연결</span></button>
+        <button type="button" disabled><strong>노트</strong><span>다음 단계에서 연결</span></button>
+        <button type="button" disabled><strong>마인드맵</strong><span>다음 단계에서 연결</span></button>
+      </div>
+    </section>
+  </div>
+
+  <div class="nav-sheet-backdrop" id="mainMenuSheet" hidden>
+    <section class="nav-sheet" role="dialog" aria-modal="true" aria-labelledby="mainMenuTitle">
+      <div class="nav-sheet-handle" aria-hidden="true"></div>
+      <header class="nav-sheet-header"><div><span>HAMBOARD</span><h2 id="mainMenuTitle">메뉴</h2></div><button class="sheet-close" id="mainMenuClose" type="button" aria-label="닫기">×</button></header>
+      <div class="main-menu-list">
+        <button id="menuSearch" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span><strong>검색</strong><small>보관함에서 찾기</small></span><b>›</b></button>
+        <button id="menuCloud" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .8-7.9A6 6 0 0 0 6.4 8.5 4.5 4.5 0 0 0 7 18Z"/><path d="M12 10v5m-2-2 2 2 2-2"/></svg><span><strong>클라우드 동기화</strong><small>Google Drive 연결 및 불러오기</small></span><b>›</b></button>
+        <button type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg><span><strong>설정</strong><small>다음 단계에서 구성</small></span><b>›</b></button>
+      </div>
+    </section>
   </div>
 
   <div class="cloud-sheet-backdrop" id="cloudSheet" hidden>

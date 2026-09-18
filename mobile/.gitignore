@@ -1,0 +1,5 @@
+node_modules/
+dist-mobile/
+src-tauri/target/
+.vercel/
+npm-debug.log*

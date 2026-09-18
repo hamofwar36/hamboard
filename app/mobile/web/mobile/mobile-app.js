@@ -39,6 +39,7 @@
   let activeEpisodeId="";
   let cloudSyncListing=null;
   let cloudBackupEntries=[];
+  let cloudReturnView="library";
 
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
   const element=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node};
@@ -481,65 +482,179 @@
     return commit
   }
 
-  async function syncFromCloud(){
+  async function syncFromCloud(listing=cloudSyncListing){
     if(!googleDrive)throw new Error("google-drive-web-transport-unavailable");
-    setIndicator("busy","불러오는 중");
-    cloudMessage.textContent="PC의 최신 동기화 데이터를 확인하고 있습니다…";
-    const listing=await googleDrive.listSyncObjects();
+    if(!listing)listing=await googleDrive.listSyncObjects();
     if(listing.truncated)throw new Error("sync-object-list-truncated");
     const topology=commitTopology(listing.objects||[]);
-    if(!topology.head){
-      setIndicator("synced","연결됨");
-      cloudMessage.textContent="Google Drive에 동기화된 데이터가 아직 없습니다.";
-      return {empty:true,state:snapshot()}
-    }
+    if(!topology.head)throw new Error("sync-import-empty");
+
+    setIndicator("busy","불러오는 중");
+    cloudSourceStatus.hidden=false;
     let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
     for(let index=0;index<topology.path.length;index++){
-      cloudMessage.textContent=`동기화 데이터를 불러오는 중입니다. (${index+1}/${topology.path.length})`;
+      const percent=Math.round(((index+1)/topology.path.length)*100);
+      cloudSourceStatus.textContent=`동기화 데이터를 불러오는 중입니다. ${percent}% (${index+1}/${topology.path.length})`;
       const commit=await readCloudCommit(topology.path[index]),result=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore);
       projected=result.state
     }
     await repository.replaceState(projected,{markBaseline:true});
-    setIndicator("synced","동기화");
-    cloudMessage.textContent=`최신 데이터 동기화 완료 · 문서 ${documentCount()}개`;
-    if(activeDocumentId)closeDocument();else renderLibrary();
+    cloudSyncListing=listing;
+    setIndicator("connected","연결됨");
+    openLibrary();
     return {empty:false,revision:String(topology.head.revision),state:snapshot()}
   }
 
-  function renderCloudSheet(){
-    const status=googleDrive?.status?.()||{configured:false,connected:false};
-    cloudDisconnect.hidden=!status.connected;
-    cloudConnect.textContent=status.connected?"지금 다시 불러오기":"Google로 로그인";
-    if(status.connected)cloudMessage.textContent="Google Drive에 연결되어 있습니다. PC의 최신 데이터를 다시 확인할 수 있습니다."
+  function setCloudSourceBusy(busy){
+    loadSyncSource.disabled=busy||!cloudSyncListing;
+    cloudDisconnect.disabled=busy;
+    backupSourceList.querySelectorAll("button").forEach(button=>button.disabled=busy)
   }
-  function openCloudSheet(){renderCloudSheet();cloudSheet.hidden=false;refreshLucideIcons()}
-  function closeCloudSheet(){cloudSheet.hidden=true}
-  async function connectAndSync(){
-    cloudConnect.disabled=true;cloudDisconnect.disabled=true;
-    try{
-      const status=googleDrive.status();
-      if(!status.connected)await googleDrive.connect();
-      renderCloudSheet();
-      await syncFromCloud()
-    }catch(error){
-      console.error("모바일 Google Drive 동기화 실패",error);
-      setIndicator("error","오류");
-      cloudMessage.textContent=cloudErrorMessage(error)
-    }finally{
-      cloudConnect.disabled=false;cloudDisconnect.disabled=false
+
+  function renderBackupSources(entries=[]){
+    backupSourceList.replaceChildren();
+    if(!entries.length){
+      backupSourceList.append(element("div","cloud-source-empty","저장된 수동 백업이 없습니다."));
+      return
     }
+    for(const entry of entries){
+      const button=element("button","backup-source-entry");
+      button.type="button";
+      const icon=element("span","backup-source-icon");
+      icon.innerHTML='<i data-lucide="archive-restore" aria-hidden="true"></i>';
+      const copy=element("span","backup-source-copy");
+      copy.append(element("strong","",formatCloudTime(entry.createdTime)),element("small","","수동 백업"));
+      const arrow=element("span","backup-source-arrow");
+      arrow.innerHTML='<i data-lucide="chevron-right" aria-hidden="true"></i>';
+      button.append(icon,copy,arrow);
+      button.onclick=()=>loadBackupSource(entry);
+      backupSourceList.append(button)
+    }
+    refreshLucideIcons()
+  }
+
+  async function refreshCloudSources(){
+    if(!googleDrive?.status?.().connected)return;
+    cloudSourceStatus.hidden=false;
+    cloudSourceStatus.textContent="불러올 데이터를 확인하고 있습니다.";
+    syncSourceMeta.textContent="확인 중…";
+    loadSyncSource.disabled=true;
+    backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 목록을 확인하고 있습니다."));
+    const [syncResult,backupResult]=await Promise.allSettled([googleDrive.listSyncObjects(),googleDrive.listBackups()]);
+    const problems=[];
+
+    cloudSyncListing=null;
+    if(syncResult.status==="fulfilled"){
+      try{
+        if(syncResult.value.truncated)throw new Error("sync-object-list-truncated");
+        const topology=commitTopology(syncResult.value.objects||[]);
+        if(topology.head){
+          cloudSyncListing=syncResult.value;
+          syncSourceMeta.textContent=`최근 동기화 · ${formatCloudTime(topology.head.createdAtMs)}`;
+          loadSyncSource.disabled=false
+        }else syncSourceMeta.textContent="저장된 동기화 데이터가 없습니다."
+      }catch(error){
+        console.error("모바일 동기화 목록 확인 실패",error);
+        syncSourceMeta.textContent="동기화 기록을 확인할 수 없습니다.";
+        problems.push("동기화 데이터")
+      }
+    }else{
+      console.error("모바일 동기화 목록 확인 실패",syncResult.reason);
+      syncSourceMeta.textContent="동기화 데이터를 확인하지 못했습니다.";
+      problems.push("동기화 데이터")
+    }
+
+    cloudBackupEntries=[];
+    if(backupResult.status==="fulfilled"){
+      cloudBackupEntries=Array.isArray(backupResult.value.backups)?backupResult.value.backups:[];
+      renderBackupSources(cloudBackupEntries);
+      if(backupResult.value.truncated)problems.push("일부 백업 목록")
+    }else{
+      console.error("모바일 백업 목록 확인 실패",backupResult.reason);
+      backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 목록을 확인하지 못했습니다."));
+      problems.push("수동 백업")
+    }
+
+    if(problems.length){
+      cloudSourceStatus.hidden=false;
+      cloudSourceStatus.textContent=`${problems.join(", ")} 확인에 문제가 있습니다. 필요하면 다시 연결해 주세요.`
+    }else{
+      cloudSourceStatus.hidden=true;
+      cloudSourceStatus.textContent=""
+    }
+    renderAccountButton()
+  }
+
+  async function loadBackupSource(entry){
+    setCloudSourceBusy(true);
+    cloudSourceStatus.hidden=false;
+    cloudSourceStatus.textContent="선택한 백업을 불러오는 중입니다.";
+    try{
+      const manifest=await googleDrive.getBackupManifest(entry);
+      await importCanonicalState(manifest);
+      setIndicator("connected","연결됨");
+      openLibrary()
+    }catch(error){
+      console.error("모바일 백업 불러오기 실패",error);
+      cloudSourceStatus.textContent=cloudErrorMessage(error);
+      if(String(error?.message||"").includes("reconnect"))renderAccountButton()
+    }finally{
+      setCloudSourceBusy(false)
+    }
+  }
+
+  async function loadSelectedSync(){
+    setCloudSourceBusy(true);
+    cloudSourceStatus.hidden=false;
+    try{
+      await syncFromCloud(cloudSyncListing)
+    }catch(error){
+      console.error("모바일 동기화 데이터 불러오기 실패",error);
+      setIndicator(googleDrive?.status?.().connected?"connected":"error",googleDrive?.status?.().connected?"연결됨":"오류");
+      cloudSourceStatus.textContent=cloudErrorMessage(error)
+    }finally{
+      setCloudSourceBusy(false)
+    }
+  }
+
+  async function openCloudSources(returnView="library"){
+    cloudReturnView=returnView==="menu"?"menu":"library";
+    let status=renderAccountButton();
+    if(!status.configured){
+      if(cloudReturnView==="menu")openMenu();else openLibrary();
+      return
+    }
+    if(!status.connected){
+      setIndicator("busy","연결 중");
+      try{
+        await googleDrive.connect();
+        status=renderAccountButton()
+      }catch(error){
+        console.error("모바일 클라우드 로그인 실패",error);
+        setIndicator("error","오류");
+        if(cloudReturnView==="menu")openMenu();else openLibrary();
+        return
+      }
+    }
+    showScreen(cloudSourceScreen,{heading:"데이터 불러오기",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
+    await refreshCloudSources()
   }
 
   function openBottomSheet(sheet){if(sheet){sheet.hidden=false;refreshLucideIcons()}}
   function closeBottomSheet(sheet){if(sheet)sheet.hidden=true}
-  function openLibrary(){if(activeDocumentId)closeDocument();libraryNav.classList.add("active");window.scrollTo({top:0,behavior:"smooth"})}
-  function openSearch(){closeBottomSheet(mainMenuSheet);librarySearch.value="";renderSearchResults();openBottomSheet(searchSheet);requestAnimationFrame(()=>librarySearch.focus())}
+
+  function handleBack(){
+    if(activeDocumentId){openLibrary();return}
+    if(!searchScreen.hidden){openMenu();return}
+    if(!cloudSourceScreen.hidden){cloudReturnView==="menu"?openMenu():openLibrary();return}
+    if(!menuScreen.hidden){openLibrary();return}
+    openLibrary()
+  }
 
   async function start(){
     try{
       await repository.load();
-      setIndicator("local",googleDrive?.status().configured?"로그인":"로컬");
-      renderLibrary();
+      openLibrary({clearHistory:false});
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
       if(match)openDocument(match[1],decodeURIComponent(match[2]));
       refreshLucideIcons()
@@ -549,42 +664,39 @@
     }
   }
 
-  backButton.onclick=closeDocument;
-  libraryNav.onclick=openLibrary;
+  backButton.onclick=handleBack;
+  libraryNav.onclick=()=>openLibrary();
   createNav.onclick=()=>openBottomSheet(createSheet);
-  menuNav.onclick=()=>openBottomSheet(mainMenuSheet);
+  menuNav.onclick=openMenu;
   $("#createSheetClose").onclick=()=>closeBottomSheet(createSheet);
-  $("#mainMenuClose").onclick=()=>closeBottomSheet(mainMenuSheet);
-  $("#searchSheetClose").onclick=()=>closeBottomSheet(searchSheet);
   createSheet.onclick=event=>{if(event.target===createSheet)closeBottomSheet(createSheet)};
-  mainMenuSheet.onclick=event=>{if(event.target===mainMenuSheet)closeBottomSheet(mainMenuSheet)};
-  searchSheet.onclick=event=>{if(event.target===searchSheet)closeBottomSheet(searchSheet)};
   menuSearch.onclick=openSearch;
   librarySearch.addEventListener("input",renderSearchResults);
-  menuCloud.onclick=()=>{closeBottomSheet(mainMenuSheet);openCloudSheet()};
-  indicator.onclick=openCloudSheet;
-  $("#cloudSheetClose").onclick=closeCloudSheet;
-  cloudSheet.onclick=event=>{if(event.target===cloudSheet)closeCloudSheet()};
-  cloudConnect.onclick=connectAndSync;
+  menuCloud.onclick=()=>openCloudSources("menu");
+  indicator.onclick=()=>openCloudSources("library");
+  loadSyncSource.onclick=loadSelectedSync;
   cloudDisconnect.onclick=()=>{
     googleDrive.disconnect();
-    setIndicator("local","로그인");
-    cloudMessage.textContent="Google Drive 연결을 해제했습니다. 모바일에 내려받은 데이터는 유지됩니다.";
-    renderCloudSheet()
+    cloudSyncListing=null;
+    cloudBackupEntries=[];
+    renderAccountButton();
+    openLibrary()
   };
-  window.addEventListener("popstate",()=>{if(activeDocumentId)closeDocument()});
+  window.addEventListener("popstate",()=>{if(activeDocumentId)openLibrary({clearHistory:false})});
   fileInput.onchange=async()=>{
     const file=fileInput.files?.[0];fileInput.value="";
     if(!file)return;
-    try{await importCanonicalState(JSON.parse(await file.text()))}
-    catch(error){
+    try{
+      await importCanonicalState(JSON.parse(await file.text()));
+      openLibrary()
+    }catch(error){
       console.error("모바일 데이터 불러오기 실패",error);
       setStatus("파일에서 햄보드 데이터를 불러오지 못했습니다.",{action:"다시 선택",run:()=>fileInput.click()})
     }
   };
 
   window.HamboardMobileApp=Object.freeze({
-    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,snapshot
+    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSearch,openCloudSources,refreshCloudSources,snapshot
   });
   start();
 })();

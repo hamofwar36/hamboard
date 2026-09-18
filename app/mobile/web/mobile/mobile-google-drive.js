@@ -17,6 +17,14 @@
 
   const configuredAuthBaseUrl=()=>String(root.HAMBOARD_MOBILE_CONFIG?.authBaseUrl||"").trim().replace(/\/$/,"");
   const clearAccessToken=()=>{accessToken="";accessTokenExpiresAt=0};
+  const clearLegacyBrowserTokens=()=>{
+    try{
+      localStorage.removeItem("hamboard.mobile.googleAccessToken");
+      localStorage.removeItem("hamboard.mobile.googleAccessTokenExpiresAt");
+      localStorage.removeItem("hamboard.mobile.googleAuthorized")
+    }catch{}
+  };
+  clearLegacyBrowserTokens();
 
   function status(){
     return {

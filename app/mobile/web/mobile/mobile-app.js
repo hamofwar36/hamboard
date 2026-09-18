@@ -32,7 +32,6 @@
   const createForm=$("#createForm");
   const createFormIcon=$("#createFormIcon");
   const createFormKind=$("#createFormKind");
-  const createFormHint=$("#createFormHint");
   const createProjectKind=$("#createProjectKind");
   const createTitleLabel=$("#createTitleLabel");
   const createTitleInput=$("#createTitleInput");
@@ -41,6 +40,7 @@
   const createFolderLabel=$("#createFolderLabel");
   const createFolderSelect=$("#createFolderSelect");
   const createFormBack=$("#createFormBack");
+  const createFormClose=$("#createFormClose");
   const createFormStatus=$("#createFormStatus");
   const createSubmit=$("#createSubmit");
   const menuCloud=$("#menuCloud");
@@ -189,7 +189,7 @@
     createTitleInput.value="";
     createSubtitleInput.value="";
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
-    $("#createSheetTitle").textContent="새 문서"
+    createSheet.classList.remove("form-open")
   }
 
   function openCreateForm(type){
@@ -203,15 +203,14 @@
     createSubtitleField.hidden=type==="folder";
     createTitleLabel.textContent=type==="folder"?"폴더 이름":"제목";
     createFolderLabel.innerHTML=type==="folder"?"상위 폴더 <small>· 선택</small>":"폴더 <small>· 선택</small>";
-    createFormKind.textContent=config.label;
-    createFormHint.textContent=config.hint;
+    createFormKind.textContent=`새 ${config.label}`;
     createFormIcon.innerHTML=`<i data-lucide="${config.icon}" aria-hidden="true"></i>`;
+    createSheet.classList.add("form-open");
     createTitleInput.value=config.defaultTitle;
     createSubtitleInput.value="";
     fillCreateFolderOptions(type==="folder");
     createFormStatus.hidden=true;
     createFormStatus.textContent="";
-    $("#createSheetTitle").textContent=`새 ${config.label}`;
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
     refreshLucideIcons();
     requestAnimationFrame(()=>{createTitleInput.focus();createTitleInput.select()})
@@ -1068,6 +1067,7 @@
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
   $("#createSheetClose").onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
+  createFormClose.onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
   createSheet.onclick=event=>{if(event.target===createSheet){closeBottomSheet(createSheet);resetCreateSheet()}};
   createChooser.onclick=event=>{
     const button=event.target.closest("[data-create-type]");

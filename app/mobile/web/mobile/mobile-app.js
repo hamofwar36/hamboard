@@ -135,7 +135,7 @@
 
   async function restoreGoogleConnection(){
     const status=googleDrive?.status?.()||{configured:false,connected:false,authorized:false};
-    if(!status.configured||status.connected||!status.authorized||navigator.onLine===false)return status;
+    if(!status.configured||status.connected||!status.authorized||silentReconnectFailed||navigator.onLine===false)return status;
     if(silentReconnectPromise)return silentReconnectPromise;
     silentReconnectFailed=false;
     renderAccountButton();
@@ -433,6 +433,7 @@
     activeEpisodeId="";
     showScreen(libraryScreen,{heading:"홈",back:false,account:true,nav:"library"});
     renderAccountButton();
+    restoreGoogleConnection();
     renderLibrary()
   }
 

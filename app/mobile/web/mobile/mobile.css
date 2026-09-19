@@ -305,16 +305,58 @@ svg.lucide{stroke:currentColor}
 .child-blocks{margin:12px 0 0 12px;padding-left:12px;border-left:2px solid var(--border)}
 .empty-stage{padding:18px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}
 
+.note-screen{--note-mobile-max-width:680px}
+.note-mobile-shell{width:100%;max-width:var(--note-mobile-max-width);margin:0 auto}
+.note-mobile-head{padding:2px 6px 14px;margin-bottom:10px}
+.note-mobile-title-line{
+  display:grid;grid-template-columns:4px minmax(0,1fr);gap:10px;align-items:start
+}
+.note-mobile-accent{
+  width:4px;height:30px;margin-top:2px;border-radius:999px;background:var(--note-color,var(--primary-base))
+}
+.note-title-display{
+  min-width:0;margin:0;font-size:1.625rem;font-weight:700;line-height:1.2;letter-spacing:-.03em;
+  overflow-wrap:anywhere
+}
+.note-subtitle-display{
+  margin:6px 0 0 14px;color:var(--ui-muted);font-size:var(--fs-sm);font-weight:400;line-height:1.5
+}
+.mobile-note-status{
+  margin:9px 0 0 14px;display:flex;flex-wrap:wrap;align-items:center;gap:0;
+  color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400;line-height:1.45
+}
+.note-meta-item{display:inline-flex;align-items:center;min-width:0}
+.note-meta-item+.note-meta-item::before{content:"·";margin:0 6px;color:var(--border)}
 .note-reader-card{
-  min-height:240px;padding:20px;border:1px solid var(--border);border-radius:24px;background:var(--surface);
-  color:var(--ui-fg);box-shadow:var(--shadow);font-size:var(--fs-sm);line-height:1.72;overflow-wrap:anywhere;
+  min-height:calc(100dvh - 255px);padding:20px 17px 48px;
+  border:1px solid var(--border);border-radius:16px;background:var(--surface);
+  color:var(--ui-fg);box-shadow:none;font-size:var(--fs-sm);line-height:1.72;overflow-wrap:anywhere;
   --ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
 }
-.note-reader-card p:first-child{margin-top:0}
-.note-reader-card img{max-width:100%;height:auto}
-.note-reader-card table{max-width:100%;border-collapse:collapse;overflow:auto;display:block}
-.note-reader-card td,.note-reader-card th{border:1px solid var(--border);padding:6px}
-.empty-document{display:grid;place-items:center;min-height:180px;color:var(--ui-muted);font-size:var(--fs-sm)}
+.note-reader-card>:first-child{margin-top:0}
+.note-reader-card>:last-child{margin-bottom:0}
+.note-reader-card h1{margin:1.1em 0 .45em;font-size:var(--fs-display);line-height:1.18;font-weight:700}
+.note-reader-card h2{margin:1em 0 .42em;font-size:var(--fs-lg);line-height:1.25;font-weight:700}
+.note-reader-card h3{margin:.9em 0 .36em;font-size:var(--fs-base);line-height:1.3;font-weight:700}
+.note-reader-card p,.note-reader-card div{margin:.3em 0}
+.note-reader-card ul,.note-reader-card ol{margin:.7em 0;padding-left:1.55em}
+.note-reader-card li+li{margin-top:.2em}
+.note-reader-card blockquote{
+  margin:1em 0;padding:5px 0 5px 13px;border-left:3px solid var(--primary-base)
+}
+.note-reader-card a{text-decoration:underline;text-underline-offset:2px}
+.note-reader-card hr{margin:1.35em 0;border:0;border-top:1px solid color-mix(in srgb,var(--text-muted) 46%,transparent)}
+.note-reader-card img{display:block;max-width:100%;height:auto;margin:12px auto;border-radius:10px}
+.note-reader-card pre{
+  max-width:100%;overflow:auto;margin:1em 0;padding:12px;border:1px solid var(--border);border-radius:10px;
+  background:var(--surface-subtle);font-size:var(--fs-xs);line-height:1.6
+}
+.note-reader-card code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.note-reader-card table{width:100%;max-width:100%;border-collapse:collapse;overflow:auto;display:block}
+.note-reader-card td,.note-reader-card th{border:1px solid var(--border);padding:7px 8px;text-align:left}
+.empty-document{
+  display:grid;place-items:center;min-height:180px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center
+}
 
 .mindmap-reader-scroll{
   width:100%;overflow:auto;border:1px solid var(--border);border-radius:20px;background:var(--surface);
@@ -706,6 +748,8 @@ svg.lucide{stroke:currentColor}
 
 @media (min-width:700px){
   .mobile-main{padding:26px 12px 96px}
+  .note-mobile-head{padding-left:8px;padding-right:8px}
+  .note-reader-card{padding:28px 30px 56px;border-radius:24px}
   .library-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .project-card{height:154px;padding:18px;border-radius:20px}
   .project-folder{font-size:var(--fs-xs);gap:7px;margin-bottom:11px}

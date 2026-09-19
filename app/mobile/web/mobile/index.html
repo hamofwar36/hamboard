@@ -41,14 +41,18 @@
         <div id="projectContent" class="project-content"></div>
       </section>
 
-      <section id="noteReaderScreen" class="mobile-screen" hidden>
-        <article class="document-hero">
-          <span class="document-kind">노트</span>
-          <h2 id="noteReaderTitle"></h2>
-          <p id="noteReaderSubtitle"></p>
-          <div class="document-meta" id="noteReaderMeta"></div>
-        </article>
-        <article class="note-reader-card" id="noteReaderContent"></article>
+      <section id="noteReaderScreen" class="mobile-screen note-screen" hidden>
+        <div class="note-mobile-shell">
+          <header class="note-mobile-head">
+            <div class="note-mobile-title-line">
+              <span class="note-mobile-accent" aria-hidden="true"></span>
+              <h2 class="note-title-display" id="noteReaderTitle"></h2>
+            </div>
+            <p class="note-subtitle-display" id="noteReaderSubtitle"></p>
+            <div class="note-status-row mobile-note-status" id="noteReaderMeta"></div>
+          </header>
+          <article class="note-reader-card" id="noteReaderContent"></article>
+        </div>
       </section>
 
       <section id="mindmapReaderScreen" class="mobile-screen" hidden>

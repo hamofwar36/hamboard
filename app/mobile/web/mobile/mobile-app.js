@@ -704,16 +704,22 @@
   }
 
   function renderNote(note){
+    const screen=$("#noteReaderScreen"),state=snapshot();
+    screen.style.setProperty("--note-color",safeColor(note.color,CARD_COLORS[4]));
     $("#noteReaderTitle").textContent=note.title||"제목 없는 노트";
     $("#noteReaderSubtitle").textContent=note.subtitle||"";
     $("#noteReaderSubtitle").hidden=!note.subtitle;
-    const meta=$("#noteReaderMeta");
-    meta.replaceChildren();
-    if(note.deadline)meta.append(metaChip(`마감 ${note.deadline}`));
-    if(note.updatedAt){const date=formatDate(note.updatedAt);if(date)meta.append(metaChip(`${date} 수정`))}
     const content=$("#noteReaderContent");
     content.innerHTML=sanitizedNoteHtml(note.content||"");
-    if(!stripHtml(note.content||""))content.replaceChildren(element("div","empty-document","내용이 없는 노트입니다."))
+    const plainText=content.textContent||"",characterCount=Array.from(plainText).length;
+    if(!plainText.trim())content.replaceChildren(element("div","empty-document","내용이 없는 노트입니다."));
+    const meta=$("#noteReaderMeta");
+    meta.replaceChildren();
+    const folder=note.folderId?folderName(note.folderId,state):"";
+    if(folder)meta.append(element("span","note-meta-item",folder));
+    if(note.updatedAt){const date=formatDate(note.updatedAt);if(date)meta.append(element("span","note-meta-item",`${date} 수정`))}
+    meta.append(element("span","note-meta-item",`${new Intl.NumberFormat("ko-KR").format(characterCount)}자`));
+    if(note.deadline)meta.append(element("span","note-meta-item",`마감 ${note.deadline}`))
   }
 
   function renderMindmap(mindmap){
@@ -783,8 +789,8 @@
     activeDocumentType=type;
     activeDocumentId=key;
     activeEpisodeId="";
-    const screen=documentScreen(type);
-    showScreen(screen,{heading:item.title||(type==="project"?"작품":type==="note"?"노트":"마인드맵"),back:true,account:false,nav:"library"});
+    const screen=documentScreen(type),heading=type==="note"?"노트":item.title||(type==="project"?"작품":"마인드맵");
+    showScreen(screen,{heading,back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
     else renderMindmap(item)

@@ -44,12 +44,16 @@
       <section id="noteReaderScreen" class="mobile-screen note-screen" hidden>
         <div class="note-mobile-shell">
           <header class="note-mobile-head">
-            <div class="note-mobile-title-line">
-              <span class="note-mobile-accent" aria-hidden="true"></span>
-              <h2 class="note-title-display" id="noteReaderTitle"></h2>
+            <div class="note-mobile-title-row">
+              <button class="note-mobile-back" id="noteReaderBack" type="button" aria-label="노트 목록으로">
+                <i data-lucide="arrow-left" aria-hidden="true"></i>
+              </button>
+              <div class="note-mobile-copy">
+                <h2 class="note-title-display" id="noteReaderTitle"></h2>
+                <p class="note-subtitle-display" id="noteReaderSubtitle"></p>
+                <div class="note-status-row mobile-note-status" id="noteReaderMeta"></div>
+              </div>
             </div>
-            <p class="note-subtitle-display" id="noteReaderSubtitle"></p>
-            <div class="note-status-row mobile-note-status" id="noteReaderMeta"></div>
           </header>
           <article class="note-reader-card" id="noteReaderContent"></article>
         </div>

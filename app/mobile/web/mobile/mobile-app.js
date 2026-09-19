@@ -19,6 +19,7 @@
   const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
   const title=$("#mobileTitle");
+  const noteReaderBack=$("#noteReaderBack");
   const syncStatusWrap=$("#syncStatusWrap");
   const indicator=$("#syncIndicator");
   const offlineWarning=$("#offlineWarning");
@@ -475,7 +476,9 @@
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
     hideAllScreens();
     screen.hidden=false;
-    backButton.hidden=!back;
+    const noteOpen=screen===noteReaderScreen;
+    document.body.classList.toggle("note-open",noteOpen);
+    backButton.hidden=noteOpen||!back;
     syncStatusWrap.hidden=!account;
     title.textContent=heading;
     activateNav(nav);
@@ -704,8 +707,9 @@
   }
 
   function renderNote(note){
-    const screen=$("#noteReaderScreen"),state=snapshot();
-    screen.style.setProperty("--note-color",safeColor(note.color,CARD_COLORS[4]));
+    const screen=$("#noteReaderScreen"),state=snapshot(),noteColor=safeColor(note.color,CARD_COLORS[4]);
+    screen.style.setProperty("--note-color",noteColor);
+    document.body.style.setProperty("--active-note-color",noteColor);
     $("#noteReaderTitle").textContent=note.title||"제목 없는 노트";
     $("#noteReaderSubtitle").textContent=note.subtitle||"";
     $("#noteReaderSubtitle").hidden=!note.subtitle;
@@ -1129,6 +1133,7 @@
   }
 
   backButton.onclick=handleBack;
+  noteReaderBack.onclick=handleBack;
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};

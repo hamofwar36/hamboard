@@ -305,31 +305,44 @@ svg.lucide{stroke:currentColor}
 .child-blocks{margin:12px 0 0 12px;padding-left:12px;border-left:2px solid var(--border)}
 .empty-stage{padding:18px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}
 
-.note-screen{--note-mobile-max-width:680px}
-.note-mobile-shell{width:100%;max-width:var(--note-mobile-max-width);margin:0 auto}
-.note-mobile-head{padding:2px 6px 14px;margin-bottom:10px}
-.note-mobile-title-line{
-  display:grid;grid-template-columns:4px minmax(0,1fr);gap:10px;align-items:start
+.note-open .mobile-topbar{display:none}
+.note-open .mobile-main{
+  width:100%;max-width:none;margin:0;padding:0 0 calc(86px + env(safe-area-inset-bottom));
+  background:color-mix(in srgb,var(--active-note-color,var(--primary-base)) 10%,var(--bg))
 }
-.note-mobile-accent{
-  width:4px;height:30px;margin-top:2px;border-radius:999px;background:var(--note-color,var(--primary-base))
+.note-screen{--note-mobile-max-width:680px;min-height:calc(100dvh - 68px)}
+.note-mobile-shell{
+  width:100%;max-width:var(--note-mobile-max-width);min-height:calc(100dvh - 68px);margin:0 auto;
+  padding:calc(env(safe-area-inset-top) + 18px) 20px 44px
 }
+.note-mobile-head{
+  padding:0 0 18px;margin:0 0 4px;
+  border-bottom:1px solid color-mix(in srgb,var(--text-muted) 22%,transparent)
+}
+.note-mobile-title-row{display:grid;grid-template-columns:36px minmax(0,1fr);gap:8px;align-items:start}
+.note-mobile-back{
+  width:36px;height:36px;margin-top:-2px;padding:0;display:grid;place-items:center;
+  border:0;border-radius:10px;background:transparent;color:var(--ui-muted)
+}
+.note-mobile-back:active{background:var(--surface-hover);color:var(--on-surface-hover)}
+.note-mobile-back svg{width:21px;height:21px}
+.note-mobile-copy{min-width:0}
 .note-title-display{
   min-width:0;margin:0;font-size:1.625rem;font-weight:700;line-height:1.2;letter-spacing:-.03em;
   overflow-wrap:anywhere
 }
 .note-subtitle-display{
-  margin:6px 0 0 14px;color:var(--ui-muted);font-size:var(--fs-sm);font-weight:400;line-height:1.5
+  margin:7px 0 0;color:var(--ui-muted);font-size:var(--fs-sm);font-weight:400;line-height:1.5
 }
 .mobile-note-status{
-  margin:9px 0 0 14px;display:flex;flex-wrap:wrap;align-items:center;gap:0;
+  margin:10px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:0;
   color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400;line-height:1.45
 }
 .note-meta-item{display:inline-flex;align-items:center;min-width:0}
 .note-meta-item+.note-meta-item::before{content:"·";margin:0 6px;color:var(--border)}
 .note-reader-card{
-  min-height:calc(100dvh - 255px);padding:20px 17px 48px;
-  border:1px solid var(--border);border-radius:16px;background:var(--surface);
+  min-height:calc(100dvh - 230px);padding:18px 0 48px;
+  border:0;border-radius:0;background:transparent;
   color:var(--ui-fg);box-shadow:none;font-size:var(--fs-sm);line-height:1.72;overflow-wrap:anywhere;
   --ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
 }
@@ -748,8 +761,8 @@ svg.lucide{stroke:currentColor}
 
 @media (min-width:700px){
   .mobile-main{padding:26px 12px 96px}
-  .note-mobile-head{padding-left:8px;padding-right:8px}
-  .note-reader-card{padding:28px 30px 56px;border-radius:24px}
+  .note-mobile-shell{padding-left:30px;padding-right:30px}
+  .note-reader-card{padding:24px 0 56px}
   .library-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .project-card{height:154px;padding:18px;border-radius:20px}
   .project-folder{font-size:var(--fs-xs);gap:7px;margin-bottom:11px}

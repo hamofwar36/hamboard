@@ -39,6 +39,8 @@
   const createSubtitleInput=$("#createSubtitleInput");
   const createFolderLabel=$("#createFolderLabel");
   const createFolderSelect=$("#createFolderSelect");
+  const createColorField=$("#createColorField");
+  const createColorGrid=$("#createColorGrid");
   const createFormBack=$("#createFormBack");
   const createFormClose=$("#createFormClose");
   const createFormStatus=$("#createFormStatus");
@@ -74,6 +76,7 @@
   let silentReconnectPromise=null;
   let activeCreateType="";
   let createProjectKindValue="short";
+  let createColorValue=CARD_COLORS[0];
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
   const DEFAULT_STAGE_COLORS=Object.freeze(["#A9D6FF","#BDE7C4","#F6D872","#FFB8AE"]);
@@ -188,8 +191,24 @@
     createFormStatus.textContent="";
     createTitleInput.value="";
     createSubtitleInput.value="";
+    createColorValue=CARD_COLORS[0];
+    createColorGrid.replaceChildren();
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
     createSheet.classList.remove("form-open")
+  }
+
+  function renderCreateColorOptions(){
+    createColorGrid.replaceChildren();
+    for(const color of CARD_COLORS){
+      const button=document.createElement("button");
+      button.type="button";
+      button.className=`create-color-swatch${color===createColorValue?" active":""}`;
+      button.style.setProperty("--swatch",color);
+      button.dataset.color=color;
+      button.setAttribute("aria-label",`색상 ${color}`);
+      button.setAttribute("aria-pressed",String(color===createColorValue));
+      createColorGrid.append(button)
+    }
   }
 
   function openCreateForm(type){
@@ -200,14 +219,19 @@
     createChooser.hidden=true;
     createForm.hidden=false;
     createProjectKind.hidden=type!=="project";
-    createSubtitleField.hidden=type==="folder";
+    createSubtitleField.hidden=false;
     createTitleLabel.textContent=type==="folder"?"폴더 이름":"제목";
+    createSubtitleField.querySelector("span").innerHTML=type==="folder"?"부제 <small>· 선택</small>":"부제 <small>· 선택</small>";
     createFolderLabel.innerHTML=type==="folder"?"상위 폴더 <small>· 선택</small>":"폴더 <small>· 선택</small>";
     createFormKind.textContent=`새 ${config.label}`;
     createFormIcon.innerHTML=`<i data-lucide="${config.icon}" aria-hidden="true"></i>`;
     createSheet.classList.add("form-open");
     createTitleInput.value=config.defaultTitle;
     createSubtitleInput.value="";
+    createSubtitleInput.placeholder=type==="folder"?"폴더 설명":type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
+    createColorValue=randomCardColor();
+    createColorField.hidden=type==="folder";
+    renderCreateColorOptions();
     fillCreateFolderOptions(type==="folder");
     createFormStatus.hidden=true;
     createFormStatus.textContent="";
@@ -221,7 +245,7 @@
     if(!config)return;
     const titleValue=createTitleInput.value.trim()||config.defaultTitle;
     const subtitle=createSubtitleInput.value.trim(),folderId=createFolderSelect.value?String(createFolderSelect.value):null;
-    const state=snapshot(),now=new Date().toISOString(),color=randomCardColor(),id=uid();
+    const state=snapshot(),now=new Date().toISOString(),color=createColorValue||randomCardColor(),id=uid();
     state.folders=Array.isArray(state.folders)?state.folders:[];
     state.projects=Array.isArray(state.projects)?state.projects:[];
     state.notes=Array.isArray(state.notes)?state.notes:[];
@@ -229,7 +253,7 @@
 
     let createdType="",createdId=id;
     if(type==="folder"){
-      state.folders.push({id,name:titleValue,subtitle:"",parentId:folderId})
+      state.folders.push({id,name:titleValue,subtitle,parentId:folderId})
     }else if(type==="note"){
       state.notes.push({
         id,title:titleValue,subtitle,deadline:"",folderId,color,icon:"notebook-text",cardImageAssetId:"",
@@ -1072,6 +1096,12 @@
   createChooser.onclick=event=>{
     const button=event.target.closest("[data-create-type]");
     if(button)openCreateForm(button.dataset.createType)
+  };
+  createColorGrid.onclick=event=>{
+    const button=event.target.closest("[data-color]");
+    if(!button)return;
+    createColorValue=safeColor(button.dataset.color,CARD_COLORS[0]);
+    renderCreateColorOptions()
   };
   createFormBack.onclick=resetCreateSheet;
   createProjectKind.onclick=event=>{

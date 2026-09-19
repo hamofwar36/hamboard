@@ -12,12 +12,17 @@ const checks=[],check=(name,run)=>{run();checks.push(name)};
 check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["favicon.ico","index.html","mobile-app.js","mobile-config.js","mobile-google-drive.js","mobile.css","shared","vendor"]));
 check("mobile index uses deployment-local shared modules",()=>{assert.match(html,/src="\.\/shared\/sync-state-model\.js"/);assert.doesNotMatch(html,/\.\.\/shared/)});
 check("runtime config loads before Google Drive transport",()=>assert.ok(html.indexOf("mobile-config.js")<html.indexOf("mobile-google-drive.js")));
+check("versioned mobile assets prevent stale mixed deployments",()=>{
+  for(const asset of ["mobile.css","sync-state-model.js","project-repository.js","lucide.min.js","mobile-config.js","mobile-google-drive.js","mobile-app.js"]){
+    assert.match(html,new RegExp(asset.replaceAll(".","\\.")+"\\?v=0\\.3\\.14"))
+  }
+});
 check("mobile uses bundled Lucide before app runtime",()=>{assert.match(html,/src="\.\/vendor\/lucide\/lucide\.min\.js"/);assert.ok(html.indexOf("lucide.min.js")<html.indexOf("mobile-app.js"));assert.ok(lucide.length>1000)});
 check("menu is a full mobile screen rather than a popover",()=>{assert.match(html,/id="menuScreen"/);assert.doesNotMatch(html,/id="mainMenuSheet"/);assert.match(app,/showScreen\(menuScreen/)});
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.13"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.14"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);

@@ -20,6 +20,19 @@ html=html
   .replace('src="../../../window/web/assets/vendor/lucide/lucide.min.js"','src="./vendor/lucide/lucide.min.js"')
   .replace('  <script src="./mobile-google-drive.js"></script>','  <script src="./mobile-config.js"></script>\n  <script src="./mobile-google-drive.js"></script>');
 
+const versionTag=`?v=${encodeURIComponent(mobileVersion)}`;
+for(const asset of [
+  "./mobile.css",
+  "./shared/sync-state-model.js",
+  "./shared/project-repository.js",
+  "./vendor/lucide/lucide.min.js",
+  "./mobile-config.js",
+  "./mobile-google-drive.js",
+  "./mobile-app.js"
+]){
+  html=html.replaceAll(asset,`${asset}${versionTag}`);
+}
+
 await Promise.all([
   writeFile(resolve(outputRoot,"index.html"),html),
   cp(resolve(mobileRoot,"mobile.css"),resolve(outputRoot,"mobile.css")),

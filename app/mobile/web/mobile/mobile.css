@@ -593,7 +593,7 @@ svg.lucide{stroke:currentColor}
 }
 .create-sheet-backdrop:not(.form-open) .create-sheet-panel{
   position:absolute;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);
-  width:min(244px,calc(100vw - 32px));max-height:calc(100dvh - 96px);
+  width:min(150px,calc(100vw - 24px));max-height:calc(100dvh - 96px);
   padding:4px 0;overflow:hidden;border-radius:16px
 }
 .create-sheet-backdrop:not(.form-open) .create-list{border-top:0}
@@ -645,12 +645,17 @@ svg.lucide{stroke:currentColor}
 .create-field input:focus,.create-field select:focus{border-color:var(--primary-base)}
 .create-color-field{margin:0;padding:0;border:0}
 .create-color-field legend{margin:0 0 6px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700}
-.create-color-grid{display:grid;grid-template-columns:repeat(8,28px);gap:7px;justify-content:start}
-.create-color-swatch{
-  width:28px;height:28px;padding:0;border:2px solid transparent;border-radius:9px;background:var(--swatch);
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 14%,transparent)
+.create-color-grid{
+  display:flex;flex-wrap:wrap;gap:8px;padding:4px 2px 2px
 }
-.create-color-swatch.active{border-color:var(--ui-fg);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ui-fg)}
+.create-color-swatch{
+  flex:0 0 30px;width:30px;height:30px;min-width:30px;min-height:30px;padding:0;
+  appearance:none;border:1px solid color-mix(in srgb,var(--text) 24%,var(--border));border-radius:9px;
+  background-color:var(--swatch);box-shadow:inset 0 0 0 1px color-mix(in srgb,#fff 22%,transparent)
+}
+.create-color-swatch.active{
+  border:3px solid var(--ui-fg);box-shadow:0 0 0 2px var(--surface)
+}
 .create-color-swatch:active{transform:scale(.94)}
 .create-form-status{
   padding:9px 10px;border:1px solid color-mix(in srgb,var(--on-error) 22%,var(--border));

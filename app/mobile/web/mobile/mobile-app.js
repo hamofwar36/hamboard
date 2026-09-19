@@ -642,8 +642,9 @@
     if(unit.subtitle)heading.append(element("p","",unit.subtitle));
     host.append(heading);
     for(const stage of unit.stageDefs||[]){
-      const section=element("section","stage-section"),stageHead=element("header","stage-heading"),stripe=element("span","stage-color"),copy=element("div","");
-      stripe.style.setProperty("--stage-color",safeColor(stage.color,"#A9D6FF"));
+      const section=element("section","stage-section"),stageHead=element("header","stage-heading"),stripe=element("span","stage-color"),copy=element("div",""),stageColor=safeColor(stage.color,"#A9D6FF");
+      section.style.setProperty("--stage-color",stageColor);
+      stripe.style.setProperty("--stage-color",stageColor);
       copy.append(element("h4","",stage.name||"파트"));
       if(stage.hint)copy.append(element("p","",stage.hint));
       stageHead.append(stripe,copy);
@@ -662,10 +663,9 @@
     $("#readerSubtitle").textContent=project.subtitle||"";
     $("#readerSubtitle").hidden=!project.subtitle;
     const meta=$("#readerMeta");
-    meta.replaceChildren(metaChip(`${stats.blocks}개 블록`));
-    if(stats.blocks)meta.append(metaChip(`${stats.completed}개 완료`));
-    if(project.deadline)meta.append(metaChip(`마감 ${project.deadline}`));
-    if(project.updatedAt){const date=formatDate(project.updatedAt);if(date)meta.append(metaChip(`${date} 수정`))}
+    meta.replaceChildren(element("span","project-summary-item",`${stats.blocks}개 블록`));
+    if(stats.blocks)meta.append(element("span","project-summary-item",`${stats.completed}개 완료`));
+    if(project.deadline)meta.append(element("span","project-summary-item",`마감 ${project.deadline}`))
     const episodes=$("#episodeList");
     episodes.replaceChildren();
     if(project.kind==="long"){
@@ -675,8 +675,9 @@
       list.forEach((episode,index)=>{
         const button=element("button",`episode-button${String(episode.id)===activeEpisodeId?" active":""}`);
         button.type="button";
-        const stripe=element("span","episode-color");
-        stripe.style.setProperty("--episode-color",safeColor(episode.color,"#A9D6FF"));
+        const stripe=element("span","episode-color"),episodeColor=safeColor(episode.color,"#A9D6FF");
+        button.style.setProperty("--episode-color",episodeColor);
+        stripe.style.setProperty("--episode-color",episodeColor);
         const copy=element("span","episode-copy");
         copy.append(element("strong","",episode.title||`${index+1}화`),element("span","",episode.subtitle||`${allBlocks(episode).length}개 블록`));
         button.append(stripe,copy,element("span","episode-number",`${index+1}화`));
@@ -719,8 +720,10 @@
     $("#mindmapReaderSubtitle").textContent=mindmap.subtitle||"";
     $("#mindmapReaderSubtitle").hidden=!mindmap.subtitle;
     const meta=$("#mindmapReaderMeta");
-    meta.replaceChildren(metaChip(`${(mindmap.nodes||[]).length}개 노드`),metaChip(`${(mindmap.edges||[]).length}개 연결`));
-    if(mindmap.deadline)meta.append(metaChip(`마감 ${mindmap.deadline}`));
+    meta.replaceChildren(
+      element("span","mindmap-summary-item",`${(mindmap.nodes||[]).length}개 노드`),
+      element("span","mindmap-summary-item",`${(mindmap.edges||[]).length}개 연결`)
+    );
 
     const canvas=$("#mindmapReaderCanvas"),nodesHost=$("#mindmapReaderNodes"),edgesHost=$("#mindmapReaderEdges");
     nodesHost.replaceChildren();

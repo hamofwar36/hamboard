@@ -30,15 +30,17 @@
         <div id="libraryList" class="library-list"></div>
       </section>
 
-      <section id="projectReaderScreen" class="mobile-screen" hidden>
-        <article class="document-hero">
-          <span class="document-kind" id="readerKind"></span>
-          <h2 id="readerTitle"></h2>
-          <p id="readerSubtitle"></p>
-          <div class="document-meta" id="readerMeta"></div>
-        </article>
-        <div id="episodeList" class="episode-list"></div>
-        <div id="projectContent" class="project-content"></div>
+      <section id="projectReaderScreen" class="mobile-screen project-screen" hidden>
+        <div class="project-mobile-shell">
+          <header class="project-mobile-head">
+            <span class="project-mobile-kind" id="readerKind"></span>
+            <h2 id="readerTitle"></h2>
+            <p id="readerSubtitle"></p>
+            <div class="project-mobile-meta" id="readerMeta"></div>
+          </header>
+          <div id="episodeList" class="episode-list"></div>
+          <div id="projectContent" class="project-content"></div>
+        </div>
       </section>
 
       <section id="noteReaderScreen" class="mobile-screen note-screen" hidden>
@@ -56,17 +58,18 @@
         </div>
       </section>
 
-      <section id="mindmapReaderScreen" class="mobile-screen" hidden>
-        <article class="document-hero">
-          <span class="document-kind">마인드맵</span>
-          <h2 id="mindmapReaderTitle"></h2>
-          <p id="mindmapReaderSubtitle"></p>
-          <div class="document-meta" id="mindmapReaderMeta"></div>
-        </article>
-        <div class="mindmap-reader-scroll" id="mindmapReaderScroll">
-          <div class="mindmap-reader-canvas" id="mindmapReaderCanvas">
-            <svg id="mindmapReaderEdges" aria-hidden="true"></svg>
-            <div id="mindmapReaderNodes"></div>
+      <section id="mindmapReaderScreen" class="mobile-screen mindmap-screen" hidden>
+        <div class="mindmap-mobile-shell">
+          <header class="mindmap-mobile-head">
+            <h2 id="mindmapReaderTitle"></h2>
+            <p id="mindmapReaderSubtitle"></p>
+            <div class="mindmap-mobile-meta" id="mindmapReaderMeta"></div>
+          </header>
+          <div class="mindmap-reader-scroll" id="mindmapReaderScroll">
+            <div class="mindmap-reader-canvas" id="mindmapReaderCanvas">
+              <svg id="mindmapReaderEdges" aria-hidden="true"></svg>
+              <div id="mindmapReaderNodes"></div>
+            </div>
           </div>
         </div>
       </section>

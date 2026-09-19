@@ -81,6 +81,7 @@
 
   --mobile-content-max:760px;
   --mobile-page-gap:14px;
+  --create-chooser-width:150px;
 
   font-family:var(--interface-font-family,"Pretendard","Source Han Serif KR","Malgun Gothic","Microsoft YaHei UI","Yu Gothic UI",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
   background:var(--bg);
@@ -593,7 +594,7 @@ svg.lucide{stroke:currentColor}
 }
 .create-sheet-backdrop:not(.form-open) .create-sheet-panel{
   position:absolute;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);
-  width:min(150px,calc(100vw - 24px));max-height:calc(100dvh - 96px);
+  width:var(--create-chooser-width);max-width:calc(100vw - 24px);max-height:calc(100dvh - 96px);
   padding:4px 0;overflow:hidden;border-radius:16px
 }
 .create-sheet-backdrop:not(.form-open) .create-list{border-top:0}
@@ -650,13 +651,30 @@ svg.lucide{stroke:currentColor}
 }
 .create-color-swatch{
   flex:0 0 30px;width:30px;height:30px;min-width:30px;min-height:30px;padding:0;
-  appearance:none;border:1px solid color-mix(in srgb,var(--text) 24%,var(--border));border-radius:9px;
+  display:grid;place-items:center;appearance:none;
+  border:1px solid color-mix(in srgb,var(--text) 24%,var(--border));border-radius:9px;
   background-color:var(--swatch);box-shadow:inset 0 0 0 1px color-mix(in srgb,#fff 22%,transparent)
 }
+.create-color-swatch.custom{
+  background:linear-gradient(135deg,#ffe8f0,#eee9ff 38%,#e5f7f6 70%,#fff3cf);color:var(--ui-muted)
+}
+.create-color-swatch.custom svg{width:15px;height:15px}
 .create-color-swatch.active{
   border:3px solid var(--ui-fg);box-shadow:0 0 0 2px var(--surface)
 }
 .create-color-swatch:active{transform:scale(.94)}
+.create-color-editor{
+  display:grid;grid-template-columns:42px minmax(0,1fr);gap:8px;align-items:center;margin-top:9px
+}
+.create-color-editor input[type="color"]{
+  width:42px;height:36px;padding:3px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface);color:var(--ui-fg)
+}
+.create-color-editor input[type="text"]{
+  min-width:0;height:36px;padding:0 10px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface);color:var(--ui-fg);font-size:var(--fs-sm);font-weight:700;text-transform:uppercase
+}
+.create-color-editor input[type="text"]:focus{border-color:var(--primary-base);outline:0}
 .create-form-status{
   padding:9px 10px;border:1px solid color-mix(in srgb,var(--on-error) 22%,var(--border));
   border-radius:10px;background:var(--status-error-bg);color:var(--on-error);font-size:var(--fs-xs);line-height:1.4

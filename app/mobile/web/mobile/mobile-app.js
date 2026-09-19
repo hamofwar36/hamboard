@@ -40,6 +40,9 @@
   const createFolderLabel=$("#createFolderLabel");
   const createFolderSelect=$("#createFolderSelect");
   const createColorField=$("#createColorField");
+  const createColorToggle=$("#createColorToggle");
+  const createColorPreview=$("#createColorPreview");
+  const createColorOptions=$("#createColorOptions");
   const createColorGrid=$("#createColorGrid");
   const createColorEditor=$("#createColorEditor");
   const createColorPicker=$("#createColorPicker");
@@ -81,6 +84,7 @@
   let createProjectKindValue="short";
   let createColorValue="";
   let createColorCustom=false;
+  let createColorExpanded=false;
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
   const DEFAULT_STAGE_COLORS=Object.freeze(["#A9D6FF","#BDE7C4","#F6D872","#FFB8AE"]);
@@ -197,7 +201,9 @@
     createSubtitleInput.value="";
     createColorValue=CARD_COLORS[0];
     createColorCustom=false;
+    createColorExpanded=false;
     createColorGrid.replaceChildren();
+    createColorOptions.hidden=true;
     createColorEditor.hidden=true;
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
     createSheet.classList.remove("form-open")
@@ -205,6 +211,9 @@
 
   function syncCreateColorEditor(){
     const color=safeColor(createColorValue,CARD_COLORS[0]);
+    createColorPreview.style.setProperty("--swatch",color);
+    createColorToggle.setAttribute("aria-expanded",String(createColorExpanded));
+    createColorOptions.hidden=!createColorExpanded;
     createColorEditor.hidden=!createColorCustom;
     createColorPicker.value=color;
     createColorHex.value=color.toUpperCase()
@@ -255,6 +264,7 @@
     createSubtitleInput.placeholder=type==="folder"?"폴더 설명":type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
     createColorValue=randomCardColor();
     createColorCustom=false;
+    createColorExpanded=false;
     createColorField.hidden=type==="folder";
     renderCreateColorOptions();
     fillCreateFolderOptions(type==="folder");
@@ -1122,10 +1132,15 @@
     const button=event.target.closest("[data-create-type]");
     if(button)openCreateForm(button.dataset.createType)
   };
+  createColorToggle.onclick=()=>{
+    createColorExpanded=!createColorExpanded;
+    renderCreateColorOptions()
+  };
   createColorGrid.onclick=event=>{
     const custom=event.target.closest("[data-color-custom]");
     if(custom){
       createColorCustom=true;
+      createColorExpanded=true;
       createColorValue=safeColor(createColorValue,CARD_COLORS[0]);
       renderCreateColorOptions();
       requestAnimationFrame(()=>createColorHex.focus());
@@ -1134,11 +1149,13 @@
     const button=event.target.closest("[data-color]");
     if(!button)return;
     createColorCustom=false;
+    createColorExpanded=false;
     createColorValue=safeColor(button.dataset.color,CARD_COLORS[0]);
     renderCreateColorOptions()
   };
   createColorPicker.oninput=()=>{
     createColorCustom=true;
+    createColorExpanded=true;
     createColorValue=safeColor(createColorPicker.value,createColorValue||CARD_COLORS[0]);
     createColorHex.value=createColorValue.toUpperCase();
     renderCreateColorOptions()
@@ -1147,6 +1164,7 @@
     const value=safeColor(createColorHex.value,"");
     if(!value)return;
     createColorCustom=true;
+    createColorExpanded=true;
     createColorValue=value;
     createColorPicker.value=value;
     renderCreateColorOptions()
@@ -1154,6 +1172,7 @@
   createColorHex.onblur=()=>{
     const value=safeColor(createColorHex.value,createColorValue||CARD_COLORS[0]);
     createColorCustom=true;
+    createColorExpanded=true;
     createColorValue=value;
     renderCreateColorOptions()
   };

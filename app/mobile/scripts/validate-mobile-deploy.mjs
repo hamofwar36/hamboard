@@ -23,7 +23,7 @@ check("menu is a full mobile screen rather than a popover",()=>{assert.match(htm
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.20"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.21"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);
@@ -43,31 +43,33 @@ check("settings screen exposes display and diagnostics controls",()=>{assert.mat
 check("mobile note reader restores the shared Home back bar",()=>{
   assert.match(html,/id="noteReaderScreen" class="mobile-screen note-screen"/);
   assert.doesNotMatch(html,/id="noteReaderBack"/);
-  assert.match(html,/class="note-title-accent"/);
-  assert.match(html,/class="note-title-display" id="noteReaderTitle"/);
+  assert.match(html,/class="document-title-accent"/);
+  assert.match(html,/class="document-title-display" id="noteReaderTitle"/);
   assert.doesNotMatch(html,/id="noteReaderMeta"/);
   assert.doesNotMatch(css,/\.note-open \.mobile-topbar\{display:none\}/);
-  assert.match(css,/\.note-mobile-head\{[\s\S]*?background:var\(--bg\)/);
-  assert.match(css,/\.note-title-accent\{[\s\S]*?background:var\(--secondary-base\)/);
+  assert.match(css,/\.document-mobile-head\{[\s\S]*?background:var\(--bg\)/);
+  assert.match(css,/\.document-title-accent\{[\s\S]*?background:var\(--secondary-base\)/);
   assert.match(css,/\.note-reader-card\{[\s\S]*?border:0;border-radius:0;background:var\(--surface\)/);
   assert.match(app,/backButton\.hidden=!back/);
-  assert.match(app,/heading=type==="note"\?"홈"/);
-  assert.match(app,/activeDocumentType==="note"\)openLibrary\(\{replace:true\}\)/)
+  assert.match(app,/showScreen\(screen,\{heading:"홈",back:true/);
+  assert.match(app,/if\(activeDocumentType\)openLibrary\(\{replace:true\}\)/)
 });
-check("mobile document chrome stays compact and Windows-like readers keep their native hierarchy",()=>{
+check("all mobile document readers share the note-style Home header and projects snap by stage",()=>{
   assert.match(css,/\.mobile-topbar\{[\s\S]*?min-height:44px/);
-  assert.match(css,/\.note-open \.mobile-topbar\{column-gap:3px\}/);
-  assert.match(html,/id="projectReaderScreen" class="mobile-screen project-screen"/);
-  assert.match(html,/class="project-mobile-head"/);
-  assert.match(css,/\.stage-section\{[\s\S]*?linear-gradient/);
-  assert.match(css,/\.block-card\{[\s\S]*?background:var\(--surface\)/);
-  assert.match(app,/section\.style\.setProperty\("--stage-color",stageColor\)/);
-  assert.match(app,/button\.style\.setProperty\("--episode-color",episodeColor\)/);
-  assert.match(html,/id="mindmapReaderScreen" class="mobile-screen mindmap-screen"/);
-  assert.match(html,/class="mindmap-mobile-head"/);
-  assert.match(css,/\.mindmap-reader-canvas\{[\s\S]*?background-size:24px 24px/);
-  assert.match(css,/\.mindmap-readonly-node\{[\s\S]*?border-radius:16px/);
-  assert.match(app,/mindmap-summary-item/)
+  assert.match(css,/\.document-open \.mobile-topbar\{column-gap:3px\}/);
+  assert.match(css,/\.document-mobile-head\{[\s\S]*?background:var\(--bg\)/);
+  assert.match(css,/\.document-title-accent\{[\s\S]*?background:var\(--secondary-base\)/);
+  assert.match(html,/class="document-mobile-shell project-mobile-shell"/);
+  assert.match(html,/class="document-mobile-shell note-mobile-shell"/);
+  assert.match(html,/class="document-mobile-shell mindmap-mobile-shell"/);
+  assert.doesNotMatch(html,/id="readerMeta"|id="mindmapReaderMeta"|id="readerKind"/);
+  assert.match(app,/showScreen\(screen,\{heading:"홈",back:true/);
+  assert.match(app,/if\(activeDocumentType\)openLibrary\(\{replace:true\}\)/);
+  assert.match(app,/const carousel=element\("div","stage-carousel"\)/);
+  assert.match(css,/\.stage-carousel\{[\s\S]*?scroll-snap-type:x mandatory/);
+  assert.match(css,/\.stage-section\{[\s\S]*?flex:0 0 min\(calc\(100vw - 54px\)/);
+  assert.match(css,/\.stage-section\{[\s\S]*?scroll-snap-align:start/);
+  assert.match(css,/\.mindmap-reader-canvas\{[\s\S]*?background-size:24px 24px/)
 });
 check("new document drawer is isolated and creates supported mobile documents",()=>{assert.match(html,/class="nav-sheet-backdrop create-sheet-backdrop" id="createSheet"/);assert.match(html,/<strong>새 폴더<\/strong>/);assert.match(html,/<strong>새 작품<\/strong>/);assert.match(html,/<strong>새 노트<\/strong>/);assert.match(html,/<strong>새 마인드맵<\/strong>/);assert.doesNotMatch(html,/id="createSheetClose"/);assert.doesNotMatch(html,/data-lucide="chevron-right"/);assert.match(css,/--create-chooser-width:150px/);assert.match(css,/\.create-sheet-backdrop:not\(\.form-open\) \.create-sheet-panel\{[\s\S]*?width:var\(--create-chooser-width\);max-width:calc\(100vw - 24px\)/);assert.match(css,/\.nav-sheet-backdrop\{[\s\S]*?backdrop-filter:blur\(5px\)/);assert.match(html,/id="createForm"/);assert.match(html,/id="createColorToggle"/);assert.match(html,/id="createColorOptions" hidden/);assert.match(html,/id="createColorGrid"/);assert.match(html,/id="createColorPicker" type="color"/);assert.match(html,/id="createColorHex" type="text"/);assert.match(app,/function renderCreateColorOptions/);assert.match(app,/createColorCustom/);assert.match(app,/createColorExpanded/);assert.match(app,/createColorOptions\.hidden=!createColorExpanded/);assert.match(app,/createColorValue=safeColor\(button\.dataset\.color,CARD_COLORS\[0\]\)/);assert.match(app,/selectedColor=safeColor\(createColorValue,""\)/);assert.doesNotMatch(html,/data-create-type="(?:folder|project|note|mindmap)"[^>]*disabled/);assert.doesNotMatch(app,/createSheetClose/);assert.match(app,/async function createNewDocument/);assert.match(app,/function defaultStoryStages/);assert.match(app,/repository\.replaceState\(state\)/)});
 check("Vercel builds the isolated mobile output",()=>{assert.equal(vercel.installCommand,"node --version");assert.equal(vercel.buildCommand,"npm run mobile:build");assert.equal(vercel.outputDirectory,"dist-mobile")});

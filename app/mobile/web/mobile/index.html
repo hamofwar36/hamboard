@@ -31,26 +31,31 @@
       </section>
 
       <section id="projectReaderScreen" class="mobile-screen project-screen" hidden>
-        <div class="project-mobile-shell">
-          <header class="project-mobile-head">
-            <span class="project-mobile-kind" id="readerKind"></span>
-            <h2 id="readerTitle"></h2>
-            <p id="readerSubtitle"></p>
-            <div class="project-mobile-meta" id="readerMeta"></div>
+        <div class="document-mobile-shell project-mobile-shell">
+          <header class="document-mobile-head project-mobile-head">
+            <div class="document-mobile-title-row">
+              <span class="document-title-accent" aria-hidden="true"></span>
+              <div class="document-mobile-copy">
+                <h2 class="document-title-display" id="readerTitle"></h2>
+                <p class="document-subtitle-display" id="readerSubtitle"></p>
+              </div>
+            </div>
           </header>
-          <div id="episodeList" class="episode-list"></div>
-          <div id="projectContent" class="project-content"></div>
+          <div class="project-mobile-body">
+            <div id="episodeList" class="episode-list"></div>
+            <div id="projectContent" class="project-content"></div>
+          </div>
         </div>
       </section>
 
       <section id="noteReaderScreen" class="mobile-screen note-screen" hidden>
-        <div class="note-mobile-shell">
-          <header class="note-mobile-head">
-            <div class="note-mobile-title-row">
-              <span class="note-title-accent" aria-hidden="true"></span>
-              <div class="note-mobile-copy">
-                <h2 class="note-title-display" id="noteReaderTitle"></h2>
-                <p class="note-subtitle-display" id="noteReaderSubtitle"></p>
+        <div class="document-mobile-shell note-mobile-shell">
+          <header class="document-mobile-head note-mobile-head">
+            <div class="document-mobile-title-row">
+              <span class="document-title-accent" aria-hidden="true"></span>
+              <div class="document-mobile-copy">
+                <h2 class="document-title-display" id="noteReaderTitle"></h2>
+                <p class="document-subtitle-display" id="noteReaderSubtitle"></p>
               </div>
             </div>
           </header>
@@ -59,16 +64,22 @@
       </section>
 
       <section id="mindmapReaderScreen" class="mobile-screen mindmap-screen" hidden>
-        <div class="mindmap-mobile-shell">
-          <header class="mindmap-mobile-head">
-            <h2 id="mindmapReaderTitle"></h2>
-            <p id="mindmapReaderSubtitle"></p>
-            <div class="mindmap-mobile-meta" id="mindmapReaderMeta"></div>
+        <div class="document-mobile-shell mindmap-mobile-shell">
+          <header class="document-mobile-head mindmap-mobile-head">
+            <div class="document-mobile-title-row">
+              <span class="document-title-accent" aria-hidden="true"></span>
+              <div class="document-mobile-copy">
+                <h2 class="document-title-display" id="mindmapReaderTitle"></h2>
+                <p class="document-subtitle-display" id="mindmapReaderSubtitle"></p>
+              </div>
+            </div>
           </header>
-          <div class="mindmap-reader-scroll" id="mindmapReaderScroll">
-            <div class="mindmap-reader-canvas" id="mindmapReaderCanvas">
-              <svg id="mindmapReaderEdges" aria-hidden="true"></svg>
-              <div id="mindmapReaderNodes"></div>
+          <div class="mindmap-mobile-body">
+            <div class="mindmap-reader-scroll" id="mindmapReaderScroll">
+              <div class="mindmap-reader-canvas" id="mindmapReaderCanvas">
+                <svg id="mindmapReaderEdges" aria-hidden="true"></svg>
+                <div id="mindmapReaderNodes"></div>
+              </div>
             </div>
           </div>
         </div>

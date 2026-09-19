@@ -475,8 +475,8 @@
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
     hideAllScreens();
     screen.hidden=false;
-    const noteOpen=screen===noteReaderScreen;
-    document.body.classList.toggle("note-open",noteOpen);
+    const documentOpen=screen===projectReaderScreen||screen===noteReaderScreen||screen===mindmapReaderScreen;
+    document.body.classList.toggle("document-open",documentOpen);
     backButton.hidden=!back;
     syncStatusWrap.hidden=!account;
     title.textContent=heading;
@@ -634,13 +634,16 @@
     return card
   }
 
-  function renderUnit(unit,index=0){
+  function renderUnit(unit,index=0,showHeading=true){
     const host=$("#projectContent");
     host.replaceChildren();
-    const heading=element("div","unit-heading"),name=unit.title||`${index+1}화`;
-    heading.append(element("h3","",name));
-    if(unit.subtitle)heading.append(element("p","",unit.subtitle));
-    host.append(heading);
+    if(showHeading){
+      const heading=element("div","unit-heading"),name=unit.title||`${index+1}화`;
+      heading.append(element("h3","",name));
+      if(unit.subtitle)heading.append(element("p","",unit.subtitle));
+      host.append(heading)
+    }
+    const carousel=element("div","stage-carousel");
     for(const stage of unit.stageDefs||[]){
       const section=element("section","stage-section"),stageHead=element("header","stage-heading"),stripe=element("span","stage-color"),copy=element("div",""),stageColor=safeColor(stage.color,"#A9D6FF");
       section.style.setProperty("--stage-color",stageColor);
@@ -652,20 +655,15 @@
       if(items.length)for(const block of items)blocks.append(blockElement(block));
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
       section.append(stageHead,blocks);
-      host.append(section)
+      carousel.append(section)
     }
+    if(carousel.childElementCount)host.append(carousel)
   }
 
   function renderProject(project){
-    const stats=projectStats(project);
-    $("#readerKind").textContent=project.kind==="long"?"장편 작품":"단편 작품";
     $("#readerTitle").textContent=project.title||"제목 없는 작품";
     $("#readerSubtitle").textContent=project.subtitle||"";
     $("#readerSubtitle").hidden=!project.subtitle;
-    const meta=$("#readerMeta");
-    meta.replaceChildren(element("span","project-summary-item",`${stats.blocks}개 블록`));
-    if(stats.blocks)meta.append(element("span","project-summary-item",`${stats.completed}개 완료`));
-    if(project.deadline)meta.append(element("span","project-summary-item",`마감 ${project.deadline}`))
     const episodes=$("#episodeList");
     episodes.replaceChildren();
     if(project.kind==="long"){
@@ -685,10 +683,10 @@
         episodes.append(button)
       });
       const active=list.find(item=>String(item.id)===activeEpisodeId);
-      renderUnit(active,list.findIndex(item=>String(item.id)===activeEpisodeId))
+      renderUnit(active,list.findIndex(item=>String(item.id)===activeEpisodeId),true)
     }else{
       activeEpisodeId="";
-      renderUnit(project)
+      renderUnit(project,0,false)
     }
   }
 
@@ -719,12 +717,6 @@
     $("#mindmapReaderTitle").textContent=mindmap.title||"제목 없는 마인드맵";
     $("#mindmapReaderSubtitle").textContent=mindmap.subtitle||"";
     $("#mindmapReaderSubtitle").hidden=!mindmap.subtitle;
-    const meta=$("#mindmapReaderMeta");
-    meta.replaceChildren(
-      element("span","mindmap-summary-item",`${(mindmap.nodes||[]).length}개 노드`),
-      element("span","mindmap-summary-item",`${(mindmap.edges||[]).length}개 연결`)
-    );
-
     const canvas=$("#mindmapReaderCanvas"),nodesHost=$("#mindmapReaderNodes"),edgesHost=$("#mindmapReaderEdges");
     nodesHost.replaceChildren();
     edgesHost.replaceChildren();
@@ -784,8 +776,8 @@
     activeDocumentType=type;
     activeDocumentId=key;
     activeEpisodeId="";
-    const screen=documentScreen(type),heading=type==="note"?"홈":item.title||(type==="project"?"작품":"마인드맵");
-    showScreen(screen,{heading,back:true,account:false,nav:"library"});
+    const screen=documentScreen(type);
+    showScreen(screen,{heading:"홈",back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
     else renderMindmap(item)
@@ -1123,7 +1115,7 @@
     }
   }
 
-  backButton.onclick=()=>{if(activeDocumentType==="note")openLibrary({replace:true});else handleBack()};
+  backButton.onclick=()=>{if(activeDocumentType)openLibrary({replace:true});else handleBack()};
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};

@@ -222,6 +222,10 @@
         <fieldset class="create-color-field" id="createColorField">
           <legend>색상</legend>
           <div class="create-color-grid" id="createColorGrid" aria-label="문서 색상"></div>
+          <div class="create-color-editor" id="createColorEditor" hidden>
+            <input id="createColorPicker" type="color" aria-label="직접 색상 선택">
+            <input id="createColorHex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="HEX 색상">
+          </div>
         </fieldset>
 
         <div class="create-form-status" id="createFormStatus" role="status" hidden></div>

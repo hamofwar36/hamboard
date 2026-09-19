@@ -41,6 +41,9 @@
   const createFolderSelect=$("#createFolderSelect");
   const createColorField=$("#createColorField");
   const createColorGrid=$("#createColorGrid");
+  const createColorEditor=$("#createColorEditor");
+  const createColorPicker=$("#createColorPicker");
+  const createColorHex=$("#createColorHex");
   const createFormBack=$("#createFormBack");
   const createFormClose=$("#createFormClose");
   const createFormStatus=$("#createFormStatus");
@@ -77,6 +80,7 @@
   let activeCreateType="";
   let createProjectKindValue="short";
   let createColorValue="";
+  let createColorCustom=false;
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
   const DEFAULT_STAGE_COLORS=Object.freeze(["#A9D6FF","#BDE7C4","#F6D872","#FFB8AE"]);
@@ -192,23 +196,43 @@
     createTitleInput.value="";
     createSubtitleInput.value="";
     createColorValue=CARD_COLORS[0];
+    createColorCustom=false;
     createColorGrid.replaceChildren();
+    createColorEditor.hidden=true;
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
     createSheet.classList.remove("form-open")
+  }
+
+  function syncCreateColorEditor(){
+    const color=safeColor(createColorValue,CARD_COLORS[0]);
+    createColorEditor.hidden=!createColorCustom;
+    createColorPicker.value=color;
+    createColorHex.value=color.toUpperCase()
   }
 
   function renderCreateColorOptions(){
     createColorGrid.replaceChildren();
     for(const color of CARD_COLORS){
+      const selected=!createColorCustom&&color.toLowerCase()===String(createColorValue||"").toLowerCase();
       const button=document.createElement("button");
       button.type="button";
-      button.className=`create-color-swatch${color===createColorValue?" active":""}`;
+      button.className=`create-color-swatch${selected?" active":""}`;
       button.style.setProperty("--swatch",color);
       button.dataset.color=color;
-      button.setAttribute("aria-label",`색상 ${color}`);
-      button.setAttribute("aria-pressed",String(color===createColorValue));
+      button.setAttribute("aria-label",`색상 ${color.toUpperCase()}`);
+      button.setAttribute("aria-pressed",String(selected));
       createColorGrid.append(button)
     }
+    const custom=document.createElement("button");
+    custom.type="button";
+    custom.className=`create-color-swatch custom${createColorCustom?" active":""}`;
+    custom.dataset.colorCustom="true";
+    custom.setAttribute("aria-label","직접 색상");
+    custom.setAttribute("aria-pressed",String(createColorCustom));
+    custom.innerHTML='<i data-lucide="palette" aria-hidden="true"></i>';
+    createColorGrid.append(custom);
+    syncCreateColorEditor();
+    refreshLucideIcons()
   }
 
   function openCreateForm(type){
@@ -230,6 +254,7 @@
     createSubtitleInput.value="";
     createSubtitleInput.placeholder=type==="folder"?"폴더 설명":type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
     createColorValue=randomCardColor();
+    createColorCustom=false;
     createColorField.hidden=type==="folder";
     renderCreateColorOptions();
     fillCreateFolderOptions(type==="folder");
@@ -245,7 +270,7 @@
     if(!config)return;
     const titleValue=createTitleInput.value.trim()||config.defaultTitle;
     const subtitle=createSubtitleInput.value.trim(),folderId=createFolderSelect.value?String(createFolderSelect.value):null;
-    const state=snapshot(),now=new Date().toISOString(),color=createColorValue||randomCardColor(),id=uid();
+    const selectedColor=safeColor(createColorValue,""),state=snapshot(),now=new Date().toISOString(),color=selectedColor||randomCardColor(),id=uid();
     state.folders=Array.isArray(state.folders)?state.folders:[];
     state.projects=Array.isArray(state.projects)?state.projects:[];
     state.notes=Array.isArray(state.notes)?state.notes:[];
@@ -1098,9 +1123,38 @@
     if(button)openCreateForm(button.dataset.createType)
   };
   createColorGrid.onclick=event=>{
+    const custom=event.target.closest("[data-color-custom]");
+    if(custom){
+      createColorCustom=true;
+      createColorValue=safeColor(createColorValue,CARD_COLORS[0]);
+      renderCreateColorOptions();
+      requestAnimationFrame(()=>createColorHex.focus());
+      return
+    }
     const button=event.target.closest("[data-color]");
     if(!button)return;
+    createColorCustom=false;
     createColorValue=safeColor(button.dataset.color,CARD_COLORS[0]);
+    renderCreateColorOptions()
+  };
+  createColorPicker.oninput=()=>{
+    createColorCustom=true;
+    createColorValue=safeColor(createColorPicker.value,createColorValue||CARD_COLORS[0]);
+    createColorHex.value=createColorValue.toUpperCase();
+    renderCreateColorOptions()
+  };
+  createColorHex.oninput=()=>{
+    const value=safeColor(createColorHex.value,"");
+    if(!value)return;
+    createColorCustom=true;
+    createColorValue=value;
+    createColorPicker.value=value;
+    renderCreateColorOptions()
+  };
+  createColorHex.onblur=()=>{
+    const value=safeColor(createColorHex.value,createColorValue||CARD_COLORS[0]);
+    createColorCustom=true;
+    createColorValue=value;
     renderCreateColorOptions()
   };
   createFormBack.onclick=resetCreateSheet;

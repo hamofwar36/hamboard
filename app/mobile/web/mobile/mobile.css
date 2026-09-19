@@ -305,7 +305,6 @@ svg.lucide{stroke:currentColor}
 .child-blocks{margin:12px 0 0 12px;padding-left:12px;border-left:2px solid var(--border)}
 .empty-stage{padding:18px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}
 
-.note-open .mobile-topbar{display:none}
 .note-open .mobile-main{
   width:100%;max-width:none;margin:0;padding:0 0 calc(86px + env(safe-area-inset-bottom));
   background:var(--surface)
@@ -320,19 +319,13 @@ svg.lucide{stroke:currentColor}
   background:var(--surface)
 }
 .note-mobile-head{
-  padding:calc(env(safe-area-inset-top) + 18px) max(20px,calc((100vw - var(--note-mobile-max-width))/2 + 20px)) 20px;
+  padding:18px max(20px,calc((100vw - var(--note-mobile-max-width))/2 + 20px)) 20px;
   margin:0;background:var(--bg)
 }
 .note-mobile-title-row{
   max-width:var(--note-mobile-max-width);margin:0 auto;
-  display:grid;grid-template-columns:36px 4px minmax(0,1fr);gap:9px;align-items:start
+  display:grid;grid-template-columns:4px minmax(0,1fr);gap:10px;align-items:start
 }
-.note-mobile-back{
-  width:36px;height:36px;margin-top:-2px;padding:0;display:grid;place-items:center;
-  border:0;border-radius:10px;background:transparent;color:var(--ui-muted)
-}
-.note-mobile-back:active{background:var(--surface-hover);color:var(--on-surface-hover)}
-.note-mobile-back svg{width:21px;height:21px}
 .note-title-accent{
   width:4px;height:32px;margin-top:1px;border-radius:999px;background:var(--secondary-base)
 }

@@ -23,7 +23,7 @@ check("menu is a full mobile screen rather than a popover",()=>{assert.match(htm
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.18"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.19"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);
@@ -40,20 +40,19 @@ check("auth Worker stores only auth-session records and exposes no file proxy",(
   assert.match(authSchema,/CREATE TABLE IF NOT EXISTS oauth_states/)
 });
 check("settings screen exposes display and diagnostics controls",()=>{assert.match(html,/id="settingsScreen"/);assert.match(html,/id="themeChoiceGrid"/);assert.match(html,/id="diagnosticsLog"/);assert.match(app,/function applyMobileTheme/);assert.match(app,/function renderDiagnostics/)});
-check("mobile note reader keeps a muted header and a clean surface body",()=>{
+check("mobile note reader restores the shared Home back bar",()=>{
   assert.match(html,/id="noteReaderScreen" class="mobile-screen note-screen"/);
-  assert.match(html,/class="note-mobile-back" id="noteReaderBack"/);
+  assert.doesNotMatch(html,/id="noteReaderBack"/);
   assert.match(html,/class="note-title-accent"/);
   assert.match(html,/class="note-title-display" id="noteReaderTitle"/);
   assert.doesNotMatch(html,/id="noteReaderMeta"/);
+  assert.doesNotMatch(css,/\.note-open \.mobile-topbar\{display:none\}/);
   assert.match(css,/\.note-mobile-head\{[\s\S]*?background:var\(--bg\)/);
   assert.match(css,/\.note-title-accent\{[\s\S]*?background:var\(--secondary-base\)/);
-  assert.match(css,/\.note-screen\{[\s\S]*?background:var\(--surface\)/);
   assert.match(css,/\.note-reader-card\{[\s\S]*?border:0;border-radius:0;background:var\(--surface\)/);
-  assert.match(app,/document\.body\.classList\.toggle\("note-open",noteOpen\)/);
-  assert.match(app,/noteReaderBack\.onclick=handleBack/);
-  assert.doesNotMatch(app,/noteReaderMeta/);
-  assert.doesNotMatch(app,/characterCount=Array\.from\(plainText\)\.length/)
+  assert.match(app,/backButton\.hidden=!back/);
+  assert.match(app,/heading=type==="note"\?"홈"/);
+  assert.match(app,/activeDocumentType==="note"\)openLibrary\(\{replace:true\}\)/)
 });
 check("new document drawer is isolated and creates supported mobile documents",()=>{assert.match(html,/class="nav-sheet-backdrop create-sheet-backdrop" id="createSheet"/);assert.match(html,/<strong>새 폴더<\/strong>/);assert.match(html,/<strong>새 작품<\/strong>/);assert.match(html,/<strong>새 노트<\/strong>/);assert.match(html,/<strong>새 마인드맵<\/strong>/);assert.doesNotMatch(html,/id="createSheetClose"/);assert.doesNotMatch(html,/data-lucide="chevron-right"/);assert.match(css,/--create-chooser-width:150px/);assert.match(css,/\.create-sheet-backdrop:not\(\.form-open\) \.create-sheet-panel\{[\s\S]*?width:var\(--create-chooser-width\);max-width:calc\(100vw - 24px\)/);assert.match(css,/\.nav-sheet-backdrop\{[\s\S]*?backdrop-filter:blur\(5px\)/);assert.match(html,/id="createForm"/);assert.match(html,/id="createColorToggle"/);assert.match(html,/id="createColorOptions" hidden/);assert.match(html,/id="createColorGrid"/);assert.match(html,/id="createColorPicker" type="color"/);assert.match(html,/id="createColorHex" type="text"/);assert.match(app,/function renderCreateColorOptions/);assert.match(app,/createColorCustom/);assert.match(app,/createColorExpanded/);assert.match(app,/createColorOptions\.hidden=!createColorExpanded/);assert.match(app,/createColorValue=safeColor\(button\.dataset\.color,CARD_COLORS\[0\]\)/);assert.match(app,/selectedColor=safeColor\(createColorValue,""\)/);assert.doesNotMatch(html,/data-create-type="(?:folder|project|note|mindmap)"[^>]*disabled/);assert.doesNotMatch(app,/createSheetClose/);assert.match(app,/async function createNewDocument/);assert.match(app,/function defaultStoryStages/);assert.match(app,/repository\.replaceState\(state\)/)});
 check("Vercel builds the isolated mobile output",()=>{assert.equal(vercel.installCommand,"node --version");assert.equal(vercel.buildCommand,"npm run mobile:build");assert.equal(vercel.outputDirectory,"dist-mobile")});

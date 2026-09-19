@@ -19,7 +19,6 @@
   const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
   const title=$("#mobileTitle");
-  const noteReaderBack=$("#noteReaderBack");
   const syncStatusWrap=$("#syncStatusWrap");
   const indicator=$("#syncIndicator");
   const offlineWarning=$("#offlineWarning");
@@ -478,7 +477,7 @@
     screen.hidden=false;
     const noteOpen=screen===noteReaderScreen;
     document.body.classList.toggle("note-open",noteOpen);
-    backButton.hidden=noteOpen||!back;
+    backButton.hidden=!back;
     syncStatusWrap.hidden=!account;
     title.textContent=heading;
     activateNav(nav);
@@ -782,7 +781,7 @@
     activeDocumentType=type;
     activeDocumentId=key;
     activeEpisodeId="";
-    const screen=documentScreen(type),heading=type==="note"?"노트":item.title||(type==="project"?"작품":"마인드맵");
+    const screen=documentScreen(type),heading=type==="note"?"홈":item.title||(type==="project"?"작품":"마인드맵");
     showScreen(screen,{heading,back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
@@ -1121,8 +1120,7 @@
     }
   }
 
-  backButton.onclick=handleBack;
-  noteReaderBack.onclick=handleBack;
+  backButton.onclick=()=>{if(activeDocumentType==="note")openLibrary({replace:true});else handleBack()};
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};

@@ -20,16 +20,23 @@ check("versioned mobile assets prevent stale mixed deployments",()=>{
 });
 check("mobile uses bundled Lucide before app runtime",()=>{assert.match(html,/src="\.\/vendor\/lucide\/lucide\.min\.js"/);assert.ok(html.indexOf("lucide.min.js")<html.indexOf("mobile-app.js"));assert.ok(lucide.length>1000)});
 check("menu is a full mobile screen rather than a popover",()=>{assert.match(html,/id="menuScreen"/);assert.doesNotMatch(html,/id="mainMenuSheet"/);assert.match(app,/showScreen\(menuScreen/)});
-check("mobile chrome is touch-friendly and topbar auto-hides on reading scroll",()=>{
+check("mobile app owns vertical scrolling while browser viewport stays locked",()=>{
+  assert.match(css,/html\{[^}]*overflow:hidden/);
+  assert.match(css,/body\{[\s\S]*?height:100dvh;min-height:100dvh;[^}]*overflow:hidden/);
+  assert.match(css,/\.mobile-app\{[\s\S]*?height:100dvh;[\s\S]*?overflow-y:auto/);
+  assert.match(css,/\.mobile-app\{[\s\S]*?overscroll-behavior-y:contain/);
   assert.match(css,/\.mobile-bottom-nav\{[\s\S]*?min-height:58px/);
   assert.match(css,/\.bottom-nav-button\{[\s\S]*?min-height:50px/);
   assert.match(css,/\.bottom-nav-button\.active:not\(\.bottom-nav-create\)::after\{[\s\S]*?width:30px;height:4px/);
-  assert.match(css,/\.bottom-nav-button\.active \.bottom-nav-icon\{background:transparent;color:var\(--primary-strong\)\}/);
+  assert.match(css,/\.bottom-nav-button\.active \.bottom-nav-icon\{background:transparent;color:var\(--ui-accent-strong\)\}/);
   assert.match(css,/\.bottom-nav-button\.active>span:last-child\{color:var\(--ui-fg\)\}/);
   assert.match(css,/\.topbar-hidden \.mobile-topbar\{transform:translateY/);
-  assert.match(app,/function syncTopbarVisibility/);
+  assert.match(app,/const mobileScroll=\$\("#mobileApp"\)/);
+  assert.match(app,/mobileScroll\.scrollTop/);
+  assert.match(app,/mobileScroll\.scrollTo\(/);
+  assert.match(app,/mobileScroll\.addEventListener\("scroll"/);
   assert.match(app,/requestAnimationFrame\(syncTopbarVisibility\)/);
-  assert.match(app,/resetTopbarVisibility\(\)/)
+  assert.doesNotMatch(app,/window\.scrollY|window\.scrollTo|window\.addEventListener\("scroll"/)
 });
 check("mobile colors use Windows core tokens through shared semantic roles",()=>{
   for(const token of [
@@ -94,7 +101,7 @@ check("PWA install icons reuse the existing Hamboard desktop artwork",async()=>{
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.29"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.30"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);

@@ -10,6 +10,7 @@
   const repository=repositoryCore.createProjectRepository({storage,syncModel,clientProfile:"mobile-core"});
   const $=selector=>document.querySelector(selector);
 
+  const mobileScroll=$("#mobileApp");
   const libraryScreen=$("#libraryScreen");
   const projectReaderScreen=$("#projectReaderScreen");
   const noteReaderScreen=$("#noteReaderScreen");
@@ -86,7 +87,7 @@
   let createColorValue="";
   let createColorCustom=false;
   let deferredInstallPrompt=null;
-  let lastWindowScrollY=0;
+  let lastAppScrollY=0;
   let topbarScrollFrame=0;
   let createColorExpanded=false;
   const diagnostics=[];
@@ -481,14 +482,17 @@
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
   function resetTopbarVisibility(){
     document.body.classList.remove("topbar-hidden");
-    lastWindowScrollY=Math.max(0,window.scrollY||0)
+    lastAppScrollY=Math.max(0,mobileScroll.scrollTop||0)
   }
   function syncTopbarVisibility(){
     topbarScrollFrame=0;
-    const current=Math.max(0,window.scrollY||0),delta=current-lastWindowScrollY;
+    const current=Math.max(0,mobileScroll.scrollTop||0),delta=current-lastAppScrollY;
     if(current<24||delta<-4)document.body.classList.remove("topbar-hidden");
     else if(current>72&&delta>6)document.body.classList.add("topbar-hidden");
-    lastWindowScrollY=current
+    lastAppScrollY=current
+  }
+  function scrollAppToTop({smooth=false}={}){
+    mobileScroll.scrollTo({top:0,left:0,behavior:smooth?"smooth":"auto"})
   }
   function isStandaloneMode(){
     return window.matchMedia?.("(display-mode: standalone)")?.matches===true||window.navigator.standalone===true
@@ -516,7 +520,7 @@
     syncStatusWrap.hidden=!account;
     title.textContent=heading;
     activateNav(nav);
-    window.scrollTo(0,0);
+    scrollAppToTop();
     resetTopbarVisibility();
     refreshLucideIcons()
   }
@@ -831,7 +835,7 @@
           button.onclick=()=>{
             activeEpisodeId=String(episode.id);
             renderProject(project);
-            window.scrollTo({top:0,behavior:"smooth"})
+            scrollAppToTop({smooth:true})
           };
           episodes.append(button)
         });
@@ -846,7 +850,7 @@
         onBack:()=>{
           activeEpisodeId="";
           renderProject(project);
-          window.scrollTo({top:0,behavior:"smooth"})
+          scrollAppToTop({smooth:true})
         }
       });
       return
@@ -1398,7 +1402,7 @@
     deferredInstallPrompt=null;
     renderInstallAction()
   });
-  window.addEventListener("scroll",()=>{
+  mobileScroll.addEventListener("scroll",()=>{
     if(topbarScrollFrame)return;
     topbarScrollFrame=requestAnimationFrame(syncTopbarVisibility)
   },{passive:true});

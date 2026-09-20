@@ -9,6 +9,7 @@ const sharedRoot=resolve(projectRoot,"../window/web/shared");
 const authBaseUrl=String(process.env.HAMBOARD_AUTH_BASE_URL||"").trim().replace(/\/$/,"");
 const mobilePackage=JSON.parse(await readFile(resolve(projectRoot,"package.json"),"utf8"));
 const mobileVersion=String(mobilePackage.version||"1.0.0");
+const assetVersion=String(process.env.VERCEL_GIT_COMMIT_SHA||process.env.GITHUB_SHA||mobileVersion).trim()||mobileVersion;
 
 await rm(outputRoot,{recursive:true,force:true});
 await mkdir(resolve(outputRoot,"shared"),{recursive:true});
@@ -21,7 +22,7 @@ html=html
   .replace('src="../../../window/web/assets/vendor/lucide/lucide.min.js"','src="./vendor/lucide/lucide.min.js"')
   .replace('  <script src="./mobile-google-drive.js"></script>','  <script src="./mobile-config.js"></script>\n  <script src="./mobile-google-drive.js"></script>');
 
-const versionTag=`?v=${encodeURIComponent(mobileVersion)}`;
+const versionTag=`?v=${encodeURIComponent(assetVersion)}`;
 for(const asset of [
   "./mobile.css",
   "./manifest.webmanifest",
@@ -49,7 +50,7 @@ await Promise.all([
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
   cp(resolve(projectRoot,"../window/web/assets/vendor/lucide"),resolve(outputRoot,"vendor/lucide"),{recursive:true}),
   cp(resolve(projectRoot,"web/favicon.ico"),resolve(outputRoot,"favicon.ico")),
-  writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({authBaseUrl:${JSON.stringify(authBaseUrl)},version:${JSON.stringify(mobileVersion)}});\n`)
+  writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({authBaseUrl:${JSON.stringify(authBaseUrl)},version:${JSON.stringify(mobileVersion)},assetVersion:${JSON.stringify(assetVersion)}});\n`)
 ]);
 
 console.log(`Hamboard mobile deployment prepared: ${outputRoot}`);

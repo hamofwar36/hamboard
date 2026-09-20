@@ -544,7 +544,7 @@
   async function registerMobileServiceWorker(){
     if(!("serviceWorker" in navigator))return;
     if(location.protocol!=="https:"&&!["localhost","127.0.0.1"].includes(location.hostname))return;
-    const version=String(window.HAMBOARD_MOBILE_CONFIG?.version||"dev");
+    const version=String(window.HAMBOARD_MOBILE_CONFIG?.assetVersion||window.HAMBOARD_MOBILE_CONFIG?.version||"dev");
     try{
       await navigator.serviceWorker.register(`./service-worker.js?v=${encodeURIComponent(version)}`,{scope:"./"})
     }catch(error){

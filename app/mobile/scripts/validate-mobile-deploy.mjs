@@ -136,12 +136,12 @@ check("note toolbar prioritizes history controls and can dismiss keyboard",()=>{
   assert.match(html,/class="note-history-action"[^>]*data-note-command="undo"/);
   assert.match(html,/class="note-history-action"[^>]*data-note-command="redo"/);
   assert.match(html,/data-note-keyboard-dismiss/);
-  assert.match(html,/data-lucide="keyboard"/);
-  assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,minmax\(22px,1fr\)\) 40px/);
+  assert.match(html,/data-lucide="keyboard-off"/);
+  assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,minmax\(22px,1fr\)\) 1px 38px/);
   assert.match(css,/\.note-history-action\{height:34px/);
   assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-panel-action svg\{width:13px;height:13px/);
-  assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?width:32px;height:30px/);
+  assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?width:30px;height:30px;justify-self:center/);
   assert.match(app,/noteReaderContent\.blur\(\)/);
   assert.match(app,/keyboardButton\.blur\(\)/);
 });
@@ -151,6 +151,14 @@ check("note editor toolbar uses compact two-thirds sizing",()=>{
   assert.match(css,/\.note-mobile-toolbar button\{[\s\S]*?height:30px/);
   assert.match(css,/\.note-mobile-toolbar svg\{width:14px;height:14px\}/);
   assert.match(css,/\.note-toolbar-divider\{width:1px;height:19px/);
+});
+check("note keyboard mode hides main navigation and supports resized viewports",()=>{
+  assert.match(app,/noteViewportBaseHeight/);
+  assert.match(app,/const contracted=Math\.max\(0,noteViewportBaseHeight-viewportHeight\)/);
+  assert.match(app,/covered>=120\|\|contracted>=120/);
+  assert.match(css,/body\.note-keyboard-open \.mobile-bottom-nav\{display:none\}/);
+  assert.match(css,/body\.note-keyboard-open \.note-editor-controls\{[\s\S]*?\+ 6px/);
+  assert.doesNotMatch(css,/note-keyboard-open \.mobile-bottom-nav\{bottom:/);
 });
 check("note editor toolbar follows the on-screen keyboard",()=>{
   assert.match(html,/interactive-widget=resizes-content/);

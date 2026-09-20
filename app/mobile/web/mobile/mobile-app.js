@@ -99,6 +99,7 @@
   let lastAppScrollY=0;
   let topbarScrollFrame=0;
   let noteViewportFrame=0;
+  let noteViewportBaseHeight=0;
   let noteSavedRange=null;
   let noteFormatPanelKey="";
   let noteSaveTimer=0;
@@ -542,13 +543,21 @@
   function syncNoteViewport(){
     noteViewportFrame=0;
     const viewport=window.visualViewport,noteOpen=document.body.classList.contains("note-open");
-    let inset=0;
-    if(noteOpen&&viewport){
-      const covered=Math.max(0,Math.round(window.innerHeight-(viewport.height+viewport.offsetTop)));
-      if(covered>=120)inset=covered
+    if(!noteOpen){
+      noteViewportBaseHeight=0;
+      document.documentElement.style.setProperty("--note-keyboard-inset","0px");
+      document.body.classList.remove("note-keyboard-open");
+      return
     }
+    const viewportHeight=Math.max(0,Math.round(viewport?.height||window.innerHeight||0));
+    if(!noteViewportBaseHeight||viewportHeight>noteViewportBaseHeight)noteViewportBaseHeight=viewportHeight;
+    const covered=viewport?Math.max(0,Math.round(window.innerHeight-(viewport.height+viewport.offsetTop))):0;
+    const contracted=Math.max(0,noteViewportBaseHeight-viewportHeight);
+    const keyboardOpen=covered>=120||contracted>=120;
+    if(!keyboardOpen)noteViewportBaseHeight=Math.max(noteViewportBaseHeight,viewportHeight);
+    const inset=covered>=120?covered:0;
     document.documentElement.style.setProperty("--note-keyboard-inset",`${inset}px`);
-    document.body.classList.toggle("note-keyboard-open",noteOpen&&inset>0)
+    document.body.classList.toggle("note-keyboard-open",keyboardOpen)
   }
   function scheduleNoteViewportSync(){
     if(noteViewportFrame)return;

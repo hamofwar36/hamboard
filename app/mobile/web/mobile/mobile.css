@@ -570,15 +570,15 @@ body.note-keyboard-open .mobile-app{
   border:1px solid var(--ui-border-default);border-radius:14px;background:var(--ui-surface-default);box-shadow:var(--popup-shadow)
 }
 .note-head-menu[hidden]{display:none}
-.note-head-menu button{
+.note-head-menu button,.note-head-menu-info{
   width:100%;min-height:52px;display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:10px;
   padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--ui-fg);text-align:left
 }
 .note-head-menu button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
-.note-head-menu button>svg{width:18px;height:18px;color:var(--ui-muted)}
-.note-head-menu button span{min-width:0;display:grid;gap:2px}
-.note-head-menu button strong{font-size:var(--fs-xs);font-weight:700}
-.note-head-menu button small{color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:400;line-height:1.35}
+.note-head-menu button>svg,.note-head-menu-info>svg{width:18px;height:18px;color:var(--ui-muted)}
+.note-head-menu button span,.note-head-menu-info span{min-width:0;display:grid;gap:2px}
+.note-head-menu button strong,.note-head-menu-info strong{font-size:var(--fs-xs);font-weight:700}
+.note-head-menu button small,.note-head-menu-info small{color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:400;line-height:1.35}
 
 .note-html-shell{
   width:min(100%,var(--document-mobile-max-width));min-height:calc(100dvh - 190px);margin:0 auto;
@@ -598,7 +598,8 @@ body.note-keyboard-open .mobile-app{
 }
 body.note-html-mode .note-editor-controls{display:none}
 
-.note-tool-sheet-panel{padding:15px}
+.note-tool-sheet-backdrop{align-items:center;padding:16px}
+.note-tool-sheet-panel{width:min(100%,460px);max-height:min(620px,calc(100dvh - 32px));padding:15px;overflow-y:auto}
 .note-tool-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .note-tool-sheet-head h3{margin:0;font-size:var(--fs-lg);line-height:1.25}
 .note-tool-sheet-body{display:grid;gap:12px}
@@ -614,10 +615,6 @@ body.note-html-mode .note-editor-controls{display:none}
 }
 .note-style-align button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg);border-color:transparent}
 .note-style-align svg{width:18px;height:18px}
-.note-count-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.note-count-card{padding:15px;border:1px solid var(--ui-border-default);border-radius:13px;background:var(--ui-surface-subtle)}
-.note-count-card span{display:block;color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700}
-.note-count-card strong{display:block;margin-top:5px;font-size:var(--fs-lg);font-variant-numeric:tabular-nums}
 .note-sheet-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .note-sheet-actions button{min-height:42px;padding:0 15px;border:0;border-radius:11px;font:inherit;font-size:var(--fs-xs);font-weight:700}
 .note-sheet-actions .secondary{background:var(--ui-surface-subtle);color:var(--ui-fg)}

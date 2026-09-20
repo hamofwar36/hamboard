@@ -1221,18 +1221,15 @@
     document.querySelector("[data-note-tool-sheet]")?.remove()
   }
 
-  function openMobileNoteToolSheet(kind){
+  function openMobileNoteToolSheet(){
     closeMobileNoteToolSheet();
-    const counts=mobileNoteCharacterCounts(),wrap=element("div","nav-sheet-backdrop note-tool-sheet-backdrop"),panel=element("section","nav-sheet note-tool-sheet-panel");
-    wrap.dataset.noteToolSheet=kind;
+    const wrap=element("div","nav-sheet-backdrop note-tool-sheet-backdrop"),panel=element("section","nav-sheet note-tool-sheet-panel");
+    wrap.dataset.noteToolSheet="style";
     panel.setAttribute("role","dialog");
     panel.setAttribute("aria-modal","true");
-    const head=element("div","note-tool-sheet-head"),heading=element("h3","",kind==="style"?"기본 스타일":"글자 수"),close=element("button","sheet-close");
+    const head=element("div","note-tool-sheet-head"),heading=element("h3","","기본 스타일"),close=element("button","sheet-close");
     close.type="button";close.setAttribute("aria-label","닫기");close.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';head.append(heading,close);
     const body=element("div","note-tool-sheet-body");
-    if(kind==="count"){
-      body.innerHTML='<div class="note-count-grid"><div class="note-count-card"><span>공백 포함</span><strong>'+counts.withSpaces.toLocaleString("ko-KR")+'자</strong></div><div class="note-count-card"><span>공백 미포함</span><strong>'+counts.withoutSpaces.toLocaleString("ko-KR")+'자</strong></div></div><div class="note-sheet-actions"><button type="button" class="secondary" data-note-sheet-close>닫기</button></div>'
-    }else{
       const current=(()=>{
         const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===String(activeDocumentId||"")),style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
         return {font:String(style.fontFamily||"__default__").trim()||"__default__",align:["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left",indent:style.firstLineIndent===true,spacing:style.paragraphSpacing===true}
@@ -1262,7 +1259,6 @@
           logDiagnostic("error","REPOSITORY","노트 기본 스타일 저장에 실패했습니다.",error)
         }
       }
-    }
     panel.append(head,body);wrap.append(panel);document.body.append(wrap);
     close.onclick=closeMobileNoteToolSheet;
     body.querySelectorAll("[data-note-sheet-close]").forEach(button=>button.onclick=closeMobileNoteToolSheet);
@@ -2270,8 +2266,7 @@
     const action=button.dataset.noteMenuAction;
     closeMobileNoteMenu();
     if(action==="html")await setMobileNoteEditorMode(noteEditorMode==="html"?"rich":"html");
-    else if(action==="style")openMobileNoteToolSheet("style");
-    else if(action==="count")openMobileNoteToolSheet("count")
+    else if(action==="style")openMobileNoteToolSheet()
   });
   document.addEventListener("pointerdown",event=>{
     if(noteMoreMenu.hidden)return;

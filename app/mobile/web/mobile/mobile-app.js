@@ -1613,10 +1613,7 @@
   noteReaderContent.addEventListener("pointerup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
   noteReaderContent.addEventListener("focus",captureMobileNoteSelection);
   noteMobileToolbar.addEventListener("pointerdown",event=>{
-    const button=event.target.closest("button");
-    if(!button)return;
-    captureMobileNoteSelection();
-    event.preventDefault()
+    if(event.target.closest("button"))captureMobileNoteSelection()
   });
   noteMobileToolbar.addEventListener("click",event=>{
     const commandButton=event.target.closest("[data-note-command]");
@@ -1626,7 +1623,7 @@
   });
   noteFormatPanel.addEventListener("pointerdown",event=>{
     const button=event.target.closest("button");
-    if(button&&!button.disabled){captureMobileNoteSelection();event.preventDefault()}
+    if(button&&!button.disabled)captureMobileNoteSelection();
     else if(event.target.closest("select,input"))captureMobileNoteSelection()
   });
   noteFormatPanel.addEventListener("click",event=>{

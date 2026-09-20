@@ -132,6 +132,19 @@ check("backup and sync share snapshot plus asset restore",()=>{
   assert.match(app,/downloadCurrentSyncAssets\(listing,stateValue,onProgress\)/);
   assert.match(transport,/async function putSyncCheckpoint/);
 });
+check("note toolbar prioritizes history controls and can dismiss keyboard",()=>{
+  assert.match(html,/class="note-history-action"[^>]*data-note-command="undo"/);
+  assert.match(html,/class="note-history-action"[^>]*data-note-command="redo"/);
+  assert.match(html,/data-note-keyboard-dismiss/);
+  assert.match(html,/data-lucide="keyboard"/);
+  assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,minmax\(22px,1fr\)\) 40px/);
+  assert.match(css,/\.note-history-action\{height:34px/);
+  assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
+  assert.match(css,/\.note-panel-action svg\{width:13px;height:13px/);
+  assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?width:32px;height:30px/);
+  assert.match(app,/noteReaderContent\.blur\(\)/);
+  assert.match(app,/keyboardButton\.blur\(\)/);
+});
 check("note editor toolbar uses compact two-thirds sizing",()=>{
   assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?min-height:38px/);
   assert.match(css,/grid-template-columns:repeat\(2,31px\)/);

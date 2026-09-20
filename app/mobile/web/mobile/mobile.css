@@ -509,16 +509,23 @@ body.note-keyboard-open .mobile-app{
   box-shadow:var(--popup-shadow);backdrop-filter:blur(18px);pointer-events:auto
 }
 .note-mobile-toolbar{
-  min-height:38px;display:grid;grid-template-columns:repeat(2,31px) 1px repeat(4,minmax(0,1fr));align-items:center;gap:3px;
-  padding:3px 5px;border-radius:11px
+  min-height:38px;display:grid;grid-template-columns:42px 42px 1px repeat(4,minmax(22px,1fr)) 40px;align-items:center;column-gap:2px;
+  padding:2px 5px;border-radius:11px
 }
 .note-mobile-toolbar button{
-  min-width:0;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:8px;
+  min-width:0;height:28px;display:grid;place-items:center;padding:0;border:0;border-radius:8px;
   background:transparent;color:var(--ui-muted)
 }
+.note-mobile-toolbar .note-history-action{height:34px;border-radius:9px}
+.note-mobile-toolbar .note-history-action svg{width:18px;height:18px}
+.note-mobile-toolbar .note-panel-action{height:28px}
+.note-mobile-toolbar .note-panel-action svg{width:13px;height:13px}
+.note-mobile-toolbar .note-keyboard-dismiss{
+  width:32px;height:30px;justify-self:end;border-left:1px solid var(--ui-border-default);border-radius:0 8px 8px 0
+}
+.note-mobile-toolbar .note-keyboard-dismiss svg{width:15px;height:15px}
 .note-mobile-toolbar button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
 .note-mobile-toolbar button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg)}
-.note-mobile-toolbar svg{width:14px;height:14px}
 .note-toolbar-divider{width:1px;height:19px;background:var(--ui-border-default);justify-self:center}
 .note-format-panel{
   max-height:min(42dvh,360px);overflow:auto;margin-bottom:7px;padding:12px;border-radius:18px

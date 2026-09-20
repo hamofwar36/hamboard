@@ -1943,6 +1943,14 @@
     if(event.target.closest("button"))captureMobileNoteSelection()
   });
   noteMobileToolbar.addEventListener("click",event=>{
+    const keyboardButton=event.target.closest("[data-note-keyboard-dismiss]");
+    if(keyboardButton){
+      captureMobileNoteSelection();
+      noteReaderContent.blur();
+      keyboardButton.blur();
+      scheduleNoteViewportSync();
+      return
+    }
     const commandButton=event.target.closest("[data-note-command]");
     if(commandButton){execMobileNoteCommand(commandButton.dataset.noteCommand);return}
     const panelButton=event.target.closest("[data-note-panel]");

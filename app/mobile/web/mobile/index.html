@@ -69,13 +69,14 @@
           <div class="note-editor-controls" id="noteEditorControls">
             <div class="note-format-panel" id="noteFormatPanel" hidden></div>
             <div class="note-mobile-toolbar" id="noteMobileToolbar" role="toolbar" aria-label="노트 서식">
-              <button type="button" data-note-command="undo" aria-label="실행 취소" title="실행 취소"><i data-lucide="undo-2" aria-hidden="true"></i></button>
-              <button type="button" data-note-command="redo" aria-label="다시 실행" title="다시 실행"><i data-lucide="redo-2" aria-hidden="true"></i></button>
+              <button class="note-history-action" type="button" data-note-command="undo" aria-label="실행 취소" title="실행 취소"><i data-lucide="undo-2" aria-hidden="true"></i></button>
+              <button class="note-history-action" type="button" data-note-command="redo" aria-label="다시 실행" title="다시 실행"><i data-lucide="redo-2" aria-hidden="true"></i></button>
               <span class="note-toolbar-divider" aria-hidden="true"></span>
-              <button type="button" data-note-panel="basic" aria-label="글자 기본" title="글자 기본"><i data-lucide="type" aria-hidden="true"></i></button>
-              <button type="button" data-note-panel="decorate" aria-label="글자 꾸미기" title="글자 꾸미기"><i data-lucide="palette" aria-hidden="true"></i></button>
-              <button type="button" data-note-panel="paragraph" aria-label="문단" title="문단"><i data-lucide="pilcrow" aria-hidden="true"></i></button>
-              <button type="button" data-note-panel="insert" aria-label="삽입" title="삽입"><i data-lucide="square-plus" aria-hidden="true"></i></button>
+              <button class="note-panel-action" type="button" data-note-panel="basic" aria-label="글자 기본" title="글자 기본"><i data-lucide="type" aria-hidden="true"></i></button>
+              <button class="note-panel-action" type="button" data-note-panel="decorate" aria-label="글자 꾸미기" title="글자 꾸미기"><i data-lucide="palette" aria-hidden="true"></i></button>
+              <button class="note-panel-action" type="button" data-note-panel="paragraph" aria-label="문단" title="문단"><i data-lucide="pilcrow" aria-hidden="true"></i></button>
+              <button class="note-panel-action" type="button" data-note-panel="insert" aria-label="삽입" title="삽입"><i data-lucide="square-plus" aria-hidden="true"></i></button>
+              <button class="note-keyboard-dismiss" type="button" data-note-keyboard-dismiss aria-label="키보드 내리기" title="키보드 내리기"><i data-lucide="keyboard" aria-hidden="true"></i></button>
             </div>
           </div>
         </div>

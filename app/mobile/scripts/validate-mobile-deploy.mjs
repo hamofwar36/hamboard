@@ -56,7 +56,7 @@ check("PWA install icons reuse the existing Hamboard desktop artwork",async()=>{
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.26"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.27"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);
@@ -87,22 +87,26 @@ check("mobile note reader restores the shared Home back bar",()=>{
   assert.match(app,/showScreen\(screen,\{heading:"홈",back:true/);
   assert.match(app,/if\(activeDocumentType\)openLibrary\(\{replace:true\}\)/)
 });
-check("project stages use compact block previews and long projects open from episode cards",()=>{
+check("project stages track the active part and long-project episode cards mirror desktop structure",()=>{
   assert.match(css,/\.mobile-topbar\{[\s\S]*?min-height:44px/);
-  assert.match(css,/\.document-open \.mobile-topbar\{column-gap:3px\}/);
   assert.match(css,/\.episode-list\{[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(app,/const activeIndex=list\.findIndex/);
-  assert.match(app,/if\(activeIndex<0\)\{[\s\S]*?content\.replaceChildren\(\)/);
-  assert.match(app,/episodes\.hidden=true/);
-  assert.match(app,/projectReaderScreen\.classList\.add\("episode-open"\)/);
-  assert.match(app,/compactBlocks:true/);
+  assert.match(css,/\.episode-button\{[\s\S]*?background:var\(--card-color,var\(--surface\)\)/);
+  assert.match(css,/\.episode-completion\{[\s\S]*?position:absolute/);
+  assert.match(app,/button\.style\.setProperty\("--card-color",episodeColor\)/);
+  assert.match(app,/element\("span","episode-number"/);
+  assert.match(app,/element\("strong","episode-title"/);
+  assert.match(app,/element\("span","episode-desc"/);
+  assert.match(app,/element\("span","episode-completion"\)/);
+  assert.doesNotMatch(app,/element\("span","episode-color"\)/);
+  assert.match(app,/const tracker=element\("div","part-position"\)/);
+  assert.match(app,/element\("button","part-step"/);
+  assert.match(app,/aria-current","step"/);
+  assert.match(app,/requestAnimationFrame\(syncActivePart\)/);
+  assert.match(app,/carousel\.scrollTo\(\{left:target,behavior:"smooth"\}\)/);
+  assert.match(css,/\.part-step\.active\{[\s\S]*?background:var\(--primary-base\)/);
   assert.match(app,/renderUnit\(project,0,\{showHeading:false,compactBlocks:true\}\)/);
-  assert.match(app,/function compactBlockPreview/);
-  assert.match(app,/if\(titleText\)head\.append/);
-  assert.match(css,/\.block-preview\{[\s\S]*?-webkit-line-clamp:1/);
+  assert.match(app,/compactBlocks:true/);
   assert.match(css,/\.block-preview\.no-title\{[\s\S]*?-webkit-line-clamp:2/);
-  assert.match(css,/\.project-screen\.episode-open \.project-mobile-body\{padding-top:8px\}/);
-  assert.match(app,/classList\.remove\("episode-open"\)/);
   assert.match(css,/\.stage-carousel\{[\s\S]*?scroll-snap-type:x mandatory/)
 });
 check("new document drawer is isolated and creates supported mobile documents",()=>{assert.match(html,/class="nav-sheet-backdrop create-sheet-backdrop" id="createSheet"/);assert.match(html,/<strong>새 폴더<\/strong>/);assert.match(html,/<strong>새 작품<\/strong>/);assert.match(html,/<strong>새 노트<\/strong>/);assert.match(html,/<strong>새 마인드맵<\/strong>/);assert.doesNotMatch(html,/id="createSheetClose"/);assert.doesNotMatch(html,/data-lucide="chevron-right"/);assert.match(css,/--create-chooser-width:150px/);assert.match(css,/\.create-sheet-backdrop:not\(\.form-open\) \.create-sheet-panel\{[\s\S]*?width:var\(--create-chooser-width\);max-width:calc\(100vw - 24px\)/);assert.match(css,/\.nav-sheet-backdrop\{[\s\S]*?backdrop-filter:blur\(5px\)/);assert.match(html,/id="createForm"/);assert.match(html,/id="createColorToggle"/);assert.match(html,/id="createColorOptions" hidden/);assert.match(html,/id="createColorGrid"/);assert.match(html,/id="createColorPicker" type="color"/);assert.match(html,/id="createColorHex" type="text"/);assert.match(app,/function renderCreateColorOptions/);assert.match(app,/createColorCustom/);assert.match(app,/createColorExpanded/);assert.match(app,/createColorOptions\.hidden=!createColorExpanded/);assert.match(app,/createColorValue=safeColor\(button\.dataset\.color,CARD_COLORS\[0\]\)/);assert.match(app,/selectedColor=safeColor\(createColorValue,""\)/);assert.doesNotMatch(html,/data-create-type="(?:folder|project|note|mindmap)"[^>]*disabled/);assert.doesNotMatch(app,/createSheetClose/);assert.match(app,/async function createNewDocument/);assert.match(app,/function defaultStoryStages/);assert.match(app,/repository\.replaceState\(state\)/)});

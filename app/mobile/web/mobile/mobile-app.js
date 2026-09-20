@@ -710,8 +710,24 @@
       if(unit.subtitle)heading.append(element("p","",unit.subtitle));
       host.append(heading)
     }
-    const carousel=element("div","stage-carousel");
-    for(const stage of unit.stageDefs||[]){
+
+    const stageDefs=Array.isArray(unit.stageDefs)?unit.stageDefs:[];
+    const tracker=element("div","part-position");
+    tracker.setAttribute("aria-label",stageDefs.length+"개 파트");
+    const stepButtons=[];
+    stageDefs.forEach((stage,stageIndex)=>{
+      const step=element("button","part-step"+(stageIndex===0?" active":""),String(stageIndex+1));
+      step.type="button";
+      step.title=(stageIndex+1)+"/"+stageDefs.length+" "+(stage.name||"파트");
+      step.setAttribute("aria-label",(stageIndex+1)+"번째 파트 "+(stage.name||"파트"));
+      if(stageIndex===0)step.setAttribute("aria-current","step");
+      stepButtons.push(step);
+      tracker.append(step)
+    });
+    if(stepButtons.length)host.append(tracker);
+
+    const carousel=element("div","stage-carousel"),sections=[];
+    for(const stage of stageDefs){
       const section=element("section","stage-section"),stageHead=element("header","stage-heading"),stripe=element("span","stage-color"),copy=element("div",""),stageColor=safeColor(stage.color,"#A9D6FF");
       section.style.setProperty("--stage-color",stageColor);
       stripe.style.setProperty("--stage-color",stageColor);
@@ -722,8 +738,49 @@
       if(items.length)for(const block of items)blocks.append(blockElement(block,{compact:compactBlocks}));
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
       section.append(stageHead,blocks);
-      carousel.append(section)
+      carousel.append(section);
+      sections.push(section)
     }
+
+    if(sections.length){
+      const setActivePart=partIndex=>{
+        stepButtons.forEach((step,stepIndex)=>{
+          const active=stepIndex===partIndex;
+          step.classList.toggle("active",active);
+          if(active)step.setAttribute("aria-current","step");
+          else step.removeAttribute("aria-current")
+        })
+      };
+      const carouselAnchor=()=>{
+        const rect=carousel.getBoundingClientRect(),paddingLeft=parseFloat(getComputedStyle(carousel).paddingLeft)||0;
+        return rect.left+paddingLeft
+      };
+      let partScrollFrame=0;
+      const syncActivePart=()=>{
+        partScrollFrame=0;
+        const anchor=carouselAnchor();
+        let activeIndex=0,bestDistance=Number.POSITIVE_INFINITY;
+        sections.forEach((section,sectionIndex)=>{
+          const distance=Math.abs(section.getBoundingClientRect().left-anchor);
+          if(distance<bestDistance){bestDistance=distance;activeIndex=sectionIndex}
+        });
+        setActivePart(activeIndex)
+      };
+      carousel.addEventListener("scroll",()=>{
+        if(partScrollFrame)return;
+        partScrollFrame=requestAnimationFrame(syncActivePart)
+      },{passive:true});
+      stepButtons.forEach((step,stepIndex)=>{
+        step.onclick=()=>{
+          const section=sections[stepIndex];
+          if(!section)return;
+          const target=carousel.scrollLeft+(section.getBoundingClientRect().left-carouselAnchor());
+          setActivePart(stepIndex);
+          carousel.scrollTo({left:target,behavior:"smooth"})
+        }
+      })
+    }
+
     if(carousel.childElementCount)host.append(carousel);
     refreshLucideIcons()
   }
@@ -747,18 +804,25 @@
       if(activeIndex<0){
         activeEpisodeId="";
         content.replaceChildren();
+        const showCompletion=snapshot().settings?.completionEnabled!==false;
         list.forEach((episode,index)=>{
           const button=element("button","episode-button");
           button.type="button";
-          const stripe=element("span","episode-color"),episodeColor=safeColor(episode.color,"#A9D6FF");
-          button.style.setProperty("--episode-color",episodeColor);
-          stripe.style.setProperty("--episode-color",episodeColor);
-          const copy=element("span","episode-copy");
-          copy.append(
-            element("strong","",episode.title||(index+1)+"화"),
-            element("span","",episode.subtitle||allBlocks(episode).length+"개 블록")
+          const episodeColor=safeColor(episode.color,"#A9D6FF"),cardInk=cardForeground(episodeColor);
+          button.style.setProperty("--card-color",episodeColor);
+          button.style.setProperty("--custom-on",cardInk);
+          button.style.setProperty("--custom-muted",cardInk);
+          const blocks=allBlocks(episode),done=blocks.filter(block=>block.completed).length,todo=blocks.length-done;
+          button.append(
+            element("span","episode-number",(index+1)+"화"),
+            element("strong","episode-title",episode.title||(index+1)+"화"),
+            element("span","episode-desc",episode.subtitle||blocks.length+"개 블록")
           );
-          button.append(stripe,copy,element("span","episode-number",(index+1)+"화"));
+          if(showCompletion){
+            const completion=element("span","episode-completion");
+            completion.append(element("span","","완성 "+done),element("span","","미완성 "+todo));
+            button.append(completion)
+          }
           button.onclick=()=>{
             activeEpisodeId=String(episode.id);
             renderProject(project);

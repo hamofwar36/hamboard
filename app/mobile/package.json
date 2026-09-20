@@ -1,7 +1,7 @@
 {
   "name": "hamboard-mobile-web",
   "private": true,
-  "version": "0.3.26",
+  "version": "0.3.27",
   "description": "Hamboard mobile web app deployment package",
   "scripts": {
     "mobile:build": "node scripts/prepare-mobile-deploy.mjs",

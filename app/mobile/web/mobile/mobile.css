@@ -281,29 +281,33 @@ svg.lucide{stroke:currentColor}
 .project-screen.episode-open .document-mobile-head{padding-bottom:13px}
 .project-screen.episode-open .project-mobile-body{padding-top:8px}
 .episode-list{
-  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0;padding:0
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0;padding:0
 }
 .episode-list[hidden]{display:none}
 .episode-button{
-  position:relative;width:100%;min-width:0;height:120px;display:flex;flex-direction:column;
-  padding:12px;overflow:hidden;border:1px solid var(--border);border-radius:16px;
-  background:color-mix(in srgb,var(--episode-color,var(--primary-soft)) 36%,var(--surface));
-  color:var(--ui-fg);box-shadow:var(--soft-shadow);text-align:left;
-  --ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
+  position:relative;width:100%;min-width:0;min-height:154px;display:block;
+  padding:14px 14px 43px;overflow:hidden;border:1px solid var(--border);border-radius:18px;
+  background:var(--card-color,var(--surface));color:var(--ui-fg);box-shadow:var(--soft-shadow);text-align:left;
+  --ui-fg:var(--custom-on,var(--on-surface));--ui-muted:var(--custom-muted,var(--on-surface-muted))
 }
 .episode-button:active{transform:translateY(1px);box-shadow:0 5px 16px rgba(45,45,70,.07)}
-.episode-color{position:absolute;left:0;right:0;top:0;height:5px;background:var(--episode-color,var(--primary-base))}
-.episode-copy{min-width:0;padding-top:14px}
-.episode-copy strong,.episode-copy span{display:block;overflow:hidden;text-overflow:ellipsis}
-.episode-copy strong{
-  font-size:var(--fs-lg);font-weight:700;line-height:1.16;letter-spacing:-.025em;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical
+.episode-number{display:block;margin:0 0 8px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700;line-height:1.2}
+.episode-title{
+  display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+  color:var(--ui-fg);font-size:var(--fs-lg);font-weight:700;line-height:1.18;letter-spacing:-.028em;overflow-wrap:anywhere
 }
-.episode-copy span{
-  margin-top:5px;color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:400;line-height:1.45;
-  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical
+.episode-desc{
+  display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+  margin-top:7px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400;line-height:1.45;overflow-wrap:anywhere
 }
-.episode-number{margin-top:auto;color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700}
+.episode-completion{
+  position:absolute;left:14px;right:14px;bottom:11px;display:flex;gap:5px;align-items:center;
+  color:var(--ui-fg);font-size:var(--fs-compact-10);font-weight:700
+}
+.episode-completion span{
+  padding:3px 6px;border-radius:999px;background:var(--surface);color:var(--on-surface);
+  white-space:nowrap
+}
 .project-content{min-width:0}
 .episode-overview-back{
   min-height:32px;display:inline-flex;align-items:center;gap:4px;margin:0 0 7px;padding:0 2px;
@@ -314,6 +318,19 @@ svg.lucide{stroke:currentColor}
 .unit-heading{padding:0 2px 8px}
 .unit-heading h3{margin:0;font-size:var(--fs-lg);font-weight:700;line-height:1.2}
 .unit-heading p{margin:5px 0 0;color:var(--ui-muted);font-size:var(--fs-sm);line-height:1.5}
+.part-position{
+  display:flex;align-items:center;gap:5px;margin:0 0 8px;padding:0 2px;overflow-x:auto;
+  scrollbar-width:none;overscroll-behavior-x:contain
+}
+.part-position::-webkit-scrollbar{display:none}
+.part-step{
+  flex:0 0 auto;min-width:25px;height:20px;padding:0 7px;border:1px solid var(--border);border-radius:7px;
+  background:var(--surface-subtle);color:var(--on-surface-subtle-muted);font-size:var(--fs-compact-10);font-weight:700;line-height:1
+}
+.part-step.active{
+  border-color:var(--primary-strong);background:var(--primary-base);color:var(--on-primary)
+}
+.part-step:active{transform:translateY(1px)}
 .stage-carousel{
   display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;
   margin:0 -20px;padding:0 38px 14px 20px;

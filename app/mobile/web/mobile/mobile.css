@@ -566,13 +566,13 @@ body.note-keyboard-open .mobile-app{
 .note-head-menu-button:active,.note-head-menu-button[aria-expanded="true"]{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
 .note-head-menu-button svg{width:20px;height:20px}
 .note-head-menu{
-  position:absolute;z-index:80;right:0;top:43px;width:min(270px,calc(100vw - 36px));display:grid;gap:3px;padding:5px;
+  position:absolute;z-index:80;right:0;top:43px;width:max-content;max-width:calc(100vw - 36px);display:grid;gap:3px;padding:5px;
   border:1px solid var(--ui-border-default);border-radius:14px;background:var(--ui-surface-default);box-shadow:var(--popup-shadow)
 }
 .note-head-menu[hidden]{display:none}
 .note-head-menu button,.note-head-menu-info{
-  width:100%;min-height:52px;display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:10px;
-  padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--ui-fg);text-align:left
+  width:auto;min-height:52px;display:grid;grid-template-columns:22px max-content;align-items:center;gap:10px;
+  padding:7px 10px;border:0;border-radius:10px;background:transparent;color:var(--ui-fg);text-align:left
 }
 .note-head-menu button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
 .note-head-menu button>svg,.note-head-menu-info>svg{width:18px;height:18px;color:var(--ui-muted)}

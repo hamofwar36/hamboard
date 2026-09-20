@@ -509,7 +509,7 @@ body.note-keyboard-open .mobile-app{
   box-shadow:var(--popup-shadow);backdrop-filter:blur(18px);pointer-events:auto
 }
 .note-mobile-toolbar{
-  min-height:38px;display:grid;grid-template-columns:42px 42px 1px repeat(4,minmax(22px,1fr)) 1px 38px;align-items:center;column-gap:2px;
+  min-height:38px;display:grid;grid-template-columns:42px 42px 1px repeat(4,42px) 1px 38px;align-items:center;column-gap:2px;
   padding:2px 5px;border-radius:11px
 }
 .note-mobile-toolbar button{
@@ -518,8 +518,8 @@ body.note-keyboard-open .mobile-app{
 }
 .note-mobile-toolbar .note-history-action{height:34px;border-radius:9px}
 .note-mobile-toolbar .note-history-action svg{width:18px;height:18px}
-.note-mobile-toolbar .note-panel-action{height:28px}
-.note-mobile-toolbar .note-panel-action svg{width:13px;height:13px}
+.note-mobile-toolbar .note-panel-action{height:34px;border-radius:9px}
+.note-mobile-toolbar .note-panel-action svg{width:18px;height:18px}
 .note-mobile-toolbar .note-keyboard-dismiss{
   width:30px;height:30px;justify-self:center;border-radius:8px
 }

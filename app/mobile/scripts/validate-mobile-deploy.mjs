@@ -137,10 +137,10 @@ check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(html,/class="note-history-action"[^>]*data-note-command="redo"/);
   assert.match(html,/id="noteKeyboardToggle"/);
   assert.match(html,/data-note-keyboard-toggle/);
-  assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,minmax\(22px,1fr\)\) 1px 38px/);
+  assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,42px\) 1px 38px/);
   assert.match(css,/\.note-history-action\{height:34px/);
   assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
-  assert.match(css,/\.note-panel-action svg\{width:13px;height:13px/);
+  assert.match(css,/\.note-panel-action\{height:34px;border-radius:9px/);\n  assert.match(css,/\.note-panel-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?width:30px;height:30px;justify-self:center/);
   assert.match(app,/function renderNoteKeyboardToggle\(open\)/);
   assert.match(app,/open\?"keyboard-off":"keyboard"/);

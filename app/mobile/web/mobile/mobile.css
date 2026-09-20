@@ -612,12 +612,16 @@ svg.lucide{stroke:currentColor}
   color:var(--ui-fg);--ui-fg:var(--on-surface);--ui-muted:var(--on-surface-muted)
 }
 .bottom-nav-button{
-  width:100%;min-height:50px;display:grid;grid-template-rows:27px 11px;place-items:center;align-content:center;row-gap:3px;
+  position:relative;width:100%;min-height:50px;display:grid;grid-template-rows:27px 11px;place-items:center;align-content:center;row-gap:3px;
   padding:3px;border:0;border-radius:10px;background:transparent;color:var(--ui-muted)
 }
 .bottom-nav-button:active{background:var(--surface-hover);color:var(--on-surface-hover)}
 .bottom-nav-button.active{background:transparent;color:var(--primary-strong)}
-.bottom-nav-button.active .bottom-nav-icon{background:var(--primary-soft);color:var(--on-primary-soft)}
+.bottom-nav-button.active:not(.bottom-nav-create)::after{
+  content:"";position:absolute;top:-4px;width:30px;height:4px;border-radius:0 0 999px 999px;background:var(--primary-strong)
+}
+.bottom-nav-button.active .bottom-nav-icon{background:transparent;color:var(--primary-strong)}
+.bottom-nav-button.active>span:last-child{color:var(--ui-fg)}
 .bottom-nav-icon{width:29px;height:27px;display:grid;place-items:center;border-radius:9px}
 .bottom-nav-icon svg{width:20px;height:20px}
 .bottom-nav-button>span:last-child{

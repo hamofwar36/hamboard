@@ -784,7 +784,7 @@
     }
 
     activeEpisodeId="";
-    renderUnit(project,0,{showHeading:false})
+    renderUnit(project,0,{showHeading:false,compactBlocks:true})
   }
 
   function sanitizedNoteHtml(value){

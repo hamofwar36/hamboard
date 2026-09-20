@@ -53,7 +53,7 @@ check("PWA install icons reuse the existing Hamboard desktop artwork",async()=>{
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.24"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.25"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);
@@ -84,7 +84,7 @@ check("mobile note reader restores the shared Home back bar",()=>{
   assert.match(app,/showScreen\(screen,\{heading:"홈",back:true/);
   assert.match(app,/if\(activeDocumentType\)openLibrary\(\{replace:true\}\)/)
 });
-check("long projects open from episode cards into compact stage previews",()=>{
+check("project stages use compact block previews and long projects open from episode cards",()=>{
   assert.match(css,/\.mobile-topbar\{[\s\S]*?min-height:44px/);
   assert.match(css,/\.document-open \.mobile-topbar\{column-gap:3px\}/);
   assert.match(css,/\.episode-list\{[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
@@ -93,6 +93,7 @@ check("long projects open from episode cards into compact stage previews",()=>{
   assert.match(app,/episodes\.hidden=true/);
   assert.match(app,/projectReaderScreen\.classList\.add\("episode-open"\)/);
   assert.match(app,/compactBlocks:true/);
+  assert.match(app,/renderUnit\(project,0,\{showHeading:false,compactBlocks:true\}\)/);
   assert.match(app,/function compactBlockPreview/);
   assert.match(app,/if\(titleText\)head\.append/);
   assert.match(css,/\.block-preview\{[\s\S]*?-webkit-line-clamp:1/);

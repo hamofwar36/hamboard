@@ -40,6 +40,8 @@ check("mobile colors use Windows core tokens through shared semantic roles",()=>
     "--secondary-soft:color-mix(in srgb,var(--secondary-base) 30%,var(--surface))"
   ])assert.ok(css.includes(token),token);
   for(const role of [
+    "--ui-panel-bg:var(--surface)",
+    "--ui-field-bg:var(--surface)",
     "--ui-control-neutral-bg:var(--surface)",
     "--ui-control-pressed-bg:var(--secondary-soft)",
     "--ui-control-primary-bg:var(--primary-base)",
@@ -48,6 +50,10 @@ check("mobile colors use Windows core tokens through shared semantic roles",()=>
     "--ui-status-success-bg:var(--status-success-bg)",
     "--ui-status-error-bg:var(--status-error-bg)"
   ])assert.ok(css.includes(role),role);
+  assert.match(css,/html\{[^}]*background:var\(--bg\)/);
+  assert.match(css,/body\{[\s\S]*?background:var\(--ui-page-bg\)/);
+  assert.match(css,/\.home-search-field\{[\s\S]*?background:var\(--ui-field-bg\)/);
+  assert.match(css,/\.sync-indicator\{[\s\S]*?border:1px solid var\(--ui-control-neutral-border\)/);
   assert.match(css,/\.part-step\.active\{[\s\S]*?background:var\(--ui-control-selected-bg\)/);
   assert.match(css,/\.create-primary\{[\s\S]*?background:var\(--ui-control-primary-bg\)/);
   assert.match(css,/\.create-list button:active\{[\s\S]*?background:var\(--ui-control-pressed-bg\)/);
@@ -88,7 +94,7 @@ check("PWA install icons reuse the existing Hamboard desktop artwork",async()=>{
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.28"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.29"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);

@@ -118,7 +118,7 @@
   const stripHtml=value=>{const node=document.createElement("div");node.innerHTML=String(value||"");return (node.textContent||"").replace(/\s+/g," ").trim()};
   const refreshLucideIcons=()=>{if(window.lucide?.createIcons)window.lucide.createIcons({attrs:{"stroke-width":1.8}})};
   const colorLuminance=color=>{
-    const hex=safeColor(color,"#FFB8AE").slice(1),rgb=[0,2,4].map(index=>parseInt(hex.slice(index,index+2),16)/255);
+    const hex=safeColor(color,CARD_COLORS[0]).slice(1),rgb=[0,2,4].map(index=>parseInt(hex.slice(index,index+2),16)/255);
     const linear=rgb.map(value=>value<=.04045?value/12.92:Math.pow((value+.055)/1.055,2.4));
     return .2126*linear[0]+.7152*linear[1]+.0722*linear[2]
   };

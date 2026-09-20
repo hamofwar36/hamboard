@@ -606,8 +606,11 @@ body.note-keyboard-open .mobile-app{
 }
 body.note-html-mode .note-editor-controls{display:none}
 
-.note-tool-sheet-backdrop{align-items:center;padding:16px}
-.note-tool-sheet-panel{width:min(100%,460px);max-height:min(620px,calc(100dvh - 32px));padding:15px;overflow-y:auto}
+.nav-sheet-backdrop.note-tool-sheet-backdrop{align-items:center;padding:16px}
+.nav-sheet.note-tool-sheet-panel{
+  position:relative;z-index:1;width:min(100%,460px);max-height:min(620px,calc(100dvh - 32px));
+  padding:15px;overflow-y:auto
+}
 .note-tool-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .note-tool-sheet-head h3{margin:0;font-size:var(--fs-lg);line-height:1.25}
 .note-tool-sheet-body{display:grid;gap:12px}
@@ -628,9 +631,10 @@ body.note-html-mode .note-editor-controls{display:none}
 .note-sheet-actions .secondary{background:var(--ui-surface-subtle);color:var(--ui-fg)}
 .note-sheet-actions .primary{background:var(--ui-control-primary-bg);color:var(--ui-control-primary-fg)}
 
-.note-correction-backdrop{align-items:center;padding:16px}
-.note-correction-panel{
-  width:min(100%,480px);max-height:min(700px,calc(100dvh - 32px));padding:15px;overflow-y:auto;
+.nav-sheet-backdrop.note-correction-backdrop{align-items:center;padding:16px}
+.nav-sheet.note-correction-panel{
+  position:relative;z-index:1;width:min(100%,480px);max-height:min(700px,calc(100dvh - 32px));
+  padding:15px;overflow-y:auto;
   --ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
 }
 .note-correction-body{display:grid;gap:14px}

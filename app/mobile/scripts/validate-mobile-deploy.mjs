@@ -138,7 +138,7 @@ check("mobile note reader restores the shared Home back bar",()=>{
   assert.doesNotMatch(css,/\.note-open \.mobile-topbar\{display:none\}/);
   assert.match(css,/\.document-mobile-head\{[\s\S]*?background:var\(--bg\)/);
   assert.match(css,/\.document-title-accent\{[\s\S]*?background:var\(--secondary-base\)/);
-  assert.match(css,/\.note-reader-card\{[\s\S]*?border:0;border-radius:0;background:var\(--surface\)/);
+  assert.match(css,/\.note-reader-card\{[\s\S]*?border:0;border-radius:0;background:var\(--ui-surface-default\)/);
   assert.match(app,/backButton\.hidden=!back/);
   assert.match(app,/showScreen\(screen,\{heading:"홈",back:true/);
   assert.match(app,/if\(activeDocumentType\)openLibrary\(\{replace:true\}\)/)

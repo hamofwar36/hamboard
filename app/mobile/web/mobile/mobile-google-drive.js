@@ -209,7 +209,7 @@
     if(!file)throw new Error("google-drive-asset-object-not-found");
     const response=await authorizedFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(file.id)}?alt=media`),bytes=await response.arrayBuffer();
     if(bytes.byteLength!==expectedSize||await sha256Hex(bytes)!==expectedSha)throw new Error("google-drive-download-integrity-mismatch");
-    const mimeType=String(file.mimeType||requestedMime||"application/octet-stream");
+    const mimeType=String(requestedMime&&requestedMime!=="application/octet-stream"?requestedMime:file.mimeType||requestedMime||"application/octet-stream");
     return {objectKey,blob:new Blob([bytes],{type:mimeType}),contentSha256:expectedSha,byteSize:expectedSize,mimeType}
   }
 

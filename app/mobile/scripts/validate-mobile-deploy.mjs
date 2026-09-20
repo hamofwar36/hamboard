@@ -132,25 +132,21 @@ check("backup and sync share snapshot plus asset restore",()=>{
   assert.match(app,/downloadCurrentSyncAssets\(listing,stateValue,onProgress\)/);
   assert.match(transport,/async function putSyncCheckpoint/);
 });
-check("note toolbar prioritizes history controls and can dismiss keyboard",()=>{
+check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(html,/class="note-history-action"[^>]*data-note-command="undo"/);
   assert.match(html,/class="note-history-action"[^>]*data-note-command="redo"/);
-  assert.match(html,/data-note-keyboard-dismiss/);
-  assert.match(html,/data-lucide="keyboard-off"/);
+  assert.match(html,/id="noteKeyboardToggle"/);
+  assert.match(html,/data-note-keyboard-toggle/);
   assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,minmax\(22px,1fr\)\) 1px 38px/);
   assert.match(css,/\.note-history-action\{height:34px/);
   assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-panel-action svg\{width:13px;height:13px/);
   assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?width:30px;height:30px;justify-self:center/);
-  assert.match(app,/noteReaderContent\.blur\(\)/);
-  assert.match(app,/keyboardButton\.blur\(\)/);
-});
-check("note editor toolbar uses compact two-thirds sizing",()=>{
-  assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?min-height:38px/);
-  assert.match(css,/grid-template-columns:repeat\(2,31px\)/);
-  assert.match(css,/\.note-mobile-toolbar button\{[\s\S]*?height:30px/);
-  assert.match(css,/\.note-mobile-toolbar svg\{width:14px;height:14px\}/);
-  assert.match(css,/\.note-toolbar-divider\{width:1px;height:19px/);
+  assert.match(app,/function renderNoteKeyboardToggle\(open\)/);
+  assert.match(app,/open\?"keyboard-off":"keyboard"/);
+  assert.match(app,/open\?"키보드 내리기":"키보드 띄우기"/);
+  assert.match(app,/event\.preventDefault\(\)/);
+  assert.match(app,/if\(keyboardOpen\)[\s\S]*?noteReaderContent\.blur\(\)[\s\S]*?else restoreMobileNoteSelection\(\)/);
 });
 check("note keyboard mode hides main navigation and supports resized viewports",()=>{
   assert.match(app,/noteViewportBaseHeight/);

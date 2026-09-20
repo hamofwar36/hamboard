@@ -20,6 +20,7 @@
   const noteEditorControls=$("#noteEditorControls");
   const noteFormatPanel=$("#noteFormatPanel");
   const noteMobileToolbar=$("#noteMobileToolbar");
+  const noteKeyboardToggle=$("#noteKeyboardToggle");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
   const menuScreen=$("#menuScreen");
   const settingsScreen=$("#settingsScreen");
@@ -540,6 +541,17 @@
       logDiagnostic("warn","PWA","설치형 웹앱 초기화에 실패했습니다.",error)
     }
   }
+  function renderNoteKeyboardToggle(open){
+    if(!noteKeyboardToggle)return;
+    const state=open?"open":"closed";
+    if(noteKeyboardToggle.dataset.keyboardState===state)return;
+    noteKeyboardToggle.dataset.keyboardState=state;
+    noteKeyboardToggle.setAttribute("aria-label",open?"키보드 내리기":"키보드 띄우기");
+    noteKeyboardToggle.title=open?"키보드 내리기":"키보드 띄우기";
+    noteKeyboardToggle.innerHTML=`<i data-lucide="${open?"keyboard-off":"keyboard"}" aria-hidden="true"></i>`;
+    refreshLucideIcons()
+  }
+
   function syncNoteViewport(){
     noteViewportFrame=0;
     const viewport=window.visualViewport,noteOpen=document.body.classList.contains("note-open");
@@ -547,6 +559,7 @@
       noteViewportBaseHeight=0;
       document.documentElement.style.setProperty("--note-keyboard-inset","0px");
       document.body.classList.remove("note-keyboard-open");
+      renderNoteKeyboardToggle(false);
       return
     }
     const viewportHeight=Math.max(0,Math.round(viewport?.height||window.innerHeight||0));
@@ -557,7 +570,8 @@
     if(!keyboardOpen)noteViewportBaseHeight=Math.max(noteViewportBaseHeight,viewportHeight);
     const inset=covered>=120?covered:0;
     document.documentElement.style.setProperty("--note-keyboard-inset",`${inset}px`);
-    document.body.classList.toggle("note-keyboard-open",keyboardOpen)
+    document.body.classList.toggle("note-keyboard-open",keyboardOpen);
+    renderNoteKeyboardToggle(keyboardOpen)
   }
   function scheduleNoteViewportSync(){
     if(noteViewportFrame)return;
@@ -1949,15 +1963,24 @@
   noteReaderContent.addEventListener("pointerup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
   noteReaderContent.addEventListener("focus",captureMobileNoteSelection);
   noteMobileToolbar.addEventListener("pointerdown",event=>{
+    const keyboardButton=event.target.closest("[data-note-keyboard-toggle]");
+    if(keyboardButton){
+      event.preventDefault();
+      if(document.body.classList.contains("note-keyboard-open"))captureMobileNoteSelection();
+      return
+    }
     if(event.target.closest("button"))captureMobileNoteSelection()
   });
   noteMobileToolbar.addEventListener("click",event=>{
-    const keyboardButton=event.target.closest("[data-note-keyboard-dismiss]");
+    const keyboardButton=event.target.closest("[data-note-keyboard-toggle]");
     if(keyboardButton){
-      captureMobileNoteSelection();
-      noteReaderContent.blur();
-      keyboardButton.blur();
+      const keyboardOpen=document.body.classList.contains("note-keyboard-open");
+      if(keyboardOpen){
+        captureMobileNoteSelection();
+        noteReaderContent.blur()
+      }else restoreMobileNoteSelection();
       scheduleNoteViewportSync();
+      setTimeout(scheduleNoteViewportSync,80);
       return
     }
     const commandButton=event.target.closest("[data-note-command]");

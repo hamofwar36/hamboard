@@ -1503,6 +1503,29 @@
     return {head:heads[0],path:reverse.reverse()}
   }
 
+  function syncCheckpointForTopology(objects,topology){
+    const revisions=new Map((topology.path||[]).map((item,index)=>[String(item.revision||""),index]));
+    return (objects||[]).filter(item=>item?.syncType==="checkpoint"&&String(item.objectKey||"").startsWith("sync/checkpoints/")&&revisions.has(String(item.revision||"")))
+      .sort((a,b)=>revisions.get(String(b.revision||""))-revisions.get(String(a.revision||""))||Number(b.createdAtMs||0)-Number(a.createdAtMs||0))[0]||null
+  }
+
+  async function readCloudCheckpoint(object){
+    const result=await googleDrive.getSyncObject({remoteObjectId:String(object?.remoteObjectId||""),objectKey:String(object?.objectKey||""),contentSha256:String(object?.contentSha256||""),byteSize:Number(object?.byteSize)||0});
+    let checkpoint;
+    try{checkpoint=JSON.parse(String(result.content||""))}catch{throw new Error("sync-checkpoint-json-invalid")}
+    if(checkpoint?.format!=="hamboard-sync-checkpoint"||checkpoint?.formatVersion!==1||checkpoint?.stateSchemaVersion!==1||String(checkpoint.revision||"")!==String(object?.revision||"")||!checkpoint.state||typeof checkpoint.state!=="object"||Array.isArray(checkpoint.state)||Number(checkpoint.state.schemaVersion)!==1)throw new Error("sync-checkpoint-header-invalid");
+    return checkpoint
+  }
+
+  async function restoreCloudProjection(projected,{loadAssets,onAssetProgress=()=>{}}={}){
+    await repository.replaceState(projected,{markBaseline:true});
+    const assetResult=loadAssets?await loadAssets(snapshot(),onAssetProgress):{wanted:0,downloaded:0,cached:0,unresolved:[]};
+    applyMobileTheme();
+    renderAccountButton();
+    openLibrary();
+    return {state:snapshot(),assets:assetResult}
+  }
+
   async function readCloudCommit(object){
     const result=await googleDrive.getSyncObject({remoteObjectId:String(object.remoteObjectId||""),objectKey:String(object.objectKey||""),contentSha256:String(object.contentSha256||""),byteSize:Number(object.byteSize)||0});
     let commit;
@@ -1539,32 +1562,51 @@
       if(!googleDrive)throw new Error("google-drive-web-transport-unavailable");
       if(!listing)listing=await googleDrive.listSyncObjects();
       if(listing.truncated)throw new Error("sync-object-list-truncated");
-      const topology=commitTopology(listing.objects||[]);
+      const objects=listing.objects||[],topology=commitTopology(objects);
       if(!topology.head)throw new Error("sync-import-empty");
 
       if(navigator.onLine!==false)setIndicator("connected","동기화 중");
-      updateCloudSyncProgress(runId,"동기화 데이터를 불러오는 중입니다.",0);
+      updateCloudSyncProgress(runId,"동기화 스냅샷을 불러오는 중입니다.",0);
+      const checkpointObject=syncCheckpointForTopology(objects,topology);
+      let canonical,checkpointRevision="",tail=topology.path;
+      if(checkpointObject){
+        const checkpoint=await readCloudCheckpoint(checkpointObject);
+        canonical=syncModel.projectCanonicalState(checkpoint.state,syncModel.CLIENT_PROFILES.desktop);
+        checkpointRevision=String(checkpoint.revision||"");
+        const checkpointIndex=topology.path.findIndex(item=>String(item.revision||"")===checkpointRevision);
+        tail=checkpointIndex>=0?topology.path.slice(checkpointIndex+1):topology.path;
+        updateCloudSyncProgress(runId,"동기화 스냅샷을 적용하는 중입니다.",35)
+      }else{
+        canonical=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.desktop);
+        logDiagnostic("warn","SYNC","기존 동기화에 스냅샷이 없어 이번 한 번은 전체 기록을 재생합니다.")
+      }
       let downloadedCommits=0;
-      const commits=await mapWithConcurrency(topology.path,6,async object=>{
+      const commits=await mapWithConcurrency(tail,6,async object=>{
         const commit=await readCloudCommit(object);
         downloadedCommits++;
-        updateCloudSyncProgress(runId,"동기화 데이터를 불러오는 중입니다.",downloadedCommits/Math.max(1,topology.path.length)*70);
+        const start=checkpointObject?35:0,span=checkpointObject?25:60;
+        updateCloudSyncProgress(runId,"최신 변경사항을 적용하는 중입니다.",start+downloadedCommits/Math.max(1,tail.length)*span);
         return commit
       });
-      let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
-      for(const commit of commits)projected=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore).state;
-      await repository.replaceState(projected,{markBaseline:true});
-      updateCloudSyncProgress(runId,"현재 문서의 이미지를 확인하고 있습니다.");
-      const assetResult=await downloadCurrentSyncAssets(listing,snapshot(),progress=>{
-        const ratio=progress.total?progress.completed/progress.total:1;
-        updateCloudSyncProgress(runId,"현재 문서의 이미지를 불러오는 중입니다.",70+ratio*30)
+      for(const commit of commits)canonical=syncModel.applyCommitToCanonical(canonical,commit);
+      const projected=syncModel.projectCanonicalState(canonical,syncModel.CLIENT_PROFILES.mobileCore);
+      updateCloudSyncProgress(runId,"현재 문서의 이미지를 확인하고 있습니다.",60);
+      const restored=await restoreCloudProjection(projected,{
+        loadAssets:(stateValue,onProgress)=>downloadCurrentSyncAssets(listing,stateValue,onProgress),
+        onAssetProgress:progress=>{
+          const ratio=progress.total?progress.completed/progress.total:1;
+          updateCloudSyncProgress(runId,"현재 문서의 이미지를 불러오는 중입니다.",60+ratio*40)
+        }
       });
-      if(assetResult.unresolved.length)logDiagnostic("warn","ASSET",`동기화 이미지 ${assetResult.unresolved.length}개를 아직 불러오지 못했습니다.`);
-      applyMobileTheme();
+      if(restored.assets.unresolved.length)logDiagnostic("warn","ASSET",`동기화 이미지 ${restored.assets.unresolved.length}개를 아직 불러오지 못했습니다.`);
       cloudSyncListing=listing;
-      renderAccountButton();
-      openLibrary();
-      return {empty:false,revision:String(topology.head.revision),assets:assetResult,state:snapshot()}
+      const headRevision=String(topology.head.revision);
+      if((!checkpointObject||tail.length>=8)&&googleDrive.putSyncCheckpoint)try{
+        const published=await googleDrive.putSyncCheckpoint({revision:headRevision,state:canonical});
+        listing.objects=[...(listing.objects||[]),published];
+        logDiagnostic("info","SYNC",`동기화 스냅샷을 생성했습니다. revision=${headRevision}`)
+      }catch(error){logDiagnostic("warn","SYNC","동기화 스냅샷 생성에 실패했습니다. 다음 동기화에서 다시 시도합니다.",error)}
+      return {empty:false,revision:headRevision,checkpointRevision,tailCommits:tail.length,assets:restored.assets,state:restored.state}
     })();
     const shared=operation.finally(()=>{if(cloudSyncImportPromise===shared)cloudSyncImportPromise=null});
     cloudSyncImportPromise=shared;
@@ -1675,16 +1717,15 @@
       const canonical=manifest?.state;
       if(!canonical||typeof canonical!=="object"||Array.isArray(canonical))throw new Error("mobile-state-invalid");
       const projection=syncModel.projectCanonicalState(canonical,syncModel.CLIENT_PROFILES.mobileCore);
-      await repository.replaceState(projection,{markBaseline:true});
-      cloudSourceStatus.textContent="현재 문서의 이미지를 확인하고 있습니다.";
-      const assetResult=await downloadCurrentBackupAssets(manifest,snapshot(),progress=>{
-        const percent=progress.total?Math.round(progress.completed/progress.total*100):100;
-        cloudSourceStatus.textContent=`현재 문서의 이미지를 불러오는 중입니다. ${percent}%`
+      cloudSourceStatus.textContent="백업 스냅샷을 적용하는 중입니다. 60%";
+      const restored=await restoreCloudProjection(projection,{
+        loadAssets:(stateValue,onProgress)=>downloadCurrentBackupAssets(manifest,stateValue,onProgress),
+        onAssetProgress:progress=>{
+          const ratio=progress.total?progress.completed/progress.total:1;
+          cloudSourceStatus.textContent=`현재 문서의 이미지를 불러오는 중입니다. ${Math.round(60+ratio*40)}%`
+        }
       });
-      if(assetResult.unresolved.length)logDiagnostic("warn","ASSET",`백업 이미지 ${assetResult.unresolved.length}개를 아직 불러오지 못했습니다.`);
-      applyMobileTheme();
-      renderAccountButton();
-      openLibrary()
+      if(restored.assets.unresolved.length)logDiagnostic("warn","ASSET",`백업 이미지 ${restored.assets.unresolved.length}개를 아직 불러오지 못했습니다.`)
     }catch(error){
       console.error("모바일 백업 불러오기 실패",error);
       logDiagnostic("error","CLOUD","수동 백업 불러오기에 실패했습니다.",error);
@@ -1988,7 +2029,7 @@
   };
 
   window.HamboardMobileApp=Object.freeze({
-    start,repository,assetRepository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSettings,openCloudSources,refreshCloudSources,snapshot
+    start,repository,assetRepository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCheckpoint,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSettings,openCloudSources,refreshCloudSources,snapshot
   });
   start();
 })();

@@ -3,6 +3,7 @@
 
   const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.appdata";
   const DRIVE_FILES_URL="https://www.googleapis.com/drive/v3/files";
+  const DRIVE_UPLOAD_URL="https://www.googleapis.com/upload/drive/v3/files";
   const MAX_SYNC_OBJECT_BYTES=16*1024*1024;
   const MAX_SYNC_OBJECTS=50000;
   const MAX_BACKUP_MANIFEST_BYTES=16*1024*1024;
@@ -242,6 +243,32 @@
     return {objectKey,blob:new Blob([bytes],{type:mimeType}),contentSha256:expectedSha,byteSize:expectedSize,mimeType}
   }
 
+  async function putSyncCheckpoint({revision,state,createdAtMs=Date.now()}={}){
+    const safeRevision=String(revision||"");
+    if(!/^[A-Za-z0-9._:-]{1,120}$/.test(safeRevision)||!state||typeof state!=="object"||Array.isArray(state)||Number(state.schemaVersion)!==1)throw new Error("google-drive-sync-checkpoint-request-invalid");
+    const checkpoint={format:"hamboard-sync-checkpoint",formatVersion:1,stateSchemaVersion:1,revision:safeRevision,createdAtMs:Number(createdAtMs)||Date.now(),state};
+    const content=JSON.stringify(checkpoint),bytes=new TextEncoder().encode(content);
+    if(bytes.byteLength<1||bytes.byteLength>MAX_SYNC_OBJECT_BYTES)throw new Error("google-drive-sync-checkpoint-too-large");
+    const contentSha256=await sha256Hex(bytes),objectKey=`sync/checkpoints/${safeRevision}.json`,boundary=`hamboard-${contentSha256.slice(0,24)}`;
+    const metadata={name:`hamboard-sync-checkpoint-${contentSha256.slice(0,24)}.json`,parents:["appDataFolder"],mimeType:"application/json",appProperties:{
+      hamboardObjectKey:objectKey,hamboardContentSha256:contentSha256,hamboardByteSize:String(bytes.byteLength),hamboardFormatVersion:"1",hamboardKind:"sync",
+      hamboardSyncType:"checkpoint",hamboardRevision:safeRevision,hamboardBaseRevision:"",hamboardDeviceId:"mobile-web",hamboardClientProfile:"canonical",hamboardCreatedAtMs:String(checkpoint.createdAtMs),hamboardExpiresAtMs:"0"
+    }};
+    const body=new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n`,
+      content,
+      `\r\n--${boundary}--\r\n`
+    ],{type:`multipart/related; boundary=${boundary}`});
+    const url=new URL(DRIVE_UPLOAD_URL);
+    url.searchParams.set("uploadType","multipart");
+    url.searchParams.set("fields","id,size,appProperties");
+    const response=await authorizedFetch(url,{method:"POST",headers:{"Content-Type":`multipart/related; boundary=${boundary}`},body}),value=await response.json();
+    if(!validRemoteId(value.id))throw new Error("google-drive-sync-checkpoint-upload-invalid");
+    clearObjectIndex();
+    return {remoteObjectId:String(value.id),objectKey,contentSha256,byteSize:bytes.byteLength,syncType:"checkpoint",revision:safeRevision,baseRevision:"",deviceId:"mobile-web",clientProfile:"canonical",createdAtMs:String(checkpoint.createdAtMs),expiresAtMs:"0",assetId:"",quality:""}
+  }
+
   async function listBackups(){
     const backups=[];let pageToken="";
     do{
@@ -282,6 +309,6 @@
   }
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

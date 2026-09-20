@@ -102,6 +102,16 @@ check("home account flow separates sync data and manual backups",()=>{assert.mat
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
 check("mobile version is injected into runtime config",()=>assert.ok(config.includes(`version:${JSON.stringify(mobileVersion)}`)));
+check("backup and sync share snapshot plus asset restore",()=>{
+  assert.match(app,/async function restoreCloudProjection/);
+  assert.match(app,/syncCheckpointForTopology/);
+  assert.match(app,/hamboard-sync-checkpoint/);
+  assert.match(app,/syncModel\.applyCommitToCanonical/);
+  assert.match(app,/tailCommits:tail\.length/);
+  assert.match(app,/downloadCurrentBackupAssets\(manifest,stateValue,onProgress\)/);
+  assert.match(app,/downloadCurrentSyncAssets\(listing,stateValue,onProgress\)/);
+  assert.match(transport,/async function putSyncCheckpoint/);
+});
 check("cloud sync progress is single-run and monotonic",()=>{
   assert.match(app,/let cloudSyncImportPromise=null/);
   assert.match(app,/let cloudSyncProgressRun=0/);

@@ -905,7 +905,7 @@ mod drive_upload {
                 }
             }
             let sync_type = app_properties.get("hamboardSyncType").and_then(Value::as_str).unwrap_or("");
-            if !matches!(sync_type, "commit" | "lease" | "asset") {
+            if !matches!(sync_type, "commit" | "lease" | "asset" | "checkpoint") {
                 return Err("[google-drive-sync-type-invalid] 동기화 객체 종류가 올바르지 않습니다.".into());
             }
         }
@@ -1242,8 +1242,8 @@ mod drive_upload {
     pub async fn delete_sync_object(state: &GoogleDriveAuthState, request: Value) -> Result<Value, String> {
         let object_key = required_string(&request, "objectKey", "google-drive-object-key-missing")?;
         validate_object_key(&object_key)?;
-        if !object_key.starts_with("sync/leases/") {
-            return Err("[google-drive-sync-delete-target-invalid] 만료된 동기화 lease만 정리할 수 있습니다.".into());
+        if !object_key.starts_with("sync/leases/") && !object_key.starts_with("sync/checkpoints/") {
+            return Err("[google-drive-sync-delete-target-invalid] 정리할 수 없는 동기화 객체입니다.".into());
         }
         let expected_sha = required_string(&request, "contentSha256", "google-drive-content-hash-missing")?.to_ascii_lowercase();
         let expected_size = request

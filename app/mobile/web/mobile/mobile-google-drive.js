@@ -200,6 +200,8 @@
       tail.push(cursor);
       const base=String(cursor.baseRevision||"");
       if(!base)return null;
+      const siblings=await querySyncObjects(`appProperties has { key='hamboardSyncType' and value='commit' } and appProperties has { key='hamboardBaseRevision' and value='${driveQueryValue(base)}' }`,{pageSize:3,maxResults:3});
+      if(siblings.length>1)return null;
       if(base===String(checkpoint.revision||"")){cursor=null;break}
       const parents=await querySyncObjects(`appProperties has { key='hamboardSyncType' and value='commit' } and appProperties has { key='hamboardRevision' and value='${driveQueryValue(base)}' }`,{pageSize:2,maxResults:2});
       if(parents.length!==1)return null;
@@ -267,13 +269,29 @@
     return objectIndexPromise
   }
 
+  async function findObjectByKeyDirect(objectKey,expectedSha,expectedSize){
+    const url=new URL(DRIVE_FILES_URL);
+    url.searchParams.set("spaces","appDataFolder");
+    url.searchParams.set("pageSize","20");
+    url.searchParams.set("q",`trashed = false and appProperties has { key='hamboardObjectKey' and value='${driveQueryValue(objectKey)}' }`);
+    url.searchParams.set("fields","files(id,size,mimeType,appProperties)");
+    const value=await (await authorizedFetch(url)).json();
+    for(const file of value.files||[]){
+      const properties=file.appProperties||{},key=property(properties,"ObjectKey"),sha=property(properties,"ContentSha256").toLowerCase(),size=Math.max(0,Number(property(properties,"ByteSize"))||Number(file.size)||0);
+      if(key===objectKey&&sha===expectedSha&&size===expectedSize&&validRemoteId(file.id))return {remoteObjectId:String(file.id),objectKey:key,contentSha256:sha,byteSize:size,mimeType:String(file.mimeType||"application/octet-stream")}
+    }
+    return null
+  }
+
   async function getObjectByKey(request={}){
     const objectKey=String(request.objectKey||""),expectedSha=String(request.contentSha256||"").toLowerCase(),expectedSize=Math.max(0,Number(request.byteSize)||0),requestedMime=String(request.mimeType||"application/octet-stream");
     if(!/^[A-Za-z0-9._/-]{1,180}$/.test(objectKey)||!validSha(expectedSha)||expectedSize<1||expectedSize>MAX_ASSET_OBJECT_BYTES)throw new Error("google-drive-asset-object-request-invalid");
-    let index=await loadObjectIndex(),file=index.get(objectKey);
+    let file=null;
+    if(objectIndex&&Date.now()-objectIndexLoadedAt<OBJECT_INDEX_TTL_MS)file=objectIndex.get(objectKey)||null;
+    if(!file)file=await findObjectByKeyDirect(objectKey,expectedSha,expectedSize);
     if(!file){
-      index=await loadObjectIndex({force:true});
-      file=index.get(objectKey)
+      const index=await loadObjectIndex({force:true});
+      file=index.get(objectKey)||null
     }
     if(!file)throw new Error("google-drive-asset-object-not-found");
     if(file.contentSha256!==expectedSha||file.byteSize!==expectedSize)throw new Error("google-drive-asset-object-metadata-mismatch");

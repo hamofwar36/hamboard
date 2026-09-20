@@ -102,6 +102,15 @@ check("home account flow separates sync data and manual backups",()=>{assert.mat
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
 check("mobile version is injected into runtime config",()=>assert.ok(config.includes(`version:${JSON.stringify(mobileVersion)}`)));
+check("sync image restore avoids a full Drive object index on the normal path",()=>{
+  assert.match(transport,/async function findObjectByKeyDirect/);
+  assert.match(transport,/hamboardObjectKey/);
+  assert.match(transport,/hamboardBaseRevision/);
+  const syncAssetStart=app.indexOf("async function downloadCurrentSyncAssets");
+  const backupAssetStart=app.indexOf("async function downloadCurrentBackupAssets");
+  const syncAssetSource=app.slice(syncAssetStart,backupAssetStart);
+  assert.doesNotMatch(syncAssetSource,/loadObjectIndex/);
+});
 check("sync restore avoids enumerating full history on the normal path",()=>{
   assert.match(transport,/async function listSyncRestoreSource/);
   assert.match(transport,/hamboardSyncType' and value='checkpoint/);

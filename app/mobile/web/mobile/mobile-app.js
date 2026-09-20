@@ -14,6 +14,10 @@
   const libraryScreen=$("#libraryScreen");
   const projectReaderScreen=$("#projectReaderScreen");
   const noteReaderScreen=$("#noteReaderScreen");
+  const noteReaderContent=$("#noteReaderContent");
+  const noteEditorControls=$("#noteEditorControls");
+  const noteFormatPanel=$("#noteFormatPanel");
+  const noteMobileToolbar=$("#noteMobileToolbar");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
   const menuScreen=$("#menuScreen");
   const settingsScreen=$("#settingsScreen");
@@ -89,6 +93,11 @@
   let deferredInstallPrompt=null;
   let lastAppScrollY=0;
   let topbarScrollFrame=0;
+  let noteSavedRange=null;
+  let noteFormatPanelKey="";
+  let noteSaveTimer=0;
+  let pendingNoteSave=null;
+  let noteSaveChain=Promise.resolve();
   let createColorExpanded=false;
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
@@ -516,6 +525,7 @@
     screen.hidden=false;
     const documentOpen=screen===projectReaderScreen||screen===noteReaderScreen||screen===mindmapReaderScreen;
     document.body.classList.toggle("document-open",documentOpen);
+    document.body.classList.toggle("note-open",screen===noteReaderScreen);
     backButton.hidden=!back;
     syncStatusWrap.hidden=!account;
     title.textContent=heading;
@@ -874,13 +884,252 @@
     return template.innerHTML
   }
 
+  function mobileNoteRange(){
+    const editor=noteReaderContent,selection=window.getSelection();
+    if(selection?.rangeCount){
+      const range=selection.getRangeAt(0);
+      if(editor.contains(range.commonAncestorContainer))return range
+    }
+    if(noteSavedRange&&editor.contains(noteSavedRange.commonAncestorContainer))return noteSavedRange;
+    return null
+  }
+
+  function captureMobileNoteSelection(){
+    const range=mobileNoteRange();
+    if(!range)return false;
+    noteSavedRange=range.cloneRange();
+    return true
+  }
+
+  function restoreMobileNoteSelection(){
+    const editor=noteReaderContent,selection=window.getSelection();
+    editor.focus({preventScroll:true});
+    let range=noteSavedRange&&editor.contains(noteSavedRange.commonAncestorContainer)?noteSavedRange.cloneRange():null;
+    if(!range){
+      range=document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false)
+    }
+    try{
+      selection.removeAllRanges();
+      selection.addRange(range);
+      noteSavedRange=range.cloneRange();
+      return range
+    }catch{
+      noteSavedRange=null;
+      return null
+    }
+  }
+
+  function mobileNoteSelectionElement(){
+    const range=mobileNoteRange();
+    if(!range)return null;
+    const node=range.commonAncestorContainer;
+    return node.nodeType===Node.ELEMENT_NODE?node:node.parentElement
+  }
+
+  function scheduleMobileNoteSave(){
+    if(activeDocumentType!=="note"||!activeDocumentId)return;
+    pendingNoteSave={noteId:String(activeDocumentId),content:sanitizedNoteHtml(noteReaderContent.innerHTML)};
+    if(noteSaveTimer)clearTimeout(noteSaveTimer);
+    noteSaveTimer=setTimeout(()=>{noteSaveTimer=0;flushMobileNoteSave()},220)
+  }
+
+  function flushMobileNoteSave(){
+    if(noteSaveTimer){clearTimeout(noteSaveTimer);noteSaveTimer=0}
+    const payload=pendingNoteSave;
+    pendingNoteSave=null;
+    if(!payload)return noteSaveChain;
+    noteSaveChain=noteSaveChain.then(async()=>{
+      const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===payload.noteId);
+      if(!note||String(note.content||"")===payload.content)return;
+      note.content=payload.content;
+      note.updatedAt=new Date().toISOString();
+      await repository.replaceState(state);
+      if(!libraryScreen.hidden)renderLibrary()
+    }).catch(error=>{
+      if(!pendingNoteSave)pendingNoteSave=payload;
+      console.error("모바일 노트 저장 실패",error);
+      logDiagnostic("error","REPOSITORY","노트 본문 저장에 실패했습니다.",error)
+    });
+    return noteSaveChain
+  }
+
+  function execMobileNoteCommand(command,value=null){
+    if(activeDocumentType!=="note")return false;
+    restoreMobileNoteSelection();
+    let ok=false;
+    try{
+      if(["foreColor","hiliteColor","fontName"].includes(command))document.execCommand("styleWithCSS",false,true);
+      ok=document.execCommand(command,false,value)
+    }catch(error){
+      logDiagnostic("warn","NOTE","노트 서식을 적용하지 못했습니다: "+command,error)
+    }finally{
+      if(["foreColor","hiliteColor","fontName"].includes(command))try{document.execCommand("styleWithCSS",false,false)}catch{}
+    }
+    captureMobileNoteSelection();
+    updateMobileNoteFormatState();
+    scheduleMobileNoteSave();
+    return ok
+  }
+
+  function mobileNoteBlocksForSelection(){
+    const editor=noteReaderContent,range=restoreMobileNoteSelection(),selector="p,div,h1,h2,h3,blockquote,li";
+    if(!range)return [];
+    let node=range.commonAncestorContainer;
+    node=node.nodeType===Node.ELEMENT_NODE?node:node.parentElement;
+    if(range.collapsed){
+      const block=node?.closest?.(selector);
+      return block&&block!==editor&&editor.contains(block)?[block]:[]
+    }
+    return [...editor.querySelectorAll(selector)].filter(block=>{
+      try{return range.intersectsNode(block)}catch{return false}
+    })
+  }
+
+  function applyMobileNoteLineHeight(value){
+    const parsed=Math.min(3,Math.max(1,Number(value)||1.6));
+    let blocks=mobileNoteBlocksForSelection();
+    if(!blocks.length){
+      execMobileNoteCommand("formatBlock","p");
+      blocks=mobileNoteBlocksForSelection()
+    }
+    for(const block of blocks){
+      if(Math.abs(parsed-1.6)<.001)block.style.removeProperty("line-height");
+      else block.style.lineHeight=String(parsed)
+    }
+    captureMobileNoteSelection();
+    updateMobileNoteFormatState();
+    scheduleMobileNoteSave()
+  }
+
+  function insertMobileNoteLink(){
+    const elementAtSelection=mobileNoteSelectionElement(),anchor=elementAtSelection?.closest?.("a");
+    if(anchor){execMobileNoteCommand("unlink");return}
+    captureMobileNoteSelection();
+    const url=window.prompt("연결할 주소를 입력하세요.","https://");
+    if(url)execMobileNoteCommand("createLink",url)
+  }
+
+  function insertMobileNoteDivider(){
+    restoreMobileNoteSelection();
+    execMobileNoteCommand("insertHorizontalRule")
+  }
+
+  function insertMobileNoteFold(){
+    const editor=noteReaderContent,range=restoreMobileNoteSelection();
+    if(!range)return;
+    const details=document.createElement("details"),summary=document.createElement("summary"),body=document.createElement("p");
+    summary.textContent="접기";
+    body.append(document.createElement("br"));
+    details.open=true;
+    details.append(summary,body);
+    let node=range.startContainer;
+    node=node.nodeType===Node.ELEMENT_NODE?node:node.parentElement;
+    const block=node?.closest?.("p,div,h1,h2,h3,blockquote,li,pre");
+    if(block&&block!==editor&&editor.contains(block))block.after(details);
+    else range.insertNode(details);
+    const caret=document.createRange();
+    caret.selectNodeContents(summary);
+    caret.collapse(false);
+    const selection=window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(caret);
+    noteSavedRange=caret.cloneRange();
+    scheduleMobileNoteSave();
+    updateMobileNoteFormatState()
+  }
+
+  function closeMobileNoteFormatPanel(){
+    noteFormatPanelKey="";
+    noteFormatPanel.hidden=true;
+    noteFormatPanel.replaceChildren();
+    noteMobileToolbar.querySelectorAll("[data-note-panel]").forEach(button=>{
+      button.classList.remove("active");
+      button.setAttribute("aria-expanded","false")
+    })
+  }
+
+  function mobileNotePanelHtml(key){
+    if(key==="basic")return '<div class="note-format-panel-title">글자 기본</div><div class="note-format-grid">'+
+      '<button type="button" class="note-format-action" data-note-block="p"><i data-lucide="pilcrow"></i><span>본문</span></button>'+
+      '<button type="button" class="note-format-action" data-note-block="h1"><i data-lucide="heading-1"></i><span>제목 1</span></button>'+
+      '<button type="button" class="note-format-action" data-note-block="h2"><i data-lucide="heading-2"></i><span>제목 2</span></button>'+
+      '<button type="button" class="note-format-action" data-note-block="h3"><i data-lucide="heading-3"></i><span>제목 3</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="bold"><i data-lucide="bold"></i><span>굵게</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="italic"><i data-lucide="italic"></i><span>기울임</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="underline"><i data-lucide="underline"></i><span>밑줄</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="strikeThrough"><i data-lucide="strikethrough"></i><span>취소선</span></button>'+
+      '</div>';
+    if(key==="decorate")return '<div class="note-format-panel-title">글자 꾸미기</div>'+
+      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="inherit">기본</option><option value="sans-serif">고딕</option><option value="serif">명조</option><option value="monospace">고정폭</option></select></label>'+
+      '<div class="note-format-grid">'+
+      '<label class="note-format-action note-color-action"><i data-lucide="paintbrush"></i><span>글자색</span><input type="color" value="#292B38" data-note-color="foreColor" aria-label="글자색"></label>'+
+      '<label class="note-format-action note-color-action"><i data-lucide="paint-bucket"></i><span>배경색</span><input type="color" value="#F6D872" data-note-color="hiliteColor" aria-label="배경색"></label>'+
+      '<button type="button" class="note-format-action" data-note-command="subscript"><i data-lucide="subscript"></i><span>아래 첨자</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="superscript"><i data-lucide="superscript"></i><span>위 첨자</span></button>'+
+      '</div>';
+    if(key==="paragraph")return '<div class="note-format-panel-title">문단</div><div class="note-format-grid">'+
+      '<button type="button" class="note-format-action" data-note-command="justifyLeft"><i data-lucide="align-left"></i><span>왼쪽</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="justifyCenter"><i data-lucide="align-center"></i><span>가운데</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="justifyRight"><i data-lucide="align-right"></i><span>오른쪽</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="justifyFull"><i data-lucide="align-justify"></i><span>양쪽</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="indent"><i data-lucide="indent-increase"></i><span>들여쓰기</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="outdent"><i data-lucide="indent-decrease"></i><span>내어쓰기</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="insertUnorderedList"><i data-lucide="list"></i><span>목록</span></button>'+
+      '<button type="button" class="note-format-action" data-note-command="insertOrderedList"><i data-lucide="list-ordered"></i><span>번호 목록</span></button>'+
+      '<button type="button" class="note-format-action" data-note-block="blockquote"><i data-lucide="quote"></i><span>인용문</span></button>'+
+      '</div><div class="note-line-height-row"><span><i data-lucide="list-chevrons-up-down"></i>행간</span>'+
+      '<button type="button" data-note-line-height="1">100%</button><button type="button" data-note-line-height="1.4">140%</button><button type="button" data-note-line-height="1.6">160%</button><button type="button" data-note-line-height="1.8">180%</button><button type="button" data-note-line-height="2">200%</button></div>';
+    return '<div class="note-format-panel-title">삽입</div><div class="note-format-grid">'+
+      '<button type="button" class="note-format-action" data-note-insert="link"><i data-lucide="link"></i><span>링크</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="image" disabled aria-disabled="true" title="모바일 이미지 저장 연결 후 지원"><i data-lucide="image-plus"></i><span>이미지</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="fold"><i data-lucide="fold-vertical"></i><span>접기</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="divider"><i data-lucide="minus"></i><span>구분선</span></button>'+
+      '</div><p class="note-format-panel-note">이미지는 모바일 Asset 저장 경로를 연결한 뒤 활성화됩니다.</p>'
+  }
+
+  function openMobileNoteFormatPanel(key){
+    if(noteFormatPanelKey===key){closeMobileNoteFormatPanel();return}
+    captureMobileNoteSelection();
+    noteFormatPanelKey=key;
+    noteFormatPanel.innerHTML=mobileNotePanelHtml(key);
+    noteFormatPanel.hidden=false;
+    noteMobileToolbar.querySelectorAll("[data-note-panel]").forEach(button=>{
+      const active=button.dataset.notePanel===key;
+      button.classList.toggle("active",active);
+      button.setAttribute("aria-expanded",String(active))
+    });
+    refreshLucideIcons();
+    updateMobileNoteFormatState()
+  }
+
+  function updateMobileNoteFormatState(){
+    if(!noteFormatPanelKey||noteFormatPanel.hidden)return;
+    const stateful=new Set(["bold","italic","underline","strikeThrough","subscript","superscript","justifyLeft","justifyCenter","justifyRight","justifyFull","insertUnorderedList","insertOrderedList"]);
+    noteFormatPanel.querySelectorAll("[data-note-command]").forEach(button=>{
+      const command=button.dataset.noteCommand;
+      let active=false;
+      if(stateful.has(command))try{active=!!document.queryCommandState(command)}catch{}
+      button.classList.toggle("active",active)
+    });
+    const node=mobileNoteSelectionElement(),block=node?.closest?.("p,div,h1,h2,h3,blockquote,li");
+    noteFormatPanel.querySelectorAll("[data-note-block]").forEach(button=>{
+      const tag=button.dataset.noteBlock.toUpperCase();
+      button.classList.toggle("active",block?.tagName===tag)
+    });
+    const lineHeight=String(block?.style?.lineHeight||"1.6");
+    noteFormatPanel.querySelectorAll("[data-note-line-height]").forEach(button=>button.classList.toggle("active",button.dataset.noteLineHeight===lineHeight))
+  }
+
   function renderNote(note){
     $("#noteReaderTitle").textContent=note.title||"제목 없는 노트";
     $("#noteReaderSubtitle").textContent=note.subtitle||"";
     $("#noteReaderSubtitle").hidden=!note.subtitle;
-    const content=$("#noteReaderContent");
-    content.innerHTML=sanitizedNoteHtml(note.content||"");
-    if(!content.textContent.trim())content.replaceChildren(element("div","empty-document","내용이 없는 노트입니다."))
+    closeMobileNoteFormatPanel();
+    noteSavedRange=null;
+    noteReaderContent.dataset.noteId=String(note.id||"");
+    noteReaderContent.innerHTML=sanitizedNoteHtml(note.content||"")
   }
 
   function renderMindmap(mindmap){
@@ -1355,6 +1604,59 @@
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(item=>item.classList.toggle("active",item===button))
   };
   createForm.onsubmit=event=>{event.preventDefault();createNewDocument()};
+  noteReaderContent.addEventListener("input",()=>{
+    captureMobileNoteSelection();
+    scheduleMobileNoteSave();
+    updateMobileNoteFormatState()
+  });
+  noteReaderContent.addEventListener("keyup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
+  noteReaderContent.addEventListener("pointerup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
+  noteReaderContent.addEventListener("focus",captureMobileNoteSelection);
+  noteMobileToolbar.addEventListener("pointerdown",event=>{
+    const button=event.target.closest("button");
+    if(!button)return;
+    captureMobileNoteSelection();
+    event.preventDefault()
+  });
+  noteMobileToolbar.addEventListener("click",event=>{
+    const commandButton=event.target.closest("[data-note-command]");
+    if(commandButton){execMobileNoteCommand(commandButton.dataset.noteCommand);return}
+    const panelButton=event.target.closest("[data-note-panel]");
+    if(panelButton)openMobileNoteFormatPanel(panelButton.dataset.notePanel)
+  });
+  noteFormatPanel.addEventListener("pointerdown",event=>{
+    const button=event.target.closest("button");
+    if(button&&!button.disabled){captureMobileNoteSelection();event.preventDefault()}
+    else if(event.target.closest("select,input"))captureMobileNoteSelection()
+  });
+  noteFormatPanel.addEventListener("click",event=>{
+    const commandButton=event.target.closest("[data-note-command]");
+    if(commandButton){execMobileNoteCommand(commandButton.dataset.noteCommand);return}
+    const blockButton=event.target.closest("[data-note-block]");
+    if(blockButton){execMobileNoteCommand("formatBlock",blockButton.dataset.noteBlock);return}
+    const lineButton=event.target.closest("[data-note-line-height]");
+    if(lineButton){applyMobileNoteLineHeight(lineButton.dataset.noteLineHeight);return}
+    const insertButton=event.target.closest("[data-note-insert]");
+    if(!insertButton||insertButton.disabled)return;
+    if(insertButton.dataset.noteInsert==="link")insertMobileNoteLink();
+    else if(insertButton.dataset.noteInsert==="fold")insertMobileNoteFold();
+    else if(insertButton.dataset.noteInsert==="divider")insertMobileNoteDivider()
+  });
+  noteFormatPanel.addEventListener("change",event=>{
+    const font=event.target.closest("[data-note-font]");
+    if(font){execMobileNoteCommand("fontName",font.value);return}
+    const color=event.target.closest("[data-note-color]");
+    if(color)execMobileNoteCommand(color.dataset.noteColor,color.value)
+  });
+  document.addEventListener("selectionchange",()=>{
+    if(activeDocumentType!=="note")return;
+    const selection=window.getSelection();
+    if(selection?.rangeCount&&noteReaderContent.contains(selection.anchorNode)){
+      noteSavedRange=selection.getRangeAt(0).cloneRange();
+      updateMobileNoteFormatState()
+    }
+  });
+  window.addEventListener("pagehide",()=>{flushMobileNoteSave()});
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
   menuSettings.onclick=()=>openSettings();

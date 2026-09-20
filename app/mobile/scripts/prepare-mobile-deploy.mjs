@@ -13,6 +13,7 @@ const mobileVersion=String(mobilePackage.version||"1.0.0");
 await rm(outputRoot,{recursive:true,force:true});
 await mkdir(resolve(outputRoot,"shared"),{recursive:true});
 await mkdir(resolve(outputRoot,"vendor"),{recursive:true});
+await mkdir(resolve(outputRoot,"icons"),{recursive:true});
 
 let html=await readFile(resolve(mobileRoot,"index.html"),"utf8");
 html=html
@@ -23,6 +24,7 @@ html=html
 const versionTag=`?v=${encodeURIComponent(mobileVersion)}`;
 for(const asset of [
   "./mobile.css",
+  "./manifest.webmanifest",
   "./shared/sync-state-model.js",
   "./shared/project-repository.js",
   "./vendor/lucide/lucide.min.js",
@@ -38,6 +40,9 @@ await Promise.all([
   cp(resolve(mobileRoot,"mobile.css"),resolve(outputRoot,"mobile.css")),
   cp(resolve(mobileRoot,"mobile-app.js"),resolve(outputRoot,"mobile-app.js")),
   cp(resolve(mobileRoot,"mobile-google-drive.js"),resolve(outputRoot,"mobile-google-drive.js")),
+  cp(resolve(mobileRoot,"manifest.webmanifest"),resolve(outputRoot,"manifest.webmanifest")),
+  cp(resolve(mobileRoot,"service-worker.js"),resolve(outputRoot,"service-worker.js")),
+  cp(resolve(mobileRoot,"icons"),resolve(outputRoot,"icons"),{recursive:true}),
   cp(resolve(sharedRoot,"sync-state-model.js"),resolve(outputRoot,"shared/sync-state-model.js")),
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
   cp(resolve(projectRoot,"../window/web/assets/vendor/lucide"),resolve(outputRoot,"vendor/lucide"),{recursive:true}),

@@ -53,6 +53,7 @@
   const createSubmit=$("#createSubmit");
   const menuCloud=$("#menuCloud");
   const menuSettings=$("#menuSettings");
+  const installApp=$("#installApp");
   const modeSetting=$("#modeSetting");
   const themeChoiceGrid=$("#themeChoiceGrid");
   const customThemeBlock=$("#customThemeBlock");
@@ -84,6 +85,9 @@
   let createProjectKindValue="short";
   let createColorValue="";
   let createColorCustom=false;
+  let deferredInstallPrompt=null;
+  let lastWindowScrollY=0;
+  let topbarScrollFrame=0;
   let createColorExpanded=false;
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
@@ -472,6 +476,34 @@
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
   function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,settingsScreen,cloudSourceScreen])screen.hidden=true}
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
+  function resetTopbarVisibility(){
+    document.body.classList.remove("topbar-hidden");
+    lastWindowScrollY=Math.max(0,window.scrollY||0)
+  }
+  function syncTopbarVisibility(){
+    topbarScrollFrame=0;
+    const current=Math.max(0,window.scrollY||0),delta=current-lastWindowScrollY;
+    if(current<24||delta<-4)document.body.classList.remove("topbar-hidden");
+    else if(current>72&&delta>6)document.body.classList.add("topbar-hidden");
+    lastWindowScrollY=current
+  }
+  function isStandaloneMode(){
+    return window.matchMedia?.("(display-mode: standalone)")?.matches===true||window.navigator.standalone===true
+  }
+  function renderInstallAction(){
+    installApp.hidden=isStandaloneMode()||!deferredInstallPrompt
+  }
+  async function registerMobileServiceWorker(){
+    if(!("serviceWorker" in navigator))return;
+    if(location.protocol!=="https:"&&!["localhost","127.0.0.1"].includes(location.hostname))return;
+    const version=String(window.HAMBOARD_MOBILE_CONFIG?.version||"dev");
+    try{
+      await navigator.serviceWorker.register(`./service-worker.js?v=${encodeURIComponent(version)}`,{scope:"./"})
+    }catch(error){
+      console.error("모바일 서비스 워커 등록 실패",error);
+      logDiagnostic("warn","PWA","설치형 웹앱 초기화에 실패했습니다.",error)
+    }
+  }
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
     hideAllScreens();
     screen.hidden=false;
@@ -482,6 +514,7 @@
     title.textContent=heading;
     activateNav(nav);
     window.scrollTo(0,0);
+    resetTopbarVisibility();
     refreshLucideIcons()
   }
   function renderAccountButton(){
@@ -1107,7 +1140,9 @@
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
       if(match)openDocument(match[1],decodeURIComponent(match[2]));
-      refreshLucideIcons()
+      refreshLucideIcons();
+      registerMobileServiceWorker();
+      renderInstallAction()
     }catch(error){
       console.error("모바일 저장소를 열지 못했습니다.",error);
       logDiagnostic("error","REPOSITORY","모바일 저장소를 열지 못했습니다.",error);
@@ -1180,6 +1215,13 @@
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
   menuSettings.onclick=()=>openSettings();
+  installApp.onclick=async()=>{
+    if(!deferredInstallPrompt)return;
+    const prompt=deferredInstallPrompt;
+    deferredInstallPrompt=null;
+    renderInstallAction();
+    try{await prompt.prompt();await prompt.userChoice}catch(error){logDiagnostic("warn","PWA","앱 설치 요청을 열지 못했습니다.",error)}
+  };
   modeSetting.onclick=event=>{
     const button=event.target.closest("[data-mode-value]");
     if(button)saveThemeSettings({mode:button.dataset.modeValue==="dark"?"dark":"light"})
@@ -1208,6 +1250,19 @@
       cloudDisconnect.disabled=false
     }
   };
+  window.addEventListener("beforeinstallprompt",event=>{
+    event.preventDefault();
+    deferredInstallPrompt=event;
+    renderInstallAction()
+  });
+  window.addEventListener("appinstalled",()=>{
+    deferredInstallPrompt=null;
+    renderInstallAction()
+  });
+  window.addEventListener("scroll",()=>{
+    if(topbarScrollFrame)return;
+    topbarScrollFrame=requestAnimationFrame(syncTopbarVisibility)
+  },{passive:true});
   window.addEventListener("popstate",event=>{
     if(event.state?.hamboard)renderRoute(event.state);
     else{

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 512 512" role="img" aria-label="햄보드">
+  <rect width="512" height="512" rx="112" fill="#F7F4FB"/>
+  <rect x="78" y="82" width="356" height="348" rx="72" fill="#D7C0FF"/>
+  <rect x="116" y="128" width="280" height="256" rx="38" fill="#FFFFFF"/>
+  <rect x="116" y="128" width="280" height="46" rx="23" fill="#FFD0AE"/>
+  <circle cx="151" cy="151" r="8" fill="#554B63"/>
+  <circle cx="181" cy="151" r="8" fill="#554B63"/>
+  <path d="M154 226h204M154 270h160M154 314h184" stroke="#554B63" stroke-width="22" stroke-linecap="round"/>
+  <rect x="126" y="215" width="12" height="12" rx="6" fill="#8D74B6"/>
+  <rect x="126" y="259" width="12" height="12" rx="6" fill="#8D74B6"/>
+  <rect x="126" y="303" width="12" height="12" rx="6" fill="#8D74B6"/>
+</svg>

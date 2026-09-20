@@ -4,7 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f7f4fb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="햄보드">
   <title>햄보드</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="./mobile.css">
 </head>
 <body>
@@ -95,6 +101,11 @@
           <button id="menuSettings" type="button">
             <span class="page-menu-icon"><i data-lucide="settings" aria-hidden="true"></i></span>
             <span class="page-menu-copy"><strong>설정</strong><small>디스플레이와 앱 정보를 관리합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
+          <button id="installApp" type="button" hidden>
+            <span class="page-menu-icon"><i data-lucide="download" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>앱 설치</strong><small>홈 화면에 설치해 앱처럼 실행합니다.</small></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
         </div>

@@ -63,9 +63,21 @@
                 <h2 class="document-title-display" id="noteReaderTitle"></h2>
                 <p class="document-subtitle-display" id="noteReaderSubtitle"></p>
               </div>
+              <div class="note-head-menu-wrap">
+                <button class="note-head-menu-button" id="noteMoreButton" type="button" aria-label="노트 메뉴" title="노트 메뉴" aria-expanded="false"><i data-lucide="ellipsis-vertical" aria-hidden="true"></i></button>
+                <div class="note-head-menu" id="noteMoreMenu" hidden>
+                  <button type="button" data-note-menu-action="html"><i data-lucide="code-xml" aria-hidden="true"></i><span><strong id="noteHtmlMenuLabel">HTML로 편집</strong><small>노트 HTML 직접 편집</small></span></button>
+                  <button type="button" data-note-menu-action="style"><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span><strong>기본 스타일</strong><small>글꼴 · 정렬 · 들여쓰기 · 문단 간격</small></span></button>
+                  <button type="button" data-note-menu-action="count"><i data-lucide="letter-text" aria-hidden="true"></i><span><strong>글자 수 확인</strong><small id="noteCharCountSummary">0자</small></span></button>
+                </div>
+              </div>
             </div>
           </header>
           <article class="note-reader-card note-editor-card" id="noteReaderContent" contenteditable="true" role="textbox" aria-multiline="true" aria-label="노트 본문" data-placeholder="내용을 입력하세요." spellcheck="true"></article>
+          <section class="note-html-shell" id="noteHtmlShell" hidden>
+            <div class="note-html-head"><strong>HTML</strong><span id="noteHtmlStatus">자동 저장됨</span></div>
+            <textarea class="note-html-editor" id="noteHtmlEditor" aria-label="노트 HTML 편집" spellcheck="false"></textarea>
+          </section>
           <div class="note-editor-controls" id="noteEditorControls">
             <div class="note-format-panel" id="noteFormatPanel" hidden></div>
             <div class="note-mobile-toolbar" id="noteMobileToolbar" role="toolbar" aria-label="노트 서식">
@@ -76,6 +88,7 @@
               <button class="note-panel-action" type="button" data-note-panel="decorate" aria-label="글자 꾸미기" title="글자 꾸미기"><i data-lucide="palette" aria-hidden="true"></i></button>
               <button class="note-panel-action" type="button" data-note-panel="paragraph" aria-label="문단" title="문단"><i data-lucide="pilcrow" aria-hidden="true"></i></button>
               <button class="note-panel-action" type="button" data-note-panel="insert" aria-label="삽입" title="삽입"><i data-lucide="square-plus" aria-hidden="true"></i></button>
+              <button class="note-panel-action note-clear-format-action" type="button" data-note-command="removeFormat" aria-label="서식 지우기" title="서식 지우기"><i data-lucide="eraser" aria-hidden="true"></i></button>
               <span class="note-toolbar-divider note-keyboard-divider" aria-hidden="true"></span>
               <button class="note-keyboard-dismiss" id="noteKeyboardToggle" type="button" data-note-keyboard-toggle aria-label="키보드 띄우기" title="키보드 띄우기"><i data-lucide="keyboard" aria-hidden="true"></i></button>
             </div>

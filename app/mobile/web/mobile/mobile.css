@@ -479,7 +479,7 @@ body.note-open .mobile-main{padding-bottom:calc(118px + env(safe-area-inset-bott
 .note-editor-card h1{font-size:var(--fs-display);line-height:1.2;margin:1em 0 .4em;font-weight:700}
 .note-editor-card h2{font-size:var(--fs-lg);line-height:1.2;margin:.95em 0 .38em;font-weight:700}
 .note-editor-card h3{font-size:var(--fs-base);line-height:1.2;margin:.85em 0 .32em;font-weight:700}
-.note-editor-card p,.note-editor-card>div{margin:.25em 0}
+.note-editor-card p,.note-editor-card>div{margin:var(--note-paragraph-spacing,.25em) 0;text-indent:var(--note-first-line-indent,0)}
 .note-editor-card ul,.note-editor-card ol{padding-left:1.7em}
 .note-editor-card a{color:var(--primary-strong);text-decoration:underline;text-underline-offset:2px}
 .note-editor-card blockquote{margin:1em 0;padding:5px 0 5px 15px;border-left:3px solid var(--primary-base);color:var(--ui-fg)}
@@ -510,7 +510,7 @@ body.note-keyboard-open .mobile-app{
 }
 .note-mobile-toolbar{
   width:min(100%,430px);min-height:38px;display:grid;
-  grid-template-columns:38px 38px 1px repeat(4,38px) 1px 38px;
+  grid-template-columns:38px 38px 1px repeat(5,38px) 1px 38px;
   align-items:center;justify-content:space-between;column-gap:0;
   padding:2px 6px;border-radius:11px
 }
@@ -558,6 +558,69 @@ body.note-keyboard-open .mobile-app{
 .note-line-height-row button{height:34px;padding:0 3px;border:0;border-radius:9px;background:var(--ui-surface-subtle);color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700}
 .note-line-height-row button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg)}
 .note-format-panel-note{margin:9px 2px 0;color:var(--ui-muted);font-size:var(--fs-compact-10);line-height:1.45}
+
+.note-mobile-head .document-mobile-title-row{grid-template-columns:4px minmax(0,1fr) auto}
+.note-head-menu-wrap{position:relative;align-self:start;margin-top:-4px}
+.note-head-menu-button{width:40px;height:40px;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:transparent;color:var(--ui-muted)}
+.note-head-menu-button:active,.note-head-menu-button[aria-expanded="true"]{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
+.note-head-menu-button svg{width:20px;height:20px}
+.note-head-menu{
+  position:absolute;z-index:70;right:0;top:43px;width:min(270px,calc(100vw - 36px));padding:5px;
+  border:1px solid var(--ui-border-default);border-radius:14px;background:var(--ui-surface-default);box-shadow:var(--popup-shadow)
+}
+.note-head-menu[hidden]{display:none}
+.note-head-menu button{
+  width:100%;min-height:52px;display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:10px;
+  padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--ui-fg);text-align:left
+}
+.note-head-menu button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
+.note-head-menu button>svg{width:18px;height:18px;color:var(--ui-muted)}
+.note-head-menu button span{min-width:0;display:grid;gap:2px}
+.note-head-menu button strong{font-size:var(--fs-xs);font-weight:700}
+.note-head-menu button small{color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:400;line-height:1.35}
+
+.note-html-shell{
+  width:min(100%,var(--document-mobile-max-width));min-height:calc(100dvh - 190px);margin:0 auto;
+  display:flex;flex-direction:column;background:var(--ui-surface-default);color:var(--ui-fg)
+}
+.note-html-shell[hidden]{display:none}
+.note-html-head{
+  min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 16px;
+  border-bottom:1px solid var(--ui-border-default);background:var(--ui-surface-subtle)
+}
+.note-html-head strong{font:700 var(--fs-xs)/1 ui-monospace,SFMono-Regular,Consolas,monospace}
+.note-html-head span{color:var(--ui-muted);font-size:var(--fs-compact-10)}
+.note-html-editor{
+  width:100%;min-height:calc(100dvh - 230px);flex:1;resize:none;padding:18px 20px 48px;border:0;outline:0;
+  background:var(--ui-surface-default);color:var(--ui-fg);font:400 13px/1.65 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  tab-size:2;white-space:pre;overflow:auto
+}
+body.note-html-mode .note-editor-controls{display:none}
+
+.note-tool-sheet-panel{padding:15px}
+.note-tool-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.note-tool-sheet-head h3{margin:0;font-size:var(--fs-lg);line-height:1.25}
+.note-tool-sheet-body{display:grid;gap:12px}
+.note-style-row{display:grid;gap:7px}
+.note-style-row>span{color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700}
+.note-style-row select{
+  width:100%;height:44px;padding:0 11px;border:1px solid var(--ui-field-border);border-radius:11px;
+  outline:0;background:var(--ui-field-bg);color:var(--ui-field-fg);font:inherit;font-size:var(--fs-sm)
+}
+.note-style-align{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.note-style-align button{
+  height:42px;display:grid;place-items:center;border:1px solid var(--ui-border-default);border-radius:10px;background:var(--ui-surface-subtle);color:var(--ui-muted)
+}
+.note-style-align button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg);border-color:transparent}
+.note-style-align svg{width:18px;height:18px}
+.note-count-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.note-count-card{padding:15px;border:1px solid var(--ui-border-default);border-radius:13px;background:var(--ui-surface-subtle)}
+.note-count-card span{display:block;color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700}
+.note-count-card strong{display:block;margin-top:5px;font-size:var(--fs-lg);font-variant-numeric:tabular-nums}
+.note-sheet-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.note-sheet-actions button{min-height:42px;padding:0 15px;border:0;border-radius:11px;font:inherit;font-size:var(--fs-xs);font-weight:700}
+.note-sheet-actions .secondary{background:var(--ui-surface-subtle);color:var(--ui-fg)}
+.note-sheet-actions .primary{background:var(--ui-control-primary-bg);color:var(--ui-control-primary-fg)}
 
 .mindmap-screen{--document-mobile-max-width:760px}
 .mindmap-mobile-body{

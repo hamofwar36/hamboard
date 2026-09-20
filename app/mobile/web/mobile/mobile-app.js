@@ -21,6 +21,13 @@
   const noteFormatPanel=$("#noteFormatPanel");
   const noteMobileToolbar=$("#noteMobileToolbar");
   const noteKeyboardToggle=$("#noteKeyboardToggle");
+  const noteMoreButton=$("#noteMoreButton");
+  const noteMoreMenu=$("#noteMoreMenu");
+  const noteHtmlMenuLabel=$("#noteHtmlMenuLabel");
+  const noteCharCountSummary=$("#noteCharCountSummary");
+  const noteHtmlShell=$("#noteHtmlShell");
+  const noteHtmlEditor=$("#noteHtmlEditor");
+  const noteHtmlStatus=$("#noteHtmlStatus");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
   const menuScreen=$("#menuScreen");
   const settingsScreen=$("#settingsScreen");
@@ -106,6 +113,10 @@
   let noteSaveTimer=0;
   let pendingNoteSave=null;
   let noteSaveChain=Promise.resolve();
+  let noteEditorMode="rich";
+  let noteHtmlSaveTimer=0;
+  let pendingNoteHtmlSave=null;
+  let noteHtmlDirty=false;
   let createColorExpanded=false;
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
@@ -1106,15 +1117,157 @@
   function sanitizedNoteHtml(value){
     const template=document.createElement("template");
     template.innerHTML=String(value||"");
-    template.content.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach(node=>node.remove());
-    template.content.querySelectorAll("*").forEach(node=>{
-      for(const attribute of [...node.attributes]){
-        const name=attribute.name.toLowerCase(),raw=String(attribute.value||"").trim();
-        if(name.startsWith("on")||name==="srcdoc"||name==="contenteditable"||name==="id")node.removeAttribute(attribute.name);
-        else if((name==="href"||name==="src")&&/^javascript:/i.test(raw))node.removeAttribute(attribute.name)
-      }
-    });
+    const allowed=new Set(["B","STRONG","I","EM","U","S","STRIKE","A","SPAN","FONT","P","DIV","BR","H1","H2","H3","UL","OL","LI","BLOCKQUOTE","PRE","CODE","SUB","SUP","HR","DETAILS","SUMMARY","IMG"]);
+    const styles=new Set(["color","background-color","text-align","font-family","line-height"]);
+    const walk=node=>{
+      [...node.children].forEach(raw=>{
+        let el=raw;
+        if(el.tagName==="FONT"){
+          const replacement=document.createElement("span"),legacyColor=String(el.getAttribute("color")||"").trim(),legacyFace=String(el.getAttribute("face")||"").trim();
+          if(legacyColor)replacement.style.color=legacyColor;
+          if(legacyFace)replacement.style.fontFamily=legacyFace;
+          while(el.firstChild)replacement.appendChild(el.firstChild);
+          el.replaceWith(replacement);
+          el=replacement
+        }
+        if(!allowed.has(el.tagName)){
+          const parent=el.parentNode;
+          while(el.firstChild)parent.insertBefore(el.firstChild,el);
+          el.remove();
+          walk(parent);
+          return
+        }
+        for(const attribute of [...el.attributes]){
+          const name=attribute.name.toLowerCase(),rawValue=String(attribute.value||"").trim();
+          if(name==="href"&&el.tagName==="A"){
+            if(!/^(https?:|mailto:|#)/i.test(rawValue))el.removeAttribute(attribute.name)
+          }else if(name==="data-divider"&&el.tagName==="HR"&&["solid","dotted","dashed","double"].includes(rawValue)){
+          }else if(name==="start"&&el.tagName==="OL"&&/^\d+$/.test(rawValue)){
+          }else if(name==="data-note-image"&&el.tagName==="IMG"&&rawValue){
+          }else if(name==="data-note-image-width"&&el.tagName==="IMG"&&Number(rawValue)>0&&Number(rawValue)<=100){
+          }else if(name==="alt"&&el.tagName==="IMG"){
+          }else if(name==="style"){
+            const kept=[...el.style].filter(key=>styles.has(key)).map(key=>key+":"+el.style.getPropertyValue(key)).join(";");
+            if(kept)el.setAttribute("style",kept);else el.removeAttribute("style")
+          }else el.removeAttribute(attribute.name)
+        }
+        if(el.tagName==="A"){el.setAttribute("target","_blank");el.setAttribute("rel","noopener noreferrer")}
+        walk(el)
+      })
+    };
+    walk(template.content);
     return template.innerHTML
+  }
+
+  function formatMobileNoteHtmlSource(html){
+    const root=document.createElement("div");
+    root.innerHTML=sanitizedNoteHtml(html||"");
+    const source=[...root.childNodes].map(node=>node.nodeType===Node.TEXT_NODE?String(node.textContent||"").trim():node.outerHTML||"").filter(Boolean).join("\n");
+    return source.replace(/<br\s*\/?>(?!\n)/gi,"$&\n").replace(/<\/(?:p|div|h1|h2|h3|blockquote|li|ul|ol|pre|details|summary)>(?!\n)/gi,"$&\n").replace(/\n{3,}/g,"\n\n").trim()
+  }
+
+  function mobileNoteCharacterText(html){
+    const root=document.createElement("div");
+    root.innerHTML=sanitizedNoteHtml(html||"");
+    const blockTags=new Set(["DIV","P","H1","H2","H3","LI","UL","OL","BLOCKQUOTE","PRE","DETAILS","SUMMARY"]);
+    const walk=node=>{
+      if(node.nodeType===Node.TEXT_NODE)return String(node.data||"");
+      if(node.nodeType!==Node.ELEMENT_NODE&&node.nodeType!==Node.DOCUMENT_FRAGMENT_NODE)return "";
+      if(node.nodeType===Node.ELEMENT_NODE&&(node.tagName==="BR"||node.tagName==="HR"))return "\n";
+      let out="",children=[...node.childNodes];
+      children.forEach((child,index)=>{
+        out+=walk(child);
+        if(child.nodeType===Node.ELEMENT_NODE&&blockTags.has(child.tagName)&&index<children.length-1&&!out.endsWith("\n"))out+="\n"
+      });
+      return out
+    };
+    return walk(root).replace(/\r/g,"")
+  }
+
+  function mobileNoteCharacterCounts(){
+    const html=noteEditorMode==="html"&&noteHtmlEditor?noteHtmlEditor.value:noteHtmlForStorage();
+    const value=mobileNoteCharacterText(html),compact=value.replace(/\s/g,"");
+    return {withSpaces:value.length,withoutSpaces:compact.length}
+  }
+
+  function updateMobileNoteCharacterCount(){
+    if(activeDocumentType!=="note"||!noteCharCountSummary)return;
+    const counts=mobileNoteCharacterCounts();
+    noteCharCountSummary.textContent=counts.withSpaces.toLocaleString("ko-KR")+"자 · 공백 제외 "+counts.withoutSpaces.toLocaleString("ko-KR")+"자"
+  }
+
+  function applyMobileNoteDefaultStyle(note){
+    if(!noteReaderContent)return;
+    const style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
+    const font=String(style.fontFamily||"__default__").trim()||"__default__";
+    noteReaderContent.style.fontFamily=font==="__default__"?"":font;
+    noteReaderContent.style.textAlign=["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left";
+    noteReaderContent.style.setProperty("--note-first-line-indent",style.firstLineIndent===true?"1em":"0");
+    noteReaderContent.style.setProperty("--note-paragraph-spacing",style.paragraphSpacing===true?"1.6em":".25em")
+  }
+
+  function closeMobileNoteMenu(){
+    if(!noteMoreMenu||!noteMoreButton)return;
+    noteMoreMenu.hidden=true;
+    noteMoreButton.setAttribute("aria-expanded","false")
+  }
+
+  function syncMobileNoteMenu(){
+    if(noteHtmlMenuLabel)noteHtmlMenuLabel.textContent=noteEditorMode==="html"?"기본 편집으로 돌아가기":"HTML로 편집";
+    updateMobileNoteCharacterCount()
+  }
+
+  function closeMobileNoteToolSheet(){
+    document.querySelector("[data-note-tool-sheet]")?.remove()
+  }
+
+  function openMobileNoteToolSheet(kind){
+    closeMobileNoteToolSheet();
+    const counts=mobileNoteCharacterCounts(),wrap=element("div","nav-sheet-backdrop note-tool-sheet-backdrop"),panel=element("section","nav-sheet note-tool-sheet-panel");
+    wrap.dataset.noteToolSheet=kind;
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    const head=element("div","note-tool-sheet-head"),heading=element("h3","",kind==="style"?"기본 스타일":"글자 수"),close=element("button","sheet-close");
+    close.type="button";close.setAttribute("aria-label","닫기");close.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';head.append(heading,close);
+    const body=element("div","note-tool-sheet-body");
+    if(kind==="count"){
+      body.innerHTML='<div class="note-count-grid"><div class="note-count-card"><span>공백 포함</span><strong>'+counts.withSpaces.toLocaleString("ko-KR")+'자</strong></div><div class="note-count-card"><span>공백 미포함</span><strong>'+counts.withoutSpaces.toLocaleString("ko-KR")+'자</strong></div></div><div class="note-sheet-actions"><button type="button" class="secondary" data-note-sheet-close>닫기</button></div>'
+    }else{
+      const current=(()=>{
+        const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===String(activeDocumentId||"")),style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
+        return {font:String(style.fontFamily||"__default__").trim()||"__default__",align:["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left",indent:style.firstLineIndent===true,spacing:style.paragraphSpacing===true}
+      })();
+      const standard=new Set(["__default__","sans-serif","serif","monospace"]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
+      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">기본 글꼴</option><option value="sans-serif">고딕</option><option value="serif">명조</option><option value="monospace">고정폭</option>'+extra+'</select></label>'+
+        '<div class="note-style-row"><span>글 정렬</span><div class="note-style-align" data-note-default-align><button type="button" value="left" aria-label="왼쪽 정렬"><i data-lucide="align-left"></i></button><button type="button" value="center" aria-label="가운데 정렬"><i data-lucide="align-center"></i></button><button type="button" value="right" aria-label="오른쪽 정렬"><i data-lucide="align-right"></i></button><button type="button" value="justify" aria-label="양쪽 정렬"><i data-lucide="align-justify"></i></button></div></div>'+
+        '<label class="note-style-row"><span>들여쓰기</span><select data-note-default-indent><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
+        '<label class="note-style-row"><span>문단 사이 여백 주기</span><select data-note-default-spacing><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
+        '<div class="note-sheet-actions"><button type="button" class="secondary" data-note-sheet-close>취소</button><button type="button" class="primary" data-note-style-save>저장</button></div>';
+      const font=body.querySelector("[data-note-default-font]"),indent=body.querySelector("[data-note-default-indent]"),spacing=body.querySelector("[data-note-default-spacing]"),align=body.querySelector("[data-note-default-align]");
+      font.value=current.font;indent.value=current.indent?"on":"off";spacing.value=current.spacing?"on":"off";
+      let alignValue=current.align;
+      const syncAlign=()=>align.querySelectorAll("button").forEach(button=>button.classList.toggle("active",button.value===alignValue));
+      align.querySelectorAll("button").forEach(button=>button.onclick=()=>{alignValue=button.value;syncAlign()});syncAlign();
+      body.querySelector("[data-note-style-save]").onclick=async()=>{
+        const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===String(activeDocumentId||""));
+        if(!note){closeMobileNoteToolSheet();return}
+        note.defaultStyle={fontFamily:String(font.value||"__default__"),textAlign:alignValue,firstLineIndent:indent.value==="on",paragraphSpacing:spacing.value==="on"};
+        note.updatedAt=new Date().toISOString();
+        try{
+          await repository.replaceState(state);
+          if(activeDocumentType==="note"&&String(activeDocumentId)===String(note.id))applyMobileNoteDefaultStyle(note);
+          closeMobileNoteToolSheet()
+        }catch(error){
+          console.error("모바일 노트 기본 스타일 저장 실패",error);
+          logDiagnostic("error","REPOSITORY","노트 기본 스타일 저장에 실패했습니다.",error)
+        }
+      }
+    }
+    panel.append(head,body);wrap.append(panel);document.body.append(wrap);
+    close.onclick=closeMobileNoteToolSheet;
+    body.querySelectorAll("[data-note-sheet-close]").forEach(button=>button.onclick=closeMobileNoteToolSheet);
+    wrap.onclick=event=>{if(event.target===wrap)closeMobileNoteToolSheet()};
+    refreshLucideIcons()
   }
 
   function mobileNoteRange(){
@@ -1186,6 +1339,76 @@
       logDiagnostic("error","REPOSITORY","노트 본문 저장에 실패했습니다.",error)
     });
     return noteSaveChain
+  }
+
+  function scheduleMobileNoteHtmlSave(){
+    if(activeDocumentType!=="note"||!activeDocumentId||!noteHtmlEditor)return;
+    pendingNoteHtmlSave={noteId:String(activeDocumentId),source:String(noteHtmlEditor.value||"")};
+    noteHtmlDirty=true;
+    if(noteHtmlStatus)noteHtmlStatus.textContent="자동 저장 중…";
+    if(noteHtmlSaveTimer)clearTimeout(noteHtmlSaveTimer);
+    noteHtmlSaveTimer=setTimeout(()=>{noteHtmlSaveTimer=0;flushMobileNoteHtmlSave()},450)
+  }
+
+  function flushMobileNoteHtmlSave(){
+    if(noteHtmlSaveTimer){clearTimeout(noteHtmlSaveTimer);noteHtmlSaveTimer=0}
+    const payload=pendingNoteHtmlSave;
+    pendingNoteHtmlSave=null;
+    if(!payload)return noteSaveChain;
+    const content=sanitizedNoteHtml(payload.source);
+    noteSaveChain=noteSaveChain.then(async()=>{
+      const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===payload.noteId);
+      if(!note)return;
+      if(String(note.content||"")!==content){
+        note.content=content;
+        note.updatedAt=new Date().toISOString();
+        await repository.replaceState(state);
+        if(!libraryScreen.hidden)renderLibrary()
+      }
+      if(activeDocumentType==="note"&&String(activeDocumentId)===payload.noteId&&noteEditorMode==="html"){
+        noteHtmlDirty=false;
+        if(noteHtmlStatus)noteHtmlStatus.textContent="자동 저장됨"
+      }
+    }).catch(error=>{
+      if(!pendingNoteHtmlSave)pendingNoteHtmlSave=payload;
+      noteHtmlDirty=true;
+      if(noteHtmlStatus)noteHtmlStatus.textContent="저장 실패";
+      console.error("모바일 노트 HTML 저장 실패",error);
+      logDiagnostic("error","REPOSITORY","노트 HTML 저장에 실패했습니다.",error)
+    });
+    return noteSaveChain
+  }
+
+  async function setMobileNoteEditorMode(mode){
+    const next=mode==="html"?"html":"rich";
+    if(activeDocumentType!=="note"||noteEditorMode===next)return;
+    closeMobileNoteMenu();
+    if(next==="html"){
+      const source=noteHtmlForStorage();
+      await flushMobileNoteSave();
+      noteEditorMode="html";
+      noteHtmlDirty=false;
+      noteHtmlEditor.value=formatMobileNoteHtmlSource(source);
+      noteReaderContent.hidden=true;
+      noteHtmlShell.hidden=false;
+      document.body.classList.add("note-html-mode");
+      if(noteHtmlStatus)noteHtmlStatus.textContent="자동 저장됨";
+      syncMobileNoteMenu();
+      requestAnimationFrame(()=>noteHtmlEditor.focus({preventScroll:true}))
+    }else{
+      pendingNoteHtmlSave={noteId:String(activeDocumentId),source:String(noteHtmlEditor.value||"")};
+      await flushMobileNoteHtmlSave();
+      const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===String(activeDocumentId||""));
+      noteEditorMode="rich";
+      noteHtmlDirty=false;
+      noteHtmlShell.hidden=true;
+      noteReaderContent.hidden=false;
+      document.body.classList.remove("note-html-mode");
+      noteReaderContent.innerHTML=sanitizedNoteHtml(note?.content||"");
+      if(note){applyMobileNoteDefaultStyle(note);hydrateNoteImages(note).catch(error=>logDiagnostic("warn","ASSET","노트 이미지를 표시하지 못했습니다.",error))}
+      syncMobileNoteMenu();
+      requestAnimationFrame(()=>noteReaderContent.focus({preventScroll:true}))
+    }
   }
 
   function execMobileNoteCommand(command,value=null){
@@ -1360,9 +1583,19 @@
     $("#noteReaderSubtitle").textContent=note.subtitle||"";
     $("#noteReaderSubtitle").hidden=!note.subtitle;
     closeMobileNoteFormatPanel();
+    closeMobileNoteMenu();
+    closeMobileNoteToolSheet();
     noteSavedRange=null;
+    noteEditorMode="rich";
+    noteHtmlDirty=false;
+    document.body.classList.remove("note-html-mode");
+    noteReaderContent.hidden=false;
+    noteHtmlShell.hidden=true;
     noteReaderContent.dataset.noteId=String(note.id||"");
     noteReaderContent.innerHTML=sanitizedNoteHtml(note.content||"");
+    noteHtmlEditor.value=formatMobileNoteHtmlSource(note.content||"");
+    applyMobileNoteDefaultStyle(note);
+    syncMobileNoteMenu();
     hydrateNoteImages(note).catch(error=>logDiagnostic("warn","ASSET","노트 이미지를 표시하지 못했습니다.",error))
   }
 
@@ -1892,7 +2125,7 @@
     }
   }
 
-  backButton.onclick=()=>{if(activeDocumentType)openLibrary({replace:true});else handleBack()};
+  backButton.onclick=()=>{if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}openLibrary({replace:true})}else handleBack()};
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
@@ -1957,7 +2190,8 @@
   noteReaderContent.addEventListener("input",()=>{
     captureMobileNoteSelection();
     scheduleMobileNoteSave();
-    updateMobileNoteFormatState()
+    updateMobileNoteFormatState();
+    updateMobileNoteCharacterCount()
   });
   noteReaderContent.addEventListener("keyup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
   noteReaderContent.addEventListener("pointerup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
@@ -2012,6 +2246,38 @@
     const color=event.target.closest("[data-note-color]");
     if(color)execMobileNoteCommand(color.dataset.noteColor,color.value)
   });
+  noteHtmlEditor.addEventListener("input",()=>{
+    scheduleMobileNoteHtmlSave();
+    updateMobileNoteCharacterCount()
+  });
+  noteHtmlEditor.addEventListener("keydown",event=>{
+    if(event.key!=="Tab")return;
+    event.preventDefault();
+    const start=noteHtmlEditor.selectionStart,end=noteHtmlEditor.selectionEnd;
+    noteHtmlEditor.setRangeText("  ",start,end,"end");
+    noteHtmlEditor.dispatchEvent(new Event("input",{bubbles:true}))
+  });
+  noteMoreButton.addEventListener("click",event=>{
+    event.stopPropagation();
+    const open=noteMoreMenu.hidden;
+    noteMoreMenu.hidden=!open;
+    noteMoreButton.setAttribute("aria-expanded",String(open));
+    if(open)syncMobileNoteMenu()
+  });
+  noteMoreMenu.addEventListener("click",async event=>{
+    const button=event.target.closest("[data-note-menu-action]");
+    if(!button)return;
+    const action=button.dataset.noteMenuAction;
+    closeMobileNoteMenu();
+    if(action==="html")await setMobileNoteEditorMode(noteEditorMode==="html"?"rich":"html");
+    else if(action==="style")openMobileNoteToolSheet("style");
+    else if(action==="count")openMobileNoteToolSheet("count")
+  });
+  document.addEventListener("pointerdown",event=>{
+    if(noteMoreMenu.hidden)return;
+    if(!event.target.closest(".note-head-menu-wrap"))closeMobileNoteMenu()
+  });
+
   document.addEventListener("selectionchange",()=>{
     if(activeDocumentType!=="note")return;
     const selection=window.getSelection();
@@ -2020,7 +2286,7 @@
       updateMobileNoteFormatState()
     }
   });
-  window.addEventListener("pagehide",()=>{flushMobileNoteSave()});
+  window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave()});
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
   menuSettings.onclick=()=>openSettings();

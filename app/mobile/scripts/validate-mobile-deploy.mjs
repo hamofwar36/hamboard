@@ -132,6 +132,13 @@ check("backup and sync share snapshot plus asset restore",()=>{
   assert.match(app,/downloadCurrentSyncAssets\(listing,stateValue,onProgress\)/);
   assert.match(transport,/async function putSyncCheckpoint/);
 });
+check("note editor toolbar uses compact two-thirds sizing",()=>{
+  assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?min-height:38px/);
+  assert.match(css,/grid-template-columns:repeat\(2,31px\)/);
+  assert.match(css,/\.note-mobile-toolbar button\{[\s\S]*?height:30px/);
+  assert.match(css,/\.note-mobile-toolbar svg\{width:14px;height:14px\}/);
+  assert.match(css,/\.note-toolbar-divider\{width:1px;height:19px/);
+});
 check("note editor toolbar follows the on-screen keyboard",()=>{
   assert.match(html,/interactive-widget=resizes-content/);
   assert.match(app,/window\.visualViewport/);

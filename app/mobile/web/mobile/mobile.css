@@ -472,7 +472,7 @@ svg.lucide{stroke:currentColor}
   color:var(--ui-fg);box-shadow:none;font-size:var(--fs-sm);line-height:1.72;overflow-wrap:anywhere;
   --ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
 }
-body.note-open .mobile-main{padding-bottom:calc(138px + env(safe-area-inset-bottom))}
+body.note-open .mobile-main{padding-bottom:calc(118px + env(safe-area-inset-bottom))}
 .note-editor-card{outline:0;caret-color:var(--primary-strong);white-space:normal}
 .note-editor-card:focus{outline:0}
 .note-editor-card:empty::before{content:attr(data-placeholder);color:var(--ui-muted);opacity:.72;pointer-events:none}
@@ -497,10 +497,10 @@ body.note-keyboard-open .note-editor-controls{
   bottom:calc(var(--note-keyboard-inset,0px) + 58px + env(safe-area-inset-bottom))
 }
 body.note-keyboard-open .mobile-main{
-  padding-bottom:calc(138px + var(--note-keyboard-inset,0px) + env(safe-area-inset-bottom))
+  padding-bottom:calc(118px + var(--note-keyboard-inset,0px) + env(safe-area-inset-bottom))
 }
 body.note-keyboard-open .mobile-app{
-  scroll-padding-bottom:calc(72px + var(--note-keyboard-inset,0px))
+  scroll-padding-bottom:calc(52px + var(--note-keyboard-inset,0px))
 }
 .note-mobile-toolbar,.note-format-panel{
   width:min(100%,680px);margin-left:auto;margin-right:auto;
@@ -509,17 +509,17 @@ body.note-keyboard-open .mobile-app{
   box-shadow:var(--popup-shadow);backdrop-filter:blur(18px);pointer-events:auto
 }
 .note-mobile-toolbar{
-  min-height:56px;display:grid;grid-template-columns:repeat(2,46px) 1px repeat(4,minmax(0,1fr));align-items:center;gap:4px;
-  padding:5px 7px;border-radius:16px
+  min-height:38px;display:grid;grid-template-columns:repeat(2,31px) 1px repeat(4,minmax(0,1fr));align-items:center;gap:3px;
+  padding:3px 5px;border-radius:11px
 }
 .note-mobile-toolbar button{
-  min-width:0;height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:11px;
+  min-width:0;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:8px;
   background:transparent;color:var(--ui-muted)
 }
 .note-mobile-toolbar button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
 .note-mobile-toolbar button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg)}
-.note-mobile-toolbar svg{width:20px;height:20px}
-.note-toolbar-divider{width:1px;height:28px;background:var(--ui-border-default);justify-self:center}
+.note-mobile-toolbar svg{width:14px;height:14px}
+.note-toolbar-divider{width:1px;height:19px;background:var(--ui-border-default);justify-self:center}
 .note-format-panel{
   max-height:min(42dvh,360px);overflow:auto;margin-bottom:7px;padding:12px;border-radius:18px
 }

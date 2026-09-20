@@ -641,8 +641,36 @@
     refreshLucideIcons()
   }
 
-  function blockElement(block){
-    const card=element("article","block-card"),head=element("div","block-head"),heading=element("h5","",block.title||(block.type==="script"?"제목 없는 스크립트":"제목 없는 블록"));
+  function compactBlockPreview(block){
+    if(block.type==="script"){
+      return (block.scriptBlocks||[])
+        .map(line=>{
+          const text=String(line?.text||"").trim(),speaker=line?.type==="dialogue"?String(line?.speaker||"").trim():"";
+          if(!text&&!speaker)return "";
+          return speaker&&text?speaker+" · "+text:text||speaker
+        })
+        .filter(Boolean)
+        .join(" ")
+    }
+    return String(block.summary||"").trim()
+  }
+
+  function blockElement(block,{compact=false}={}){
+    const card=element("article","block-card"+(compact?" compact-block-card":""));
+    const titleText=String(block.title||"").trim();
+    if(compact){
+      if(titleText||block.completed){
+        const head=element("div","block-head");
+        if(titleText)head.append(element("h5","",titleText));
+        if(block.completed)head.append(element("span","complete-badge","완료"));
+        card.append(head)
+      }
+      const preview=compactBlockPreview(block);
+      if(preview)card.append(element("p","block-text block-preview"+(titleText?"":" no-title"),preview));
+      return card
+    }
+
+    const head=element("div","block-head"),heading=element("h5","",titleText||(block.type==="script"?"제목 없는 스크립트":"제목 없는 블록"));
     head.append(heading);
     if(block.completed)head.append(element("span","complete-badge","완료"));
     card.append(head);
@@ -651,7 +679,7 @@
       for(const line of block.scriptBlocks||[]){
         if(!String(line?.text||"").trim()&&!String(line?.speaker||"").trim())continue;
         const row=element("div","script-line"),label=element("span","script-line-label",scriptLabels[line.type]||"지문"),body=element("span","");
-        if(line.type==="dialogue"&&line.speaker)body.append(element("span","script-speaker",`${line.speaker} · `));
+        if(line.type==="dialogue"&&line.speaker)body.append(element("span","script-speaker",line.speaker+" · "));
         body.append(document.createTextNode(String(line.text||"")));
         row.append(label,body);
         lines.append(row)
@@ -666,12 +694,18 @@
     }
     return card
   }
-
-  function renderUnit(unit,index=0,showHeading=true){
+  function renderUnit(unit,index=0,{showHeading=true,compactBlocks=false,onBack=null}={}){
     const host=$("#projectContent");
     host.replaceChildren();
+    if(onBack){
+      const back=element("button","episode-overview-back","");
+      back.type="button";
+      back.innerHTML='<i data-lucide="arrow-left" aria-hidden="true"></i><span>화 목록</span>';
+      back.onclick=onBack;
+      host.append(back)
+    }
     if(showHeading){
-      const heading=element("div","unit-heading"),name=unit.title||`${index+1}화`;
+      const heading=element("div","unit-heading"),name=unit.title||(index+1)+"화";
       heading.append(element("h3","",name));
       if(unit.subtitle)heading.append(element("p","",unit.subtitle));
       host.append(heading)
@@ -685,42 +719,72 @@
       if(stage.hint)copy.append(element("p","",stage.hint));
       stageHead.append(stripe,copy);
       const blocks=element("div","block-list"),items=Array.isArray(unit.stages?.[stage.id])?unit.stages[stage.id]:[];
-      if(items.length)for(const block of items)blocks.append(blockElement(block));
+      if(items.length)for(const block of items)blocks.append(blockElement(block,{compact:compactBlocks}));
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
       section.append(stageHead,blocks);
       carousel.append(section)
     }
-    if(carousel.childElementCount)host.append(carousel)
+    if(carousel.childElementCount)host.append(carousel);
+    refreshLucideIcons()
   }
-
   function renderProject(project){
     $("#readerTitle").textContent=project.title||"제목 없는 작품";
     $("#readerSubtitle").textContent=project.subtitle||"";
     $("#readerSubtitle").hidden=!project.subtitle;
-    const episodes=$("#episodeList");
+    const episodes=$("#episodeList"),content=$("#projectContent");
     episodes.replaceChildren();
+    episodes.hidden=false;
+    projectReaderScreen.classList.remove("episode-open");
+
     if(project.kind==="long"){
       const list=project.episodes||[];
-      if(!list.length){$("#projectContent").replaceChildren(element("div","status-card","등록된 화가 없습니다."));return}
-      if(!list.some(item=>String(item.id)===activeEpisodeId))activeEpisodeId=String(list[0].id);
-      list.forEach((episode,index)=>{
-        const button=element("button",`episode-button${String(episode.id)===activeEpisodeId?" active":""}`);
-        button.type="button";
-        const stripe=element("span","episode-color"),episodeColor=safeColor(episode.color,"#A9D6FF");
-        button.style.setProperty("--episode-color",episodeColor);
-        stripe.style.setProperty("--episode-color",episodeColor);
-        const copy=element("span","episode-copy");
-        copy.append(element("strong","",episode.title||`${index+1}화`),element("span","",episode.subtitle||`${allBlocks(episode).length}개 블록`));
-        button.append(stripe,copy,element("span","episode-number",`${index+1}화`));
-        button.onclick=()=>{activeEpisodeId=String(episode.id);renderProject(project);window.scrollTo({top:0,behavior:"smooth"})};
-        episodes.append(button)
+      if(!list.length){
+        content.replaceChildren(element("div","status-card","등록된 화가 없습니다."));
+        return
+      }
+
+      const activeIndex=list.findIndex(item=>String(item.id)===activeEpisodeId);
+      if(activeIndex<0){
+        activeEpisodeId="";
+        content.replaceChildren();
+        list.forEach((episode,index)=>{
+          const button=element("button","episode-button");
+          button.type="button";
+          const stripe=element("span","episode-color"),episodeColor=safeColor(episode.color,"#A9D6FF");
+          button.style.setProperty("--episode-color",episodeColor);
+          stripe.style.setProperty("--episode-color",episodeColor);
+          const copy=element("span","episode-copy");
+          copy.append(
+            element("strong","",episode.title||(index+1)+"화"),
+            element("span","",episode.subtitle||allBlocks(episode).length+"개 블록")
+          );
+          button.append(stripe,copy,element("span","episode-number",(index+1)+"화"));
+          button.onclick=()=>{
+            activeEpisodeId=String(episode.id);
+            renderProject(project);
+            window.scrollTo({top:0,behavior:"smooth"})
+          };
+          episodes.append(button)
+        });
+        return
+      }
+
+      episodes.hidden=true;
+      projectReaderScreen.classList.add("episode-open");
+      renderUnit(list[activeIndex],activeIndex,{
+        showHeading:true,
+        compactBlocks:true,
+        onBack:()=>{
+          activeEpisodeId="";
+          renderProject(project);
+          window.scrollTo({top:0,behavior:"smooth"})
+        }
       });
-      const active=list.find(item=>String(item.id)===activeEpisodeId);
-      renderUnit(active,list.findIndex(item=>String(item.id)===activeEpisodeId),true)
-    }else{
-      activeEpisodeId="";
-      renderUnit(project,0,false)
+      return
     }
+
+    activeEpisodeId="";
+    renderUnit(project,0,{showHeading:false})
   }
 
   function sanitizedNoteHtml(value){

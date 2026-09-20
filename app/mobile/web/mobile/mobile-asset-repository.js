@@ -71,8 +71,11 @@
         return new Promise((resolve,reject)=>{
           const tx=db.transaction(String(storeName),"readonly"),store=tx.objectStore(String(storeName)),missing=[];
           for(const key of keys){
-            const request=store.getKey(key);
-            request.onsuccess=()=>{if(request.result===undefined)missing.push(key)};
+            const request=store.get(key);
+            request.onsuccess=()=>{
+              const record=request.result;
+              if(!record||!(record.blob instanceof Blob)||record.blob.size<1)missing.push(key)
+            };
             request.onerror=()=>{try{tx.abort()}catch{}}
           }
           tx.oncomplete=()=>resolve(missing);

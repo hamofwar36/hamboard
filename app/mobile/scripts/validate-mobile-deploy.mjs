@@ -110,6 +110,15 @@ check("cloud sync progress is single-run and monotonic",()=>{
   assert.match(app,/if\(cloudSyncImportPromise\)\{setCloudSourceBusy\(true\);return\}/);
   assert.match(app,/runId!==cloudSyncProgressRun/);
 });
+check("mobile asset lookup mirrors desktop object-index validation",()=>{
+  assert.match(transport,/async function loadObjectIndex/);
+  assert.match(transport,/hamboardByteSize/);
+  assert.match(transport,/google-drive-asset-object-metadata-mismatch/);
+  assert.doesNotMatch(transport,/appProperties has \{ key='hamboardObjectKey'/);
+  assert.match(assetRepository,/record\.blob instanceof Blob/);
+  assert.match(app,/await googleDrive\.loadObjectIndex\(\)/);
+  assert.match(app,/백업 이미지 확인:/);
+});
 check("mobile cloud imports cache current image assets and render them",()=>{
   assert.match(assetRepository,/hamboard-mobile-assets/);
   assert.match(assetRepository,/putMany/);

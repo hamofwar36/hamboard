@@ -15,9 +15,14 @@
   let sessionChecked=false;
   let sessionPromise=null;
   let tokenPromise=null;
+  let objectIndex=null;
+  let objectIndexLoadedAt=0;
+  let objectIndexPromise=null;
+  const OBJECT_INDEX_TTL_MS=5*60*1000;
 
   const configuredAuthBaseUrl=()=>String(root.HAMBOARD_MOBILE_CONFIG?.authBaseUrl||"").trim().replace(/\/$/,"");
   const clearAccessToken=()=>{accessToken="";accessTokenExpiresAt=0};
+  const clearObjectIndex=()=>{objectIndex=null;objectIndexLoadedAt=0;objectIndexPromise=null};
   function status(){
     return {
       provider:"google-drive",
@@ -109,6 +114,7 @@
       if(configuredAuthBaseUrl())await authFetch("/api/logout",{method:"POST"})
     }finally{
       clearAccessToken();
+      clearObjectIndex();
       sessionAuthenticated=false;
       sessionChecked=true
     }
@@ -193,21 +199,44 @@
     return {objectKey,content,contentSha256:expectedSha,byteSize:expectedSize}
   }
 
+  async function loadObjectIndex({force=false}={}){
+    if(!force&&objectIndex&&Date.now()-objectIndexLoadedAt<OBJECT_INDEX_TTL_MS)return objectIndex;
+    if(objectIndexPromise)return objectIndexPromise;
+    objectIndexPromise=(async()=>{
+      const entries=new Map();let pageToken="";
+      do{
+        const url=new URL(DRIVE_FILES_URL);
+        url.searchParams.set("spaces","appDataFolder");
+        url.searchParams.set("pageSize","1000");
+        url.searchParams.set("q","trashed = false");
+        url.searchParams.set("fields","nextPageToken,files(id,size,mimeType,appProperties)");
+        if(pageToken)url.searchParams.set("pageToken",pageToken);
+        const value=await (await authorizedFetch(url)).json();
+        for(const file of value.files||[]){
+          const properties=file.appProperties||{},objectKey=property(properties,"ObjectKey"),contentSha256=property(properties,"ContentSha256").toLowerCase(),byteSize=Math.max(0,Number(property(properties,"ByteSize"))||Number(file.size)||0);
+          if(!objectKey||!validRemoteId(file.id)||!validSha(contentSha256)||byteSize<1)continue;
+          entries.set(objectKey,{remoteObjectId:String(file.id),objectKey,contentSha256,byteSize,mimeType:String(file.mimeType||"application/octet-stream")})
+        }
+        pageToken=String(value.nextPageToken||"")
+      }while(pageToken);
+      objectIndex=entries;
+      objectIndexLoadedAt=Date.now();
+      return entries
+    })().finally(()=>{objectIndexPromise=null});
+    return objectIndexPromise
+  }
+
   async function getObjectByKey(request={}){
     const objectKey=String(request.objectKey||""),expectedSha=String(request.contentSha256||"").toLowerCase(),expectedSize=Math.max(0,Number(request.byteSize)||0),requestedMime=String(request.mimeType||"application/octet-stream");
     if(!/^[A-Za-z0-9._/-]{1,180}$/.test(objectKey)||!validSha(expectedSha)||expectedSize<1||expectedSize>MAX_ASSET_OBJECT_BYTES)throw new Error("google-drive-asset-object-request-invalid");
-    const url=new URL(DRIVE_FILES_URL);
-    url.searchParams.set("spaces","appDataFolder");
-    url.searchParams.set("pageSize","100");
-    url.searchParams.set("q",`trashed = false and appProperties has { key='hamboardObjectKey' and value='${objectKey}' }`);
-    url.searchParams.set("fields","files(id,size,mimeType,appProperties)");
-    const value=await (await authorizedFetch(url)).json();
-    const file=(value.files||[]).find(item=>{
-      const properties=item.appProperties||{};
-      return property(properties,"ObjectKey")===objectKey&&property(properties,"ContentSha256").toLowerCase()===expectedSha&&Number(item.size)===expectedSize&&validRemoteId(item.id)
-    });
+    let index=await loadObjectIndex(),file=index.get(objectKey);
+    if(!file){
+      index=await loadObjectIndex({force:true});
+      file=index.get(objectKey)
+    }
     if(!file)throw new Error("google-drive-asset-object-not-found");
-    const response=await authorizedFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(file.id)}?alt=media`),bytes=await response.arrayBuffer();
+    if(file.contentSha256!==expectedSha||file.byteSize!==expectedSize)throw new Error("google-drive-asset-object-metadata-mismatch");
+    const response=await authorizedFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(file.remoteObjectId)}?alt=media`),bytes=await response.arrayBuffer();
     if(bytes.byteLength!==expectedSize||await sha256Hex(bytes)!==expectedSha)throw new Error("google-drive-download-integrity-mismatch");
     const mimeType=String(requestedMime&&requestedMime!=="application/octet-stream"?requestedMime:file.mimeType||requestedMime||"application/octet-stream");
     return {objectKey,blob:new Blob([bytes],{type:mimeType}),contentSha256:expectedSha,byteSize:expectedSize,mimeType}
@@ -253,6 +282,6 @@
   }
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

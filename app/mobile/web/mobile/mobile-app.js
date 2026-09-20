@@ -747,12 +747,15 @@
     const wanted=[...currentMobileAssetIds(stateValue)],missing=await assetRepository.missing(wanted),unresolved=[];
     let completed=0;
     if(!missing.length){onProgress({completed:0,total:0});return {wanted:wanted.length,downloaded:0,cached:wanted.length,unresolved}}
+    await googleDrive.loadObjectIndex();
     await mapWithConcurrency(missing,3,async assetId=>{
       try{await assetRepository.put(await fetchSyncAsset(assetId,listing.objects||[]))}
       catch(error){unresolved.push(assetId);logDiagnostic("warn","ASSET","동기화 이미지 일부를 불러오지 못했습니다.",error)}
       finally{completed++;onProgress({completed,total:missing.length})}
     });
-    return {wanted:wanted.length,downloaded:missing.length-unresolved.length,cached:wanted.length-missing.length,unresolved}
+    const result={wanted:wanted.length,manifestAssets:assetById.size,downloaded:missing.length-unresolved.length,cached:wanted.length-missing.length,unresolved};
+    logDiagnostic(unresolved.length?"warn":"info","ASSET",`백업 이미지 확인: 참조 ${result.wanted}개 · manifest ${result.manifestAssets}개 · 다운로드 ${result.downloaded}개 · 캐시 ${result.cached}개 · 미해결 ${result.unresolved.length}개`);
+    return result
   }
 
   async function downloadCurrentBackupAssets(manifest,stateValue,onProgress=()=>{}){
@@ -767,6 +770,7 @@
     }
     let completed=unresolved.length;
     onProgress({completed,total:missing.length});
+    if(groups.size)await googleDrive.loadObjectIndex();
     await mapWithConcurrency([...groups.values()],3,async group=>{
       try{
         const object=group.object,downloaded=await googleDrive.getObjectByKey({

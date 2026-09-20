@@ -1328,6 +1328,7 @@
       '<p class="note-correction-help"><i data-lucide="check" aria-hidden="true"></i><span>원문과 교정문을 비교해 기존 서식은 유지하고 달라진 텍스트만 반영합니다.</span></p>'+
       '<p class="note-correction-status" data-note-correction-status hidden></p>'+
       '<div class="note-sheet-actions"><button type="button" class="secondary" data-note-correction-close>취소</button><button type="button" class="primary" data-note-correction-apply>변경사항 반영</button></div></div>';
+    wrap.append(panel);
     document.body.append(wrap);
     const correction=panel.querySelector("[data-note-correction-text]"),status=panel.querySelector("[data-note-correction-status]");
     const setCorrectionStatus=(message,error=false)=>{

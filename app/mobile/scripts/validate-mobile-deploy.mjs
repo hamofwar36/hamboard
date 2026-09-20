@@ -137,7 +137,7 @@ check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(html,/class="note-history-action"[^>]*data-note-command="redo"/);
   assert.match(html,/id="noteKeyboardToggle"/);
   assert.match(html,/data-note-keyboard-toggle/);
-  assert.match(css,/grid-template-columns:42px 42px 1px repeat\(4,42px\) minmax\(0,1fr\) 1px 38px/);
+  assert.match(css,/grid-template-columns:38px 38px 1px repeat\(4,38px\) 1px 38px/);
   assert.match(css,/\.note-history-action\{height:34px/);
   assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-panel-action\{height:34px;border-radius:9px/);\n  assert.match(css,/\.note-panel-action svg\{width:18px;height:18px/);
@@ -148,9 +148,14 @@ check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(app,/event\.preventDefault\(\)/);
   assert.match(app,/if\(keyboardOpen\)[\s\S]*?noteReaderContent\.blur\(\)[\s\S]*?else restoreMobileNoteSelection\(\)/);
 });
-check("note keyboard control stays pinned to the toolbar right edge",()=>{
-  assert.match(css,/repeat\(4,42px\) minmax\(0,1fr\) 1px 38px/);
-  assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?justify-self:center/);
+check("note toolbar spacing stays balanced with keyboard control at the right edge",()=>{
+  assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?width:min\(100%,430px\)/);
+  assert.match(css,/grid-template-columns:38px 38px 1px repeat\(4,38px\) 1px 38px/);
+  assert.match(css,/justify-content:space-between;column-gap:0/);
+  assert.match(css,/padding:2px 6px/);
+  assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
+  assert.match(css,/\.note-panel-action svg\{width:18px;height:18px/);
+  assert.match(css,/\.note-keyboard-dismiss svg\{width:15px;height:15px/);
 });
 check("note keyboard mode hides main navigation and supports resized viewports",()=>{
   assert.match(app,/noteViewportBaseHeight/);

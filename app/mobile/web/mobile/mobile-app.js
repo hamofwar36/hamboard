@@ -732,8 +732,9 @@
   }
 
   async function fetchSyncAsset(assetId,objects){
-    let lastError=null;
-    for(const candidate of syncAssetCandidates(objects,assetId)){
+    let candidates=syncAssetCandidates(objects,assetId),lastError=null;
+    if(!candidates.length&&googleDrive.listSyncAssetDescriptors)candidates=await googleDrive.listSyncAssetDescriptors(assetId);
+    for(const candidate of candidates){
       try{
         const descriptor=await readSyncAssetDescriptor(candidate);
         const downloaded=await googleDrive.getObjectByKey(descriptor.main);
@@ -753,8 +754,8 @@
       catch(error){unresolved.push(assetId);logDiagnostic("warn","ASSET","동기화 이미지 일부를 불러오지 못했습니다.",error)}
       finally{completed++;onProgress({completed,total:missing.length})}
     });
-    const result={wanted:wanted.length,manifestAssets:assetById.size,downloaded:missing.length-unresolved.length,cached:wanted.length-missing.length,unresolved};
-    logDiagnostic(unresolved.length?"warn":"info","ASSET",`백업 이미지 확인: 참조 ${result.wanted}개 · manifest ${result.manifestAssets}개 · 다운로드 ${result.downloaded}개 · 캐시 ${result.cached}개 · 미해결 ${result.unresolved.length}개`);
+    const result={wanted:wanted.length,downloaded:missing.length-unresolved.length,cached:wanted.length-missing.length,unresolved};
+    logDiagnostic(unresolved.length?"warn":"info","ASSET",`동기화 이미지 확인: 참조 ${result.wanted}개 · 다운로드 ${result.downloaded}개 · 캐시 ${result.cached}개 · 미해결 ${result.unresolved.length}개`);
     return result
   }
 
@@ -1560,21 +1561,27 @@
     cloudSyncLastPercent=0;
     const operation=(async()=>{
       if(!googleDrive)throw new Error("google-drive-web-transport-unavailable");
-      if(!listing)listing=await googleDrive.listSyncObjects();
+      if(!listing){
+        const fast=googleDrive.listSyncRestoreSource?await googleDrive.listSyncRestoreSource():null;
+        listing=fast||await googleDrive.listSyncObjects()
+      }
       if(listing.truncated)throw new Error("sync-object-list-truncated");
-      const objects=listing.objects||[],topology=commitTopology(objects);
-      if(!topology.head)throw new Error("sync-import-empty");
+      const objects=listing.objects||[],fastMode=listing.fast===true;
+      let topology=fastMode?null:commitTopology(objects),head=fastMode?listing.head:topology?.head;
+      if(!head)throw new Error("sync-import-empty");
 
       if(navigator.onLine!==false)setIndicator("connected","동기화 중");
       updateCloudSyncProgress(runId,"동기화 스냅샷을 불러오는 중입니다.",0);
-      const checkpointObject=syncCheckpointForTopology(objects,topology);
-      let canonical,checkpointRevision="",tail=topology.path;
+      const checkpointObject=fastMode?listing.checkpoint:syncCheckpointForTopology(objects,topology);
+      let canonical,checkpointRevision="",tail=fastMode?[...(listing.commits||[])]:topology.path;
       if(checkpointObject){
         const checkpoint=await readCloudCheckpoint(checkpointObject);
         canonical=syncModel.projectCanonicalState(checkpoint.state,syncModel.CLIENT_PROFILES.desktop);
         checkpointRevision=String(checkpoint.revision||"");
-        const checkpointIndex=topology.path.findIndex(item=>String(item.revision||"")===checkpointRevision);
-        tail=checkpointIndex>=0?topology.path.slice(checkpointIndex+1):topology.path;
+        if(!fastMode){
+          const checkpointIndex=topology.path.findIndex(item=>String(item.revision||"")===checkpointRevision);
+          tail=checkpointIndex>=0?topology.path.slice(checkpointIndex+1):topology.path
+        }
         updateCloudSyncProgress(runId,"동기화 스냅샷을 적용하는 중입니다.",35)
       }else{
         canonical=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.desktop);
@@ -1600,10 +1607,10 @@
       });
       if(restored.assets.unresolved.length)logDiagnostic("warn","ASSET",`동기화 이미지 ${restored.assets.unresolved.length}개를 아직 불러오지 못했습니다.`);
       cloudSyncListing=listing;
-      const headRevision=String(topology.head.revision);
+      const headRevision=String(head.revision);
       if((!checkpointObject||tail.length>=8)&&googleDrive.putSyncCheckpoint)try{
         const published=await googleDrive.putSyncCheckpoint({revision:headRevision,state:canonical});
-        listing.objects=[...(listing.objects||[]),published];
+        listing.objects=[...(listing.objects||[]),published];listing.checkpoint=published;listing.commits=[];listing.fast=true;
         logDiagnostic("info","SYNC",`동기화 스냅샷을 생성했습니다. revision=${headRevision}`)
       }catch(error){logDiagnostic("warn","SYNC","동기화 스냅샷 생성에 실패했습니다. 다음 동기화에서 다시 시도합니다.",error)}
       return {empty:false,revision:headRevision,checkpointRevision,tailCommits:tail.length,assets:restored.assets,state:restored.state}
@@ -1651,17 +1658,18 @@
     syncSourceMeta.textContent="확인 중…";
     loadSyncSource.disabled=true;
     backupSourceList.replaceChildren(element("div","cloud-source-empty","백업 복원 목록을 확인하고 있습니다."));
-    const [syncResult,backupResult]=await Promise.allSettled([googleDrive.listSyncObjects(),googleDrive.listBackups()]);
+    const syncLookup=(async()=>{const fast=googleDrive.listSyncRestoreSource?await googleDrive.listSyncRestoreSource():null;return fast||await googleDrive.listSyncObjects()})();
+    const [syncResult,backupResult]=await Promise.allSettled([syncLookup,googleDrive.listBackups()]);
     const problems=[];
 
     cloudSyncListing=null;
     if(syncResult.status==="fulfilled"){
       try{
         if(syncResult.value.truncated)throw new Error("sync-object-list-truncated");
-        const topology=commitTopology(syncResult.value.objects||[]);
-        if(topology.head){
+        const head=syncResult.value.fast===true?syncResult.value.head:commitTopology(syncResult.value.objects||[]).head;
+        if(head){
           cloudSyncListing=syncResult.value;
-          syncSourceMeta.textContent=`최근 동기화 · ${formatCloudTime(topology.head.createdAtMs)}`;
+          syncSourceMeta.textContent=`최근 동기화 · ${formatCloudTime(head.createdAtMs)}`;
           loadSyncSource.disabled=false
         }else syncSourceMeta.textContent="저장된 동기화 데이터가 없습니다."
       }catch(error){

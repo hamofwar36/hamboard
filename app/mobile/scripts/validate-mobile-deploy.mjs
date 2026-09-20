@@ -102,6 +102,17 @@ check("home account flow separates sync data and manual backups",()=>{assert.mat
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
 check("mobile version is injected into runtime config",()=>assert.ok(config.includes(`version:${JSON.stringify(mobileVersion)}`)));
+check("sync restore avoids enumerating full history on the normal path",()=>{
+  assert.match(transport,/async function listSyncRestoreSource/);
+  assert.match(transport,/hamboardSyncType' and value='checkpoint/);
+  assert.match(transport,/hamboardSyncType' and value='commit/);
+  assert.match(transport,/async function listSyncAssetDescriptors/);
+  assert.match(app,/const fast=googleDrive\.listSyncRestoreSource/);
+  assert.match(app,/fastMode=listing\.fast===true/);
+  assert.match(app,/googleDrive\.listSyncAssetDescriptors\(assetId\)/);
+  assert.doesNotMatch(app,/manifestAssets:assetById\.size/);
+  assert.match(app,/동기화 이미지 확인:/);
+});
 check("backup and sync share snapshot plus asset restore",()=>{
   assert.match(app,/async function restoreCloudProjection/);
   assert.match(app,/syncCheckpointForTopology/);

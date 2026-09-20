@@ -154,6 +154,62 @@
   const validRemoteId=value=>/^[A-Za-z0-9_-]+$/.test(String(value||""));
   const validSha=value=>/^[0-9a-f]{64}$/.test(String(value||"").toLowerCase());
 
+  const driveQueryValue=value=>String(value||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  function syncObjectFromFile(file){
+    const properties=file?.appProperties||{},objectKey=property(properties,"ObjectKey"),kind=property(properties,"Kind"),byteSize=Number(file?.size)||0,contentSha256=property(properties,"ContentSha256").toLowerCase();
+    if(kind!=="sync"||!objectKey.startsWith("sync/")||byteSize<1||byteSize>MAX_SYNC_OBJECT_BYTES||!validSha(contentSha256)||!validRemoteId(file?.id))return null;
+    return {remoteObjectId:String(file.id),objectKey,contentSha256,byteSize,syncType:property(properties,"SyncType"),revision:property(properties,"Revision"),baseRevision:property(properties,"BaseRevision"),deviceId:property(properties,"DeviceId"),displayName:property(properties,"DisplayName"),clientProfile:property(properties,"ClientProfile"),createdAtMs:property(properties,"CreatedAtMs","0"),expiresAtMs:property(properties,"ExpiresAtMs","0"),assetId:property(properties,"AssetId"),quality:property(properties,"Quality")}
+  }
+  async function querySyncObjects(extraQuery,{pageSize=20,orderBy="createdTime desc",maxResults=20}={}){
+    const objects=[];let pageToken="";
+    do{
+      const url=new URL(DRIVE_FILES_URL);
+      url.searchParams.set("spaces","appDataFolder");
+      url.searchParams.set("pageSize",String(Math.max(1,Math.min(1000,pageSize))));
+      if(orderBy)url.searchParams.set("orderBy",orderBy);
+      url.searchParams.set("q",`trashed = false and appProperties has { key='hamboardKind' and value='sync' }${extraQuery?` and ${extraQuery}`:""}`);
+      url.searchParams.set("fields","nextPageToken,files(id,size,createdTime,appProperties)");
+      if(pageToken)url.searchParams.set("pageToken",pageToken);
+      const value=await (await authorizedFetch(url)).json();
+      for(const file of value.files||[]){const parsed=syncObjectFromFile(file);if(parsed)objects.push(parsed);if(objects.length>=maxResults)return objects}
+      pageToken=String(value.nextPageToken||"")
+    }while(pageToken);
+    return objects
+  }
+  async function listSyncAssetDescriptors(assetId){
+    const id=String(assetId||"");
+    if(!id||id.length>180)return [];
+    return querySyncObjects(`appProperties has { key='hamboardSyncType' and value='asset' } and appProperties has { key='hamboardAssetId' and value='${driveQueryValue(id)}' }`,{pageSize:20,maxResults:20})
+  }
+  async function listSyncRestoreSource(){
+    const [checkpoints,latestCommits]=await Promise.all([
+      querySyncObjects("appProperties has { key='hamboardSyncType' and value='checkpoint' }",{pageSize:8,maxResults:8}),
+      querySyncObjects("appProperties has { key='hamboardSyncType' and value='commit' }",{pageSize:2,maxResults:2})
+    ]);
+    const head=latestCommits[0]||null;
+    if(!head)return {objects:[],checkpoint:null,commits:[],head:null,fast:true,empty:true};
+    const checkpoint=checkpoints.find(item=>String(item.revision||"")===String(head.revision||""))||checkpoints[0]||null;
+    if(!checkpoint)return null;
+    if(String(checkpoint.revision||"")===String(head.revision||""))return {objects:[checkpoint,head],checkpoint,commits:[],head,fast:true,empty:false};
+    const tail=[],seen=new Set();let cursor=head;
+    for(let step=0;step<16&&cursor;step++){
+      const revision=String(cursor.revision||"");
+      if(!revision||seen.has(revision))return null;
+      seen.add(revision);
+      if(revision===String(checkpoint.revision||""))break;
+      tail.push(cursor);
+      const base=String(cursor.baseRevision||"");
+      if(!base)return null;
+      if(base===String(checkpoint.revision||"")){cursor=null;break}
+      const parents=await querySyncObjects(`appProperties has { key='hamboardSyncType' and value='commit' } and appProperties has { key='hamboardRevision' and value='${driveQueryValue(base)}' }`,{pageSize:2,maxResults:2});
+      if(parents.length!==1)return null;
+      cursor=parents[0]
+    }
+    if(tail.length>=16&&String(tail[tail.length-1]?.baseRevision||"")!==String(checkpoint.revision||""))return null;
+    const ordered=tail.reverse();
+    return {objects:[checkpoint,...ordered],checkpoint,commits:ordered,head,fast:true,empty:false}
+  }
+
   async function listSyncObjects(){
     const objects=[];let pageToken="";
     do{
@@ -166,24 +222,8 @@
       if(pageToken)url.searchParams.set("pageToken",pageToken);
       const value=await (await authorizedFetch(url)).json();
       for(const file of value.files||[]){
-        const properties=file.appProperties||{},objectKey=property(properties,"ObjectKey"),kind=property(properties,"Kind"),byteSize=Number(file.size)||0,contentSha256=property(properties,"ContentSha256").toLowerCase();
-        if(kind!=="sync"||!objectKey.startsWith("sync/")||byteSize<1||byteSize>MAX_SYNC_OBJECT_BYTES||!validSha(contentSha256))continue;
-        objects.push({
-          remoteObjectId:String(file.id||""),
-          objectKey,
-          contentSha256,
-          byteSize,
-          syncType:property(properties,"SyncType"),
-          revision:property(properties,"Revision"),
-          baseRevision:property(properties,"BaseRevision"),
-          deviceId:property(properties,"DeviceId"),
-          displayName:property(properties,"DisplayName"),
-          clientProfile:property(properties,"ClientProfile"),
-          createdAtMs:property(properties,"CreatedAtMs","0"),
-          expiresAtMs:property(properties,"ExpiresAtMs","0"),
-          assetId:property(properties,"AssetId"),
-          quality:property(properties,"Quality")
-        });
+        const parsed=syncObjectFromFile(file);if(!parsed)continue;
+        objects.push(parsed);
         if(objects.length>=MAX_SYNC_OBJECTS)return {objects,truncated:true}
       }
       pageToken=String(value.nextPageToken||"")
@@ -309,6 +349,6 @@
   }
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncRestoreSource,listSyncObjects,listSyncAssetDescriptors,getSyncObject,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

@@ -102,6 +102,14 @@ check("home account flow separates sync data and manual backups",()=>{assert.mat
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
 check("mobile version is injected into runtime config",()=>assert.ok(config.includes(`version:${JSON.stringify(mobileVersion)}`)));
+check("cloud sync progress is single-run and monotonic",()=>{
+  assert.match(app,/let cloudSyncImportPromise=null/);
+  assert.match(app,/let cloudSyncProgressRun=0/);
+  assert.match(app,/Math\.max\(cloudSyncLastPercent/);
+  assert.match(app,/if\(cloudSyncImportPromise\)return cloudSyncImportPromise/);
+  assert.match(app,/if\(cloudSyncImportPromise\)\{setCloudSourceBusy\(true\);return\}/);
+  assert.match(app,/runId!==cloudSyncProgressRun/);
+});
 check("mobile cloud imports cache current image assets and render them",()=>{
   assert.match(assetRepository,/hamboard-mobile-assets/);
   assert.match(assetRepository,/putMany/);

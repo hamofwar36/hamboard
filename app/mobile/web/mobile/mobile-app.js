@@ -84,6 +84,9 @@
   let activeDocumentId="";
   let activeEpisodeId="";
   let cloudSyncListing=null;
+  let cloudSyncImportPromise=null;
+  let cloudSyncProgressRun=0;
+  let cloudSyncLastPercent=0;
   let cloudBackupEntries=[];
   let cloudReturnView="library";
   let silentReconnectFailed=false;
@@ -1513,42 +1516,62 @@
     return commit
   }
 
-  async function syncFromCloud(listing=cloudSyncListing){
-    if(!googleDrive)throw new Error("google-drive-web-transport-unavailable");
-    if(!listing)listing=await googleDrive.listSyncObjects();
-    if(listing.truncated)throw new Error("sync-object-list-truncated");
-    const topology=commitTopology(listing.objects||[]);
-    if(!topology.head)throw new Error("sync-import-empty");
-
-    if(navigator.onLine!==false)setIndicator("connected","동기화 중");
+  function updateCloudSyncProgress(runId,message,percent=null){
+    if(runId!==cloudSyncProgressRun)return false;
     cloudSourceStatus.hidden=false;
-    let downloadedCommits=0;
-    const commits=await mapWithConcurrency(topology.path,6,async object=>{
-      const commit=await readCloudCommit(object);
-      downloadedCommits++;
-      cloudSourceStatus.textContent=`동기화 데이터를 불러오는 중입니다. ${Math.round(downloadedCommits/Math.max(1,topology.path.length)*70)}%`;
-      return commit
-    });
-    let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
-    for(const commit of commits)projected=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore).state;
-    await repository.replaceState(projected,{markBaseline:true});
-    cloudSourceStatus.textContent="현재 문서의 이미지를 확인하고 있습니다.";
-    const assetResult=await downloadCurrentSyncAssets(listing,snapshot(),progress=>{
-      const ratio=progress.total?progress.completed/progress.total:1;
-      cloudSourceStatus.textContent=`현재 문서의 이미지를 불러오는 중입니다. ${Math.round(70+ratio*30)}%`
-    });
-    if(assetResult.unresolved.length)logDiagnostic("warn","ASSET",`동기화 이미지 ${assetResult.unresolved.length}개를 아직 불러오지 못했습니다.`);
-    applyMobileTheme();
-    cloudSyncListing=listing;
-    renderAccountButton();
-    openLibrary();
-    return {empty:false,revision:String(topology.head.revision),assets:assetResult,state:snapshot()}
+    if(Number.isFinite(percent)){
+      const next=Math.max(cloudSyncLastPercent,Math.min(100,Math.max(0,Math.round(percent))));
+      cloudSyncLastPercent=next;
+      cloudSourceStatus.textContent=`${message} ${next}%`
+    }else cloudSourceStatus.textContent=String(message||"");
+    return true
+  }
+
+  async function syncFromCloud(listing=cloudSyncListing){
+    if(cloudSyncImportPromise)return cloudSyncImportPromise;
+    const runId=++cloudSyncProgressRun;
+    cloudSyncLastPercent=0;
+    const operation=(async()=>{
+      if(!googleDrive)throw new Error("google-drive-web-transport-unavailable");
+      if(!listing)listing=await googleDrive.listSyncObjects();
+      if(listing.truncated)throw new Error("sync-object-list-truncated");
+      const topology=commitTopology(listing.objects||[]);
+      if(!topology.head)throw new Error("sync-import-empty");
+
+      if(navigator.onLine!==false)setIndicator("connected","동기화 중");
+      updateCloudSyncProgress(runId,"동기화 데이터를 불러오는 중입니다.",0);
+      let downloadedCommits=0;
+      const commits=await mapWithConcurrency(topology.path,6,async object=>{
+        const commit=await readCloudCommit(object);
+        downloadedCommits++;
+        updateCloudSyncProgress(runId,"동기화 데이터를 불러오는 중입니다.",downloadedCommits/Math.max(1,topology.path.length)*70);
+        return commit
+      });
+      let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
+      for(const commit of commits)projected=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore).state;
+      await repository.replaceState(projected,{markBaseline:true});
+      updateCloudSyncProgress(runId,"현재 문서의 이미지를 확인하고 있습니다.");
+      const assetResult=await downloadCurrentSyncAssets(listing,snapshot(),progress=>{
+        const ratio=progress.total?progress.completed/progress.total:1;
+        updateCloudSyncProgress(runId,"현재 문서의 이미지를 불러오는 중입니다.",70+ratio*30)
+      });
+      if(assetResult.unresolved.length)logDiagnostic("warn","ASSET",`동기화 이미지 ${assetResult.unresolved.length}개를 아직 불러오지 못했습니다.`);
+      applyMobileTheme();
+      cloudSyncListing=listing;
+      renderAccountButton();
+      openLibrary();
+      return {empty:false,revision:String(topology.head.revision),assets:assetResult,state:snapshot()}
+    })();
+    const shared=operation.finally(()=>{if(cloudSyncImportPromise===shared)cloudSyncImportPromise=null});
+    cloudSyncImportPromise=shared;
+    return shared
   }
 
   function setCloudSourceBusy(busy){
-    loadSyncSource.disabled=busy||!cloudSyncListing;
-    cloudDisconnect.disabled=busy;
-    backupSourceList.querySelectorAll("button").forEach(button=>button.disabled=busy)
+    const active=busy||!!cloudSyncImportPromise;
+    loadSyncSource.disabled=active||!cloudSyncListing;
+    cloudDisconnect.disabled=active;
+    backupSourceList.querySelectorAll("button").forEach(button=>button.disabled=active)
   }
 
   function renderBackupSources(entries=[]){
@@ -1575,6 +1598,7 @@
   }
 
   async function refreshCloudSources(){
+    if(cloudSyncImportPromise){setCloudSourceBusy(true);return}
     if(!googleDrive?.status?.().connected)return;
     cloudSourceStatus.hidden=false;
     cloudSourceStatus.textContent="클라우드 데이터를 확인하고 있습니다.";
@@ -1669,6 +1693,7 @@
   }
 
   async function loadSelectedSync(){
+    if(cloudSyncImportPromise)return cloudSyncImportPromise;
     setCloudSourceBusy(true);
     cloudSourceStatus.hidden=false;
     try{

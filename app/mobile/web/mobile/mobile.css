@@ -490,7 +490,7 @@ body.note-open .mobile-main{padding-bottom:calc(118px + env(safe-area-inset-bott
 .note-editor-card summary{cursor:pointer;padding:9px 11px;font-weight:700;background:var(--ui-control-hover-bg);color:var(--ui-fg)}
 .note-editor-card details> :not(summary){margin-left:11px;margin-right:11px}
 .note-editor-controls{
-  position:fixed;z-index:58;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom));
+  position:fixed;z-index:58;left:0;right:0;bottom:calc(58px + 6px + env(safe-area-inset-bottom));
   padding:0 10px;pointer-events:none
 }
 body.note-keyboard-open .note-editor-controls{

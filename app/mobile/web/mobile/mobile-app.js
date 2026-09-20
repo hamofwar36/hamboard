@@ -91,7 +91,7 @@
   let createColorExpanded=false;
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
-  const DEFAULT_STAGE_COLORS=Object.freeze(["#A9D6FF","#BDE7C4","#F6D872","#FFB8AE"]);
+  const DEFAULT_STAGE_COLORS=Object.freeze([CARD_COLORS[11],CARD_COLORS[7],CARD_COLORS[4],CARD_COLORS[0]]);
   const CREATE_TYPES=Object.freeze({
     folder:{label:"폴더",icon:"folder-plus",hint:"문서를 묶어 정리할 폴더를 만듭니다.",defaultTitle:"새 폴더"},
     project:{label:"작품",icon:"scroll-text",hint:"단편 또는 장편 작품을 만듭니다.",defaultTitle:"새 작품"},
@@ -111,7 +111,8 @@
   });
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
   const element=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node};
-  const safeColor=(value,fallback="#FFB8AE")=>/^#[0-9a-f]{6}$/i.test(String(value||""))?String(value):fallback;
+  const safeColor=(value,fallback=CARD_COLORS[0])=>/^#[0-9a-f]{6}$/i.test(String(value||""))?String(value):fallback;
+  const cssColorToken=name=>String(getComputedStyle(document.body||document.documentElement).getPropertyValue(name)||"").trim();
   const safeIcon=(value,fallback)=>/^[a-z0-9-]+$/i.test(String(value||""))?String(value):fallback;
   const formatDate=value=>{const parsed=Date.parse(String(value||""));return Number.isFinite(parsed)?new Intl.DateTimeFormat("ko-KR",{year:"numeric",month:"short",day:"numeric"}).format(parsed):""};
   const stripHtml=value=>{const node=document.createElement("div");node.innerHTML=String(value||"");return (node.textContent||"").replace(/\s+/g," ").trim()};
@@ -126,10 +127,12 @@
     return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)
   };
   const cardForeground=color=>{
-    const background=safeColor(color,"#FFB8AE"),dark="#292B38",light="#EEF0F4";
-    let result=colorContrast(background,dark)>=colorContrast(background,light)?dark:light;
+    const background=safeColor(color,CARD_COLORS[0]);
+    const candidates=[cssColorToken("--text-light"),cssColorToken("--text-dark")].filter(value=>/^#[0-9a-f]{6}$/i.test(value));
+    if(!candidates.length)return "";
+    let result=candidates.reduce((best,candidate)=>colorContrast(background,candidate)>colorContrast(background,best)?candidate:best,candidates[0]);
     if(colorContrast(background,result)<4.5){
-      for(const candidate of ["#15171C","#FBFBFD"]){
+      for(const candidate of [cssColorToken("--contrast-dark"),cssColorToken("--contrast-light")].filter(value=>/^#[0-9a-f]{6}$/i.test(value))){
         if(colorContrast(background,candidate)>colorContrast(background,result))result=candidate
       }
     }
@@ -375,8 +378,8 @@
     const theme=source.theme==="custom"||MOBILE_THEMES[source.theme]?source.theme:"cotton-candy";
     return {
       theme,
-      themeCustomA:safeColor(source.themeCustomA,"#D7C0FF"),
-      themeCustomB:safeColor(source.themeCustomB,"#FFD0AE"),
+      themeCustomA:safeColor(source.themeCustomA,MOBILE_THEMES["lilac-peach"].a),
+      themeCustomB:safeColor(source.themeCustomB,MOBILE_THEMES["lilac-peach"].b),
       themeSwapped:!!source.themeSwapped,
       mode:source.mode==="dark"?"dark":"light"
     }
@@ -396,8 +399,8 @@
     const secondary=settings.themeSwapped?pair.a:pair.b;
     document.documentElement.style.setProperty("--theme-primary-base",primary);
     document.documentElement.style.setProperty("--theme-secondary-base",secondary);
-    const meta=document.querySelector('meta[name="theme-color"]');
-    if(meta)meta.setAttribute("content",settings.mode==="dark"?"#15171c":"#fbfbfd")
+    const meta=document.querySelector('meta[name="theme-color"]'),pageColor=cssColorToken("--ui-page-bg")||cssColorToken("--bg");
+    if(meta&&pageColor)meta.setAttribute("content",pageColor)
   }
 
   async function saveThemeSettings(patch){
@@ -615,8 +618,10 @@
       button.dataset.documentId=String(item.id||"");
       button.style.setProperty("--card-color",descriptor.color);
       const cardInk=cardForeground(descriptor.color);
-      button.style.setProperty("--custom-on",cardInk);
-      button.style.setProperty("--custom-muted",cardInk);
+      if(cardInk){
+        button.style.setProperty("--custom-on",cardInk);
+        button.style.setProperty("--custom-muted",cardInk)
+      }
 
       const veil=element("span","card-dark-veil");
       veil.setAttribute("aria-hidden","true");
@@ -912,7 +917,10 @@
       const pos=position(node),box=element("article","mindmap-readonly-node");
       positions.set(String(node.id||""),pos);
       Object.assign(box.style,{left:`${pos.x}px`,top:`${pos.y}px`,width:`${pos.w}px`,minHeight:`${pos.h}px`});
-      if(node.nodeColor||node.color)box.style.setProperty("--node-color",safeColor(node.nodeColor||node.color,"#ffffff"));
+      if(node.nodeColor||node.color){
+        const nodeColor=safeColor(node.nodeColor||node.color,"");
+        if(nodeColor)box.style.setProperty("--node-color",nodeColor)
+      }
       const kind=element("span","mindmap-node-kind",String(node.type||"노드"));
       const label=element("strong","",node.title||node.text||node.assetName||"노드");
       box.append(kind,label);
@@ -925,7 +933,10 @@
       const line=document.createElementNS("http://www.w3.org/2000/svg","line");
       line.setAttribute("x1",String(from.cx));line.setAttribute("y1",String(from.cy));line.setAttribute("x2",String(to.cx));line.setAttribute("y2",String(to.cy));
       line.setAttribute("class","mindmap-readonly-edge");
-      if(edge.color)line.setAttribute("style",`stroke:${safeColor(edge.color,"#785b9f")}`);
+      if(edge.color){
+        const edgeColor=safeColor(edge.color,"");
+        if(edgeColor)line.setAttribute("style",`stroke:${edgeColor}`)
+      }
       edgesHost.append(line)
     }
   }

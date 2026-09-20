@@ -31,6 +31,38 @@ check("mobile chrome is touch-friendly and topbar auto-hides on reading scroll",
   assert.match(app,/requestAnimationFrame\(syncTopbarVisibility\)/);
   assert.match(app,/resetTopbarVisibility\(\)/)
 });
+check("mobile colors use Windows core tokens through shared semantic roles",()=>{
+  for(const token of [
+    "--theme-primary-base:#B8DBFF",
+    "--theme-secondary-base:#FFB4CF",
+    "--primary-strong:color-mix(in srgb,var(--primary-base) 75%,var(--text))",
+    "--primary-soft:color-mix(in srgb,var(--primary-base) 30%,var(--surface))",
+    "--secondary-soft:color-mix(in srgb,var(--secondary-base) 30%,var(--surface))"
+  ])assert.ok(css.includes(token),token);
+  for(const role of [
+    "--ui-control-neutral-bg:var(--surface)",
+    "--ui-control-pressed-bg:var(--secondary-soft)",
+    "--ui-control-primary-bg:var(--primary-base)",
+    "--ui-control-selected-bg:var(--primary-soft)",
+    "--ui-control-selected-border:var(--primary-base)",
+    "--ui-status-success-bg:var(--status-success-bg)",
+    "--ui-status-error-bg:var(--status-error-bg)"
+  ])assert.ok(css.includes(role),role);
+  assert.match(css,/\.part-step\.active\{[\s\S]*?background:var\(--ui-control-selected-bg\)/);
+  assert.match(css,/\.create-primary\{[\s\S]*?background:var\(--ui-control-primary-bg\)/);
+  assert.match(css,/\.create-list button:active\{[\s\S]*?background:var\(--ui-control-pressed-bg\)/);
+  assert.match(css,/\.sync-indicator\[data-state="connected"\]\{[\s\S]*?background:var\(--ui-status-success-bg\)/);
+  assert.match(css,/\.sync-indicator\[data-state="error"\]\{[\s\S]*?background:var\(--ui-status-error-bg\)/);
+  const componentColorCss=css
+    .replace(/:root\{[\s\S]*?\n\}/,"")
+    .replace(/body\[data-theme="[^"]+"\]\{[^}]*\}/g,"")
+    .replace(/body\[data-mode="dark"\]\{[\s\S]*?\n  \}/,"");
+  assert.doesNotMatch(componentColorCss,/(?:#[0-9a-f]{3,8}\b|rgba?\()/i);
+  assert.doesNotMatch(app,/#292B38|#EEF0F4|#15171C|#FBFBFD|#15171c|#fbfbfd|#ffffff|#785b9f/);
+  assert.match(app,/cssColorToken\("--text-light"\)/);
+  assert.match(app,/cssColorToken\("--ui-page-bg"\)/);
+  for(const userColor of ["--card-color","--stage-color","--node-color","--swatch"])assert.ok(css.includes(userColor),userColor)
+});
 check("mobile build is installable as a standalone PWA without stale-first caching",()=>{
   assert.equal(manifest.name,"햄보드");
   assert.equal(manifest.display,"standalone");
@@ -56,7 +88,7 @@ check("PWA install icons reuse the existing Hamboard desktop artwork",async()=>{
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.27"/));
+check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.28"/));
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);

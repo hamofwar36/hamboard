@@ -1196,6 +1196,222 @@
     noteCharCountSummary.textContent=counts.withSpaces.toLocaleString("ko-KR")+"자 · 공백 제외 "+counts.withoutSpaces.toLocaleString("ko-KR")+"자"
   }
 
+  function mobileNoteCorrectionPlainText(root,units=null){
+    if(!root)return "";
+    const blockTags=new Set(["DIV","P","H1","H2","H3","LI","UL","OL","BLOCKQUOTE","PRE"]);
+    const appendBreak=()=>{if(units)units.push({char:"\n",node:null,offset:-1});return "\n"};
+    const walk=node=>{
+      if(node.nodeType===Node.TEXT_NODE){
+        const chars=Array.from(node.data||"");
+        if(units)chars.forEach((char,offset)=>units.push({char,node,offset}));
+        return chars.join("")
+      }
+      if(node.nodeType!==Node.ELEMENT_NODE)return "";
+      const el=node;
+      if(el.tagName==="BR"||el.tagName==="HR")return appendBreak();
+      let out="",children=[...el.childNodes];
+      children.forEach((child,index)=>{
+        out+=walk(child);
+        if(child.nodeType===Node.ELEMENT_NODE&&blockTags.has(child.tagName)&&index<children.length-1&&!out.endsWith("\n"))out+=appendBreak()
+      });
+      return out
+    };
+    return walk(root).replace(/\r/g,"")
+  }
+
+  function applyMobileNoteCorrectionTextDiff(originalHtml,originalText,correctedText){
+    const root=document.createElement("div"),units=[];
+    root.innerHTML=sanitizedNoteHtml(originalHtml);
+    const mapped=mobileNoteCorrectionPlainText(root,units);
+    if(mapped!==originalText)throw new Error("교정 전 노트의 텍스트 구조가 달라졌습니다.");
+    const before=Array.from(originalText),after=Array.from(correctedText);
+    if(before.join("")===after.join(""))return root.innerHTML;
+    const backtrack=(trace,dMax)=>{
+      let x=before.length,y=after.length,edits=[];
+      for(let d=dMax;d>=0;d--){
+        const v=trace[d],k=x-y,left=v.get(k-1),right=v.get(k+1);
+        const prevK=k===-d||(k!==d&&(left??-Infinity)<(right??-Infinity))?k+1:k-1;
+        const prevX=v.get(prevK)??0,prevY=prevX-prevK;
+        while(x>prevX&&y>prevY){edits.push({type:"equal",char:before[x-1]});x--;y--}
+        if(d===0)break;
+        if(x===prevX){edits.push({type:"insert",char:after[y-1]});y--}
+        else{edits.push({type:"delete",char:before[x-1]});x--}
+      }
+      return edits.reverse()
+    };
+    const max=before.length+after.length,trace=[];
+    let frontier=new Map([[1,0]]),edits=null;
+    for(let d=0;d<=max&&!edits;d++){
+      trace.push(new Map(frontier));
+      for(let k=-d;k<=d;k+=2){
+        const left=frontier.get(k-1),right=frontier.get(k+1);
+        let x=k===-d||(k!==d&&(left??-Infinity)<(right??-Infinity))?(right??0):(left??0)+1,y=x-k;
+        while(x<before.length&&y<after.length&&before[x]===after[y]){x++;y++}
+        frontier.set(k,x);
+        if(x>=before.length&&y>=after.length){edits=backtrack(trace,d);break}
+      }
+    }
+    if(!edits)throw new Error("교정문 차이를 계산하지 못했습니다.");
+    const deleted=new Map(),inserted=new Map(),textNodes=new Set();
+    units.forEach(unit=>{if(unit.node)textNodes.add(unit.node)});
+    const deleteChar=unit=>{
+      if(!unit?.node)throw new Error("교정 과정에서 문단 구조가 변경되어 서식을 안전하게 유지할 수 없습니다.");
+      if(!deleted.has(unit.node))deleted.set(unit.node,new Set());
+      deleted.get(unit.node).add(unit.offset)
+    };
+    const insertAt=(node,offset,value)=>{
+      if(!node||!value)return;
+      if(!inserted.has(node))inserted.set(node,new Map());
+      const map=inserted.get(node);
+      map.set(offset,(map.get(offset)||"")+value)
+    };
+    let oldPos=0;
+    for(let index=0;index<edits.length;){
+      if(edits[index].type==="equal"){oldPos++;index++;continue}
+      const start=oldPos,removed=[];
+      let addition="";
+      while(index<edits.length&&edits[index].type!=="equal"){
+        const edit=edits[index++];
+        if(edit.type==="delete"){removed.push(units[oldPos]);oldPos++}
+        else if(edit.type==="insert")addition+=edit.char
+      }
+      if(removed.some(unit=>unit?.char==="\n"&&!unit.node)||addition.includes("\n"))throw new Error("교정 과정에서 문단 구조가 변경되어 서식을 안전하게 유지할 수 없습니다.");
+      removed.forEach(deleteChar);
+      if(addition){
+        const anchor=removed.find(unit=>unit?.node);
+        if(anchor)insertAt(anchor.node,anchor.offset,addition);
+        else{
+          const next=units.slice(start).find(unit=>unit?.node);
+          if(next)insertAt(next.node,next.offset,addition);
+          else{
+            const prev=[...units.slice(0,start)].reverse().find(unit=>unit?.node);
+            if(prev)insertAt(prev.node,prev.offset+1,addition);
+            else root.appendChild(document.createTextNode(addition))
+          }
+        }
+      }
+    }
+    textNodes.forEach(node=>{
+      const chars=Array.from(node.data||""),cuts=deleted.get(node)||new Set(),adds=inserted.get(node)||new Map();
+      let out="";
+      for(let offset=0;offset<=chars.length;offset++){
+        if(adds.has(offset))out+=adds.get(offset);
+        if(offset<chars.length&&!cuts.has(offset))out+=chars[offset]
+      }
+      node.data=out
+    });
+    return root.innerHTML
+  }
+
+  function closeMobileNoteCorrection(){
+    document.querySelector("[data-note-correction]")?.remove()
+  }
+
+  async function openMobileNoteCorrection(){
+    if(activeDocumentType!=="note"||!activeDocumentId)return;
+    if(noteEditorMode==="html")await setMobileNoteEditorMode("rich");
+    await flushMobileNoteSave();
+    closeMobileNoteCorrection();
+    const noteId=String(activeDocumentId),originalHtml=noteHtmlForStorage(),source=document.createElement("div");
+    source.innerHTML=originalHtml;
+    const originalPlain=mobileNoteCorrectionPlainText(source).replace(/\n+$/,"");
+    const wrap=element("div","nav-sheet-backdrop note-correction-backdrop"),panel=element("section","nav-sheet note-correction-panel");
+    wrap.dataset.noteCorrection="1";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label","맞춤법 검사 도우미");
+    panel.innerHTML='<div class="note-tool-sheet-head"><h3>맞춤법 검사 도우미</h3><button type="button" class="sheet-close" data-note-correction-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+      '<div class="note-correction-body">'+
+      '<section class="note-correction-step"><span class="note-correction-step-number">1</span><div><strong>현재 노트 원문</strong><p>서식을 제외한 노트 전문을 복사합니다.</p><button type="button" class="note-correction-action" data-note-correction-copy><i data-lucide="copy" aria-hidden="true"></i><span>전체 복사</span></button></div></section>'+
+      '<section class="note-correction-step"><span class="note-correction-step-number">2</span><div><strong>외부에서 교정</strong><p>맞춤법 검사기에서 수정한 뒤 교정된 글 전체를 다시 복사하세요.</p></div></section>'+
+      '<section class="note-correction-step"><span class="note-correction-step-number">3</span><div><div class="note-correction-result-head"><strong>교정 결과</strong><button type="button" class="note-correction-action" data-note-correction-paste><i data-lucide="clipboard-paste" aria-hidden="true"></i><span>전체 붙여넣기</span></button></div><textarea class="note-correction-text" data-note-correction-text placeholder="교정된 글 전체를 붙여넣으세요."></textarea></div></section>'+
+      '<p class="note-correction-help"><i data-lucide="check" aria-hidden="true"></i><span>원문과 교정문을 비교해 기존 서식은 유지하고 달라진 텍스트만 반영합니다.</span></p>'+
+      '<p class="note-correction-status" data-note-correction-status hidden></p>'+
+      '<div class="note-sheet-actions"><button type="button" class="secondary" data-note-correction-close>취소</button><button type="button" class="primary" data-note-correction-apply>변경사항 반영</button></div></div>';
+    document.body.append(wrap);
+    const correction=panel.querySelector("[data-note-correction-text]"),status=panel.querySelector("[data-note-correction-status]");
+    const setCorrectionStatus=(message,error=false)=>{
+      status.textContent=String(message||"");
+      status.hidden=!message;
+      status.classList.toggle("error",!!error)
+    };
+    panel.querySelectorAll("[data-note-correction-close]").forEach(button=>button.onclick=closeMobileNoteCorrection);
+    wrap.onclick=event=>{if(event.target===wrap)closeMobileNoteCorrection()};
+    panel.querySelector("[data-note-correction-copy]").onclick=async()=>{
+      try{
+        if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(originalPlain);
+        else{
+          const area=document.createElement("textarea");
+          area.value=originalPlain;area.style.position="fixed";area.style.opacity="0";document.body.append(area);area.select();
+          if(!document.execCommand("copy"))throw new Error("copy-failed");
+          area.remove()
+        }
+        setCorrectionStatus("노트 원문 전체를 복사했습니다.")
+      }catch(error){
+        console.error("모바일 노트 원문 복사 실패",error);
+        logDiagnostic("warn","CLIPBOARD","노트 원문 전체 복사에 실패했습니다.",error);
+        setCorrectionStatus("전체 복사에 실패했습니다.",true)
+      }
+    };
+    panel.querySelector("[data-note-correction-paste]").onclick=async()=>{
+      try{
+        let value="";
+        if(navigator.clipboard?.readText)value=await navigator.clipboard.readText();
+        else{
+          correction.focus();
+          if(!document.execCommand("paste"))throw new Error("paste-unavailable");
+          value=correction.value
+        }
+        correction.value=String(value||"").replace(/\r/g,"");
+        correction.focus();
+        setCorrectionStatus(value?"클립보드의 교정문 전체를 붙여넣었습니다.":"클립보드가 비어 있습니다.",!value)
+      }catch(error){
+        console.error("모바일 노트 교정문 붙여넣기 실패",error);
+        logDiagnostic("warn","CLIPBOARD","교정문 전체 붙여넣기에 실패했습니다.",error);
+        correction.focus();
+        setCorrectionStatus("자동 붙여넣기를 사용할 수 없습니다. 입력칸을 길게 눌러 직접 붙여넣어 주세요.",true)
+      }
+    };
+    panel.querySelector("[data-note-correction-apply]").onclick=async()=>{
+      if(activeDocumentType!=="note"||String(activeDocumentId)!==noteId){
+        setCorrectionStatus("교정할 노트가 현재 열려 있지 않습니다.",true);
+        return
+      }
+      const currentHtml=noteHtmlForStorage();
+      if(currentHtml!==originalHtml){
+        setCorrectionStatus("도우미를 연 뒤 노트 내용이 변경되었습니다. 닫고 다시 시작해 주세요.",true);
+        return
+      }
+      const corrected=String(correction.value||"").replace(/\r/g,"").replace(/\n+$/,"");
+      if(!corrected.trim()){
+        correction.focus();
+        setCorrectionStatus("교정된 글 전체를 붙여넣어 주세요.",true);
+        return
+      }
+      if(corrected===originalPlain){
+        setCorrectionStatus("변경된 내용이 없습니다.");
+        return
+      }
+      try{
+        const nextHtml=sanitizedNoteHtml(applyMobileNoteCorrectionTextDiff(originalHtml,originalPlain,corrected));
+        noteReaderContent.innerHTML=nextHtml;
+        noteSavedRange=null;
+        scheduleMobileNoteSave();
+        await flushMobileNoteSave();
+        const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===noteId);
+        if(note)hydrateNoteImages(note).catch(error=>logDiagnostic("warn","ASSET","노트 이미지를 표시하지 못했습니다.",error));
+        updateMobileNoteCharacterCount();
+        closeMobileNoteCorrection()
+      }catch(error){
+        console.error("모바일 노트 교정문 반영 실패",error);
+        logDiagnostic("error","NOTE","교정문 변경사항을 노트에 반영하지 못했습니다.",error);
+        setCorrectionStatus("문단 구조가 바뀌어 기존 서식을 안전하게 유지할 수 없습니다.",true)
+      }
+    };
+    if(!originalPlain.trim())setCorrectionStatus("교정할 노트 내용이 없습니다.",true);
+    refreshLucideIcons()
+  }
+
   function applyMobileNoteDefaultStyle(note){
     if(!noteReaderContent)return;
     const style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
@@ -1463,9 +1679,51 @@
     if(url)execMobileNoteCommand("createLink",url)
   }
 
-  function insertMobileNoteDivider(){
-    restoreMobileNoteSelection();
-    execMobileNoteCommand("insertHorizontalRule")
+  function insertMobileNoteDivider(style="solid"){
+    const editor=noteReaderContent,range=restoreMobileNoteSelection();
+    if(!range)return;
+    const divider=["solid","dotted","dashed","double"].includes(style)?style:"solid",selection=window.getSelection();
+    range.deleteContents();
+    let node=range.startContainer;
+    node=node.nodeType===Node.ELEMENT_NODE?node:node.parentElement;
+    let block=node?.closest?.("p,div,h1,h2,h3,blockquote,li");
+    if(block===editor&&range.startContainer?.nodeType===Node.TEXT_NODE&&range.startContainer.parentNode===editor){
+      const paragraph=document.createElement("p");
+      editor.insertBefore(paragraph,range.startContainer);
+      paragraph.appendChild(range.startContainer);
+      block=paragraph
+    }
+    const hr=document.createElement("hr");
+    hr.dataset.divider=divider;
+    let next=document.createElement("p");
+    next.appendChild(document.createElement("br"));
+    if(block&&block!==editor&&editor.contains(block)){
+      if(block.tagName==="LI"){
+        const list=block.closest("ul,ol");
+        (list||block).after(hr,next)
+      }else{
+        const tail=document.createRange();
+        tail.setStart(range.startContainer,range.startOffset);
+        tail.setEnd(block,block.childNodes.length);
+        const fragment=tail.extractContents(),after=block.cloneNode(false);
+        if(fragment.childNodes.length)after.append(fragment);else after.appendChild(document.createElement("br"));
+        if(!block.childNodes.length)block.appendChild(document.createElement("br"));
+        block.after(hr,after);
+        next=after
+      }
+    }else{
+      range.insertNode(hr);
+      hr.after(next)
+    }
+    const caret=document.createRange();
+    caret.selectNodeContents(next);
+    caret.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caret);
+    noteSavedRange=caret.cloneRange();
+    scheduleMobileNoteSave();
+    updateMobileNoteFormatState();
+    updateMobileNoteCharacterCount()
   }
 
   function insertMobileNoteFold(){
@@ -1537,7 +1795,10 @@
       '<button type="button" class="note-format-action" data-note-insert="link"><i data-lucide="link"></i><span>링크</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="image" disabled aria-disabled="true" title="모바일 이미지 저장 연결 후 지원"><i data-lucide="image-plus"></i><span>이미지</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="fold"><i data-lucide="fold-vertical"></i><span>접기</span></button>'+
-      '<button type="button" class="note-format-action" data-note-insert="divider"><i data-lucide="minus"></i><span>구분선</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="solid"><span class="note-divider-preview"></span><span>실선</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="dotted"><span class="note-divider-preview dotted"></span><span>점선</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="dashed"><span class="note-divider-preview dashed"></span><span>파선</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="double"><span class="note-divider-preview double"></span><span>이중선</span></button>'+
       '</div><p class="note-format-panel-note">이미지는 모바일 Asset 저장 경로를 연결한 뒤 활성화됩니다.</p>'
   }
 
@@ -1581,6 +1842,7 @@
     closeMobileNoteFormatPanel();
     closeMobileNoteMenu();
     closeMobileNoteToolSheet();
+    closeMobileNoteCorrection();
     noteSavedRange=null;
     noteEditorMode="rich";
     noteHtmlDirty=false;
@@ -2234,7 +2496,7 @@
     if(!insertButton||insertButton.disabled)return;
     if(insertButton.dataset.noteInsert==="link")insertMobileNoteLink();
     else if(insertButton.dataset.noteInsert==="fold")insertMobileNoteFold();
-    else if(insertButton.dataset.noteInsert==="divider")insertMobileNoteDivider()
+    else if(insertButton.dataset.noteInsert==="divider")insertMobileNoteDivider(insertButton.dataset.noteDivider||"solid")
   });
   noteFormatPanel.addEventListener("change",event=>{
     const font=event.target.closest("[data-note-font]");
@@ -2266,7 +2528,8 @@
     const action=button.dataset.noteMenuAction;
     closeMobileNoteMenu();
     if(action==="html")await setMobileNoteEditorMode(noteEditorMode==="html"?"rich":"html");
-    else if(action==="style")openMobileNoteToolSheet()
+    else if(action==="style")openMobileNoteToolSheet();
+    else if(action==="correction")await openMobileNoteCorrection()
   });
   document.addEventListener("pointerdown",event=>{
     if(noteMoreMenu.hidden)return;

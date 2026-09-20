@@ -98,6 +98,7 @@
   let deferredInstallPrompt=null;
   let lastAppScrollY=0;
   let topbarScrollFrame=0;
+  let noteViewportFrame=0;
   let noteSavedRange=null;
   let noteFormatPanelKey="";
   let noteSaveTimer=0;
@@ -538,6 +539,22 @@
       logDiagnostic("warn","PWA","설치형 웹앱 초기화에 실패했습니다.",error)
     }
   }
+  function syncNoteViewport(){
+    noteViewportFrame=0;
+    const viewport=window.visualViewport,noteOpen=document.body.classList.contains("note-open");
+    let inset=0;
+    if(noteOpen&&viewport){
+      const covered=Math.max(0,Math.round(window.innerHeight-(viewport.height+viewport.offsetTop)));
+      if(covered>=120)inset=covered
+    }
+    document.documentElement.style.setProperty("--note-keyboard-inset",`${inset}px`);
+    document.body.classList.toggle("note-keyboard-open",noteOpen&&inset>0)
+  }
+  function scheduleNoteViewportSync(){
+    if(noteViewportFrame)return;
+    noteViewportFrame=requestAnimationFrame(syncNoteViewport)
+  }
+
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
     hideAllScreens();
     screen.hidden=false;
@@ -550,6 +567,7 @@
     activateNav(nav);
     scrollAppToTop();
     resetTopbarVisibility();
+    scheduleNoteViewportSync();
     refreshLucideIcons()
   }
   function renderAccountButton(){
@@ -1820,6 +1838,17 @@
     else renderHome()
   }
 
+  function installNoteViewportTracking(){
+    window.addEventListener("resize",scheduleNoteViewportSync,{passive:true});
+    if(window.visualViewport){
+      window.visualViewport.addEventListener("resize",scheduleNoteViewportSync,{passive:true});
+      window.visualViewport.addEventListener("scroll",scheduleNoteViewportSync,{passive:true})
+    }
+    noteReaderContent.addEventListener("focusin",scheduleNoteViewportSync);
+    noteReaderContent.addEventListener("focusout",()=>setTimeout(scheduleNoteViewportSync,0));
+    scheduleNoteViewportSync()
+  }
+
   async function start(){
     try{
       await repository.load();
@@ -1828,6 +1857,7 @@
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
+      installNoteViewportTracking();
       if(match)openDocument(match[1],decodeURIComponent(match[2]));
       refreshLucideIcons();
       registerMobileServiceWorker();

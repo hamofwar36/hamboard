@@ -493,6 +493,15 @@ body.note-open .mobile-main{padding-bottom:calc(138px + env(safe-area-inset-bott
   position:fixed;z-index:58;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom));
   padding:0 10px;pointer-events:none
 }
+body.note-keyboard-open .note-editor-controls{
+  bottom:calc(var(--note-keyboard-inset,0px) + 58px + env(safe-area-inset-bottom))
+}
+body.note-keyboard-open .mobile-main{
+  padding-bottom:calc(138px + var(--note-keyboard-inset,0px) + env(safe-area-inset-bottom))
+}
+body.note-keyboard-open .mobile-app{
+  scroll-padding-bottom:calc(72px + var(--note-keyboard-inset,0px))
+}
 .note-mobile-toolbar,.note-format-panel{
   width:min(100%,680px);margin-left:auto;margin-right:auto;
   border:1px solid var(--ui-chrome-border);background:var(--ui-chrome-bg);
@@ -785,6 +794,7 @@ body.note-open .mobile-main{padding-bottom:calc(138px + env(safe-area-inset-bott
   box-shadow:var(--ui-nav-shadow);backdrop-filter:blur(18px);
   color:var(--ui-fg);--ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
 }
+body.note-keyboard-open .mobile-bottom-nav{bottom:var(--note-keyboard-inset,0px)}
 .bottom-nav-button{
   position:relative;width:100%;min-height:50px;display:grid;grid-template-rows:27px 11px;place-items:center;align-content:center;row-gap:3px;
   padding:3px;border:0;border-radius:10px;background:transparent;color:var(--ui-muted)

@@ -132,6 +132,16 @@ check("backup and sync share snapshot plus asset restore",()=>{
   assert.match(app,/downloadCurrentSyncAssets\(listing,stateValue,onProgress\)/);
   assert.match(transport,/async function putSyncCheckpoint/);
 });
+check("note editor toolbar follows the on-screen keyboard",()=>{
+  assert.match(html,/interactive-widget=resizes-content/);
+  assert.match(app,/window\.visualViewport/);
+  assert.match(app,/--note-keyboard-inset/);
+  assert.match(app,/note-keyboard-open/);
+  assert.match(app,/visualViewport\.addEventListener\("resize"/);
+  assert.match(css,/body\.note-keyboard-open \.note-editor-controls/);
+  assert.match(css,/body\.note-keyboard-open \.mobile-bottom-nav/);
+  assert.match(css,/scroll-padding-bottom/);
+});
 check("cloud sync progress is single-run and monotonic",()=>{
   assert.match(app,/let cloudSyncImportPromise=null/);
   assert.match(app,/let cloudSyncProgressRun=0/);

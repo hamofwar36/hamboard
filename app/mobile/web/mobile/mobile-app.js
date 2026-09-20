@@ -4,10 +4,12 @@
   const syncModel=window.HamboardSyncStateModel;
   const repositoryCore=window.HamboardProjectRepository;
   const googleDrive=window.HamboardMobileGoogleDrive;
-  if(!syncModel||!repositoryCore)throw new Error("hamboard-mobile-dependencies-unavailable");
+  const assetRepositoryCore=window.HamboardMobileAssetRepository;
+  if(!syncModel||!repositoryCore||!assetRepositoryCore)throw new Error("hamboard-mobile-dependencies-unavailable");
 
   const storage=repositoryCore.createIndexedDbStateStorage({databaseName:"hamboard-mobile",storeName:"state",stateKey:"mobile-core"});
   const repository=repositoryCore.createProjectRepository({storage,syncModel,clientProfile:"mobile-core"});
+  const assetRepository=assetRepositoryCore.createIndexedDbAssetRepository({databaseName:"hamboard-mobile-assets",storeName:"assets"});
   const $=selector=>document.querySelector(selector);
 
   const mobileScroll=$("#mobileApp");
@@ -120,6 +122,19 @@
     "butter-lilac":{name:"블루베리버터",a:"#F2DB8F",b:"#C6B2E8"}
   });
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const mapWithConcurrency=async(items,limit,worker)=>{
+    const values=Array.from(items||[]),results=new Array(values.length);
+    let cursor=0;
+    const runners=Array.from({length:Math.min(Math.max(1,Number(limit)||1),values.length)},async()=>{
+      while(true){
+        const index=cursor++;
+        if(index>=values.length)return;
+        results[index]=await worker(values[index],index)
+      }
+    });
+    await Promise.all(runners);
+    return results
+  };
   const element=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=String(text);return node};
   const safeColor=(value,fallback=CARD_COLORS[0])=>/^#[0-9a-f]{6}$/i.test(String(value||""))?String(value):fallback;
   const cssColorToken=name=>String(getComputedStyle(document.body||document.documentElement).getPropertyValue(name)||"").trim();
@@ -606,6 +621,172 @@
     }
   }
 
+  function collectNoteHtmlAssetIds(html,set=new Set()){
+    const root=document.createElement("div");
+    root.innerHTML=String(html||"");
+    root.querySelectorAll("img[data-note-image]").forEach(image=>{const id=String(image.dataset.noteImage||"");if(id)set.add(id)});
+    return set
+  }
+
+  function collectDocumentAssetIds(type,documentValue,set=new Set()){
+    if(!documentValue)return set;
+    const add=value=>{const id=String(value||"");if(id)set.add(id)};
+    add(documentValue.cardImageAssetId);
+    if(type==="project"||type==="note"){
+      for(const resource of documentValue.resources||[]){
+        const mime=String(resource?.type||"");
+        if(resource?.inline===true||!mime||mime.startsWith("image/"))add(resource?.id)
+      }
+      for(const character of documentValue.characters||[]){
+        add(character?.avatarAssetId);
+        for(const id of character?.imageAssetIds||[])add(id)
+      }
+    }
+    if(type==="note")collectNoteHtmlAssetIds(documentValue.content,set);
+    if(type==="mindmap")for(const node of documentValue.nodes||[])if(node?.type==="image"&&node.assetId)add(node.assetId);
+    return set
+  }
+
+  function currentMobileAssetIds(stateValue=snapshot()){
+    const ids=new Set();
+    for(const project of stateValue.projects||[])collectDocumentAssetIds("project",project,ids);
+    for(const note of stateValue.notes||[])collectDocumentAssetIds("note",note,ids);
+    for(const mindmap of stateValue.mindmaps||[])collectDocumentAssetIds("mindmap",mindmap,ids);
+    for(const character of stateValue.characterRepository||[]){
+      if(character?.avatarAssetId)ids.add(String(character.avatarAssetId));
+      for(const id of character?.imageAssetIds||[])if(id)ids.add(String(id))
+    }
+    for(const memo of stateValue.quickMemos||[])for(const id of memo?.imageAssetIds||[])if(id)ids.add(String(id));
+    return ids
+  }
+
+  async function hydrateAssetImage(image,assetId){
+    const id=String(assetId||"");
+    if(!image||!id)return false;
+    try{
+      const record=await assetRepository.get(id);
+      if(!record?.blob)return false;
+      const url=URL.createObjectURL(record.blob);
+      const release=()=>URL.revokeObjectURL(url);
+      image.addEventListener("load",release,{once:true});
+      image.addEventListener("error",release,{once:true});
+      image.src=url;
+      return true
+    }catch(error){
+      logDiagnostic("warn","ASSET","로컬 이미지 캐시를 읽지 못했습니다.",error);
+      return false
+    }
+  }
+
+  async function hydrateLibraryCardImage(button,assetId){
+    const image=button?.querySelector(".project-card-background");
+    if(!image)return;
+    const loaded=await hydrateAssetImage(image,assetId);
+    if(!button.isConnected)return;
+    image.hidden=!loaded;
+    button.classList.toggle("has-card-image",loaded)
+  }
+
+  async function hydrateNoteImages(note){
+    if(String(noteReaderContent.dataset.noteId||"")!==String(note?.id||""))return;
+    const names=new Map((note?.resources||[]).map(resource=>[String(resource?.id||""),String(resource?.name||"")]));
+    await mapWithConcurrency([...noteReaderContent.querySelectorAll("img[data-note-image]")],4,async image=>{
+      const id=String(image.dataset.noteImage||"");
+      if(!id)return;
+      image.loading="lazy";
+      if(!image.alt)image.alt=names.get(id)||"노트 이미지";
+      const loaded=await hydrateAssetImage(image,id);
+      image.classList.toggle("asset-missing",!loaded)
+    })
+  }
+
+  function noteHtmlForStorage(){
+    const cloneRoot=noteReaderContent.cloneNode(true);
+    cloneRoot.querySelectorAll("img[data-note-image]").forEach(image=>{
+      image.removeAttribute("src");
+      image.removeAttribute("loading");
+      image.classList.remove("asset-missing")
+    });
+    return sanitizedNoteHtml(cloneRoot.innerHTML)
+  }
+
+  function syncAssetCandidates(objects,assetId){
+    return (objects||[]).filter(item=>item?.syncType==="asset"&&String(item.assetId||"")===String(assetId||"")&&String(item.objectKey||"").startsWith("sync/assets/")).sort((a,b)=>Number(b.createdAtMs||0)-Number(a.createdAtMs||0))
+  }
+
+  function validateSyncAssetObject(raw){
+    const objectKey=String(raw?.objectKey||""),contentSha256=String(raw?.contentSha256||"").toLowerCase(),byteSize=Math.max(0,Number(raw?.byteSize)||0),mimeType=String(raw?.mimeType||"application/octet-stream");
+    if(!/^sync\/(?:blobs|thumbs)\/[0-9a-f]{64}$/.test(objectKey)||!/^[0-9a-f]{64}$/.test(contentSha256)||byteSize<1)throw new Error("sync-asset-object-invalid");
+    return {objectKey,contentSha256,byteSize,mimeType}
+  }
+
+  async function readSyncAssetDescriptor(object){
+    const result=await googleDrive.getSyncObject({remoteObjectId:String(object.remoteObjectId||""),objectKey:String(object.objectKey||""),contentSha256:String(object.contentSha256||""),byteSize:Number(object.byteSize)||0});
+    let descriptor;
+    try{descriptor=JSON.parse(String(result.content||""))}catch{throw new Error("sync-asset-descriptor-json-invalid")}
+    if(descriptor?.format!=="hamboard-sync-asset"||descriptor?.formatVersion!==1||String(descriptor.assetId||"")!==String(object.assetId||"")||!descriptor.sourceSha256||!/^[0-9a-f]{64}$/.test(String(descriptor.sourceSha256))||!descriptor.main)throw new Error("sync-asset-descriptor-invalid");
+    return {...descriptor,main:validateSyncAssetObject(descriptor.main)}
+  }
+
+  async function fetchSyncAsset(assetId,objects){
+    let lastError=null;
+    for(const candidate of syncAssetCandidates(objects,assetId)){
+      try{
+        const descriptor=await readSyncAssetDescriptor(candidate);
+        const downloaded=await googleDrive.getObjectByKey(descriptor.main);
+        return {id:String(assetId),ownerId:String(descriptor.ownerId||""),blob:downloaded.blob,mimeType:downloaded.mimeType,byteSize:downloaded.byteSize,sourceSha256:String(descriptor.sourceSha256||""),contentSha256:downloaded.contentSha256,quality:String(descriptor.quality||candidate.quality||"")}
+      }catch(error){lastError=error}
+    }
+    throw lastError||new Error("sync-asset-descriptor-not-found")
+  }
+
+  async function downloadCurrentSyncAssets(listing,stateValue,onProgress=()=>{}){
+    const wanted=[...currentMobileAssetIds(stateValue)],missing=await assetRepository.missing(wanted),unresolved=[];
+    let completed=0;
+    if(!missing.length){onProgress({completed:0,total:0});return {wanted:wanted.length,downloaded:0,cached:wanted.length,unresolved}}
+    await mapWithConcurrency(missing,3,async assetId=>{
+      try{await assetRepository.put(await fetchSyncAsset(assetId,listing.objects||[]))}
+      catch(error){unresolved.push(assetId);logDiagnostic("warn","ASSET","동기화 이미지 일부를 불러오지 못했습니다.",error)}
+      finally{completed++;onProgress({completed,total:missing.length})}
+    });
+    return {wanted:wanted.length,downloaded:missing.length-unresolved.length,cached:wanted.length-missing.length,unresolved}
+  }
+
+  async function downloadCurrentBackupAssets(manifest,stateValue,onProgress=()=>{}){
+    const wanted=[...currentMobileAssetIds(stateValue)],missing=await assetRepository.missing(wanted),assetById=new Map((manifest?.assets||[]).map(asset=>[String(asset?.id||""),asset]).filter(([id])=>id)),objectByKey=new Map((manifest?.objects||[]).map(object=>[String(object?.contentKey||""),object]).filter(([key])=>key)),unresolved=[];
+    const groups=new Map();
+    for(const assetId of missing){
+      const asset=assetById.get(assetId),object=asset?objectByKey.get(String(asset.contentKey||"")):null;
+      if(!asset||!object){unresolved.push(assetId);continue}
+      const key=String(asset.contentKey);
+      if(!groups.has(key))groups.set(key,{object,assets:[]});
+      groups.get(key).assets.push(asset)
+    }
+    let completed=unresolved.length;
+    onProgress({completed,total:missing.length});
+    await mapWithConcurrency([...groups.values()],3,async group=>{
+      try{
+        const object=group.object,downloaded=await googleDrive.getObjectByKey({
+          objectKey:String(object.objectKey||""),
+          contentSha256:String(object.contentSha256||""),
+          byteSize:Number(object.uploadByteSize)||0,
+          mimeType:String(object.uploadMimeType||object.sourceMimeType||"application/octet-stream")
+        });
+        await assetRepository.putMany(group.assets.map(asset=>({
+          id:String(asset.id),ownerId:String(asset.ownerId||""),blob:downloaded.blob,mimeType:downloaded.mimeType,byteSize:downloaded.byteSize,
+          sourceSha256:String(asset.contentKey||""),contentSha256:downloaded.contentSha256,quality:String(manifest?.imagePolicy?.quality||"")
+        })))
+      }catch(error){
+        for(const asset of group.assets)unresolved.push(String(asset.id));
+        logDiagnostic("warn","ASSET","백업 이미지 일부를 불러오지 못했습니다.",error)
+      }finally{
+        completed+=group.assets.length;
+        onProgress({completed:Math.min(completed,missing.length),total:missing.length})
+      }
+    });
+    return {wanted:wanted.length,downloaded:missing.length-unresolved.length,cached:wanted.length-missing.length,unresolved}
+  }
+
   function renderLibrary(){
     const state=snapshot(),query=librarySearch.value.trim().toLocaleLowerCase("ko"),allDocuments=libraryDocuments(state);
     const documents=query?allDocuments.filter(({type,item})=>{
@@ -637,6 +818,9 @@
         button.style.setProperty("--custom-muted",cardInk)
       }
 
+      const background=element("img","project-card-background");
+      background.alt="";
+      background.hidden=true;
       const veil=element("span","card-dark-veil");
       veil.setAttribute("aria-hidden","true");
       const folder=element("div","project-folder");
@@ -651,7 +835,8 @@
       const heading=element("div","project-title",item.title||(
         type==="project"?"제목 없는 작품":type==="note"?"제목 없는 노트":"제목 없는 마인드맵"
       ));
-      button.append(veil,folder,heading);
+      button.append(background,veil,folder,heading);
+      if(item.cardImageAssetId)hydrateLibraryCardImage(button,item.cardImageAssetId);
       if(descriptor.subtitle)button.append(element("div","work-card-subtitle",descriptor.subtitle));
       if(descriptor.meta)button.append(element("div","project-meta",descriptor.meta));
       button.onclick=()=>openDocument(type,item.id);
@@ -930,7 +1115,7 @@
 
   function scheduleMobileNoteSave(){
     if(activeDocumentType!=="note"||!activeDocumentId)return;
-    pendingNoteSave={noteId:String(activeDocumentId),content:sanitizedNoteHtml(noteReaderContent.innerHTML)};
+    pendingNoteSave={noteId:String(activeDocumentId),content:noteHtmlForStorage()};
     if(noteSaveTimer)clearTimeout(noteSaveTimer);
     noteSaveTimer=setTimeout(()=>{noteSaveTimer=0;flushMobileNoteSave()},220)
   }
@@ -1129,7 +1314,8 @@
     closeMobileNoteFormatPanel();
     noteSavedRange=null;
     noteReaderContent.dataset.noteId=String(note.id||"");
-    noteReaderContent.innerHTML=sanitizedNoteHtml(note.content||"")
+    noteReaderContent.innerHTML=sanitizedNoteHtml(note.content||"");
+    hydrateNoteImages(note).catch(error=>logDiagnostic("warn","ASSET","노트 이미지를 표시하지 못했습니다.",error))
   }
 
   function renderMindmap(mindmap){
@@ -1174,10 +1360,26 @@
         const nodeColor=safeColor(node.nodeColor||node.color,"");
         if(nodeColor)box.style.setProperty("--node-color",nodeColor)
       }
-      const kind=element("span","mindmap-node-kind",String(node.type||"노드"));
-      const label=element("strong","",node.title||node.text||node.assetName||"노드");
-      box.append(kind,label);
-      if(node.title&&node.text)box.append(element("p","",node.text));
+      if(node.type==="image"&&node.assetId){
+        box.classList.add("image-node");
+        box.style.height=`${pos.h}px`;
+        const image=element("img","mindmap-readonly-image");
+        image.alt=String(node.title||node.assetName||"마인드맵 이미지");
+        image.hidden=true;
+        const placeholder=element("span","mindmap-image-placeholder","이미지 불러오는 중");
+        box.append(image,placeholder);
+        hydrateAssetImage(image,node.assetId).then(loaded=>{
+          if(!box.isConnected)return;
+          image.hidden=!loaded;
+          placeholder.textContent=loaded?"":String(node.assetName||node.title||"이미지를 불러오지 못했습니다.");
+          placeholder.hidden=loaded
+        }).catch(error=>logDiagnostic("warn","ASSET","마인드맵 이미지를 표시하지 못했습니다.",error))
+      }else{
+        const kind=element("span","mindmap-node-kind",String(node.type||"노드"));
+        const label=element("strong","",node.title||node.text||node.assetName||"노드");
+        box.append(kind,label);
+        if(node.title&&node.text)box.append(element("p","",node.text))
+      }
       nodesHost.append(box)
     }
     for(const edge of mindmap.edges||[]){
@@ -1320,19 +1522,27 @@
 
     if(navigator.onLine!==false)setIndicator("connected","동기화 중");
     cloudSourceStatus.hidden=false;
+    let downloadedCommits=0;
+    const commits=await mapWithConcurrency(topology.path,6,async object=>{
+      const commit=await readCloudCommit(object);
+      downloadedCommits++;
+      cloudSourceStatus.textContent=`동기화 데이터를 불러오는 중입니다. ${Math.round(downloadedCommits/Math.max(1,topology.path.length)*70)}%`;
+      return commit
+    });
     let projected=syncModel.projectCanonicalState({},syncModel.CLIENT_PROFILES.mobileCore);
-    for(let index=0;index<topology.path.length;index++){
-      const percent=Math.round(((index+1)/topology.path.length)*100);
-      cloudSourceStatus.textContent=`동기화 데이터를 불러오는 중입니다. ${percent}%`;
-      const commit=await readCloudCommit(topology.path[index]),result=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore);
-      projected=result.state
-    }
+    for(const commit of commits)projected=syncModel.applyCommitToClientState(projected,commit,syncModel.CLIENT_PROFILES.mobileCore).state;
     await repository.replaceState(projected,{markBaseline:true});
+    cloudSourceStatus.textContent="현재 문서의 이미지를 확인하고 있습니다.";
+    const assetResult=await downloadCurrentSyncAssets(listing,snapshot(),progress=>{
+      const ratio=progress.total?progress.completed/progress.total:1;
+      cloudSourceStatus.textContent=`현재 문서의 이미지를 불러오는 중입니다. ${Math.round(70+ratio*30)}%`
+    });
+    if(assetResult.unresolved.length)logDiagnostic("warn","ASSET",`동기화 이미지 ${assetResult.unresolved.length}개를 아직 불러오지 못했습니다.`);
     applyMobileTheme();
     cloudSyncListing=listing;
     renderAccountButton();
     openLibrary();
-    return {empty:false,revision:String(topology.head.revision),state:snapshot()}
+    return {empty:false,revision:String(topology.head.revision),assets:assetResult,state:snapshot()}
   }
 
   function setCloudSourceBusy(busy){
@@ -1434,7 +1644,17 @@
     cloudSourceStatus.textContent="선택한 백업을 불러오는 중입니다.";
     try{
       const manifest=await googleDrive.getBackupManifest(entry);
-      await importCanonicalState(manifest);
+      const canonical=manifest?.state;
+      if(!canonical||typeof canonical!=="object"||Array.isArray(canonical))throw new Error("mobile-state-invalid");
+      const projection=syncModel.projectCanonicalState(canonical,syncModel.CLIENT_PROFILES.mobileCore);
+      await repository.replaceState(projection,{markBaseline:true});
+      cloudSourceStatus.textContent="현재 문서의 이미지를 확인하고 있습니다.";
+      const assetResult=await downloadCurrentBackupAssets(manifest,snapshot(),progress=>{
+        const percent=progress.total?Math.round(progress.completed/progress.total*100):100;
+        cloudSourceStatus.textContent=`현재 문서의 이미지를 불러오는 중입니다. ${percent}%`
+      });
+      if(assetResult.unresolved.length)logDiagnostic("warn","ASSET",`백업 이미지 ${assetResult.unresolved.length}개를 아직 불러오지 못했습니다.`);
+      applyMobileTheme();
       renderAccountButton();
       openLibrary()
     }catch(error){
@@ -1739,7 +1959,7 @@
   };
 
   window.HamboardMobileApp=Object.freeze({
-    start,repository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSettings,openCloudSources,refreshCloudSources,snapshot
+    start,repository,assetRepository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSettings,openCloudSources,refreshCloudSources,snapshot
   });
   start();
 })();

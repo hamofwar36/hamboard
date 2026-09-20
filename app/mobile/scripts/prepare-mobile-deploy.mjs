@@ -30,6 +30,7 @@ for(const asset of [
   "./vendor/lucide/lucide.min.js",
   "./mobile-config.js",
   "./mobile-google-drive.js",
+  "./mobile-asset-repository.js",
   "./mobile-app.js"
 ]){
   html=html.replaceAll(asset,`${asset}${versionTag}`);
@@ -40,6 +41,7 @@ await Promise.all([
   cp(resolve(mobileRoot,"mobile.css"),resolve(outputRoot,"mobile.css")),
   cp(resolve(mobileRoot,"mobile-app.js"),resolve(outputRoot,"mobile-app.js")),
   cp(resolve(mobileRoot,"mobile-google-drive.js"),resolve(outputRoot,"mobile-google-drive.js")),
+  cp(resolve(mobileRoot,"mobile-asset-repository.js"),resolve(outputRoot,"mobile-asset-repository.js")),
   cp(resolve(mobileRoot,"manifest.webmanifest"),resolve(outputRoot,"manifest.webmanifest")),
   cp(resolve(mobileRoot,"service-worker.js"),resolve(outputRoot,"service-worker.js")),
   cp(resolve(mobileRoot,"icons"),resolve(outputRoot,"icons"),{recursive:true}),

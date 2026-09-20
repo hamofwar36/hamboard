@@ -14,12 +14,13 @@ const core=[
   `./vendor/lucide/lucide.min.js${versionTag}`,
   `./mobile-config.js${versionTag}`,
   `./mobile-google-drive.js${versionTag}`,
+  `./mobile-asset-repository.js${versionTag}`,
   `./mobile-app.js${versionTag}`
 ];
 const cacheablePaths=new Set([
   "/manifest.webmanifest","/favicon.ico","/icons/hamboard-192.svg","/icons/hamboard-512.svg",
   "/mobile.css","/shared/sync-state-model.js","/shared/project-repository.js",
-  "/vendor/lucide/lucide.min.js","/mobile-config.js","/mobile-google-drive.js","/mobile-app.js"
+  "/vendor/lucide/lucide.min.js","/mobile-config.js","/mobile-google-drive.js","/mobile-asset-repository.js","/mobile-app.js"
 ]);
 
 self.addEventListener("install",event=>{

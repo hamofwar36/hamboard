@@ -8,13 +8,13 @@ const root=resolve(fileURLToPath(new URL("../",import.meta.url)));
 const mobilePackage=JSON.parse(await readFile(resolve(root,"package.json"),"utf8")),mobileVersion=String(mobilePackage.version||"");
 const build=spawnSync(process.execPath,[resolve(root,"scripts/prepare-mobile-deploy.mjs")],{cwd:root,env:{...process.env,HAMBOARD_AUTH_BASE_URL:"https://auth.hamboard.test/"},encoding:"utf8"});
 assert.equal(build.status,0,build.stderr||build.stdout);
-const output=resolve(root,"dist-mobile"),files=(await readdir(output)).sort(),html=await readFile(resolve(output,"index.html"),"utf8"),css=await readFile(resolve(output,"mobile.css"),"utf8"),app=await readFile(resolve(output,"mobile-app.js"),"utf8"),transport=await readFile(resolve(output,"mobile-google-drive.js"),"utf8"),config=await readFile(resolve(output,"mobile-config.js"),"utf8"),manifest=JSON.parse(await readFile(resolve(output,"manifest.webmanifest"),"utf8")),serviceWorker=await readFile(resolve(output,"service-worker.js"),"utf8"),lucide=await readFile(resolve(output,"vendor/lucide/lucide.min.js"),"utf8"),vercel=JSON.parse(await readFile(resolve(root,"vercel.json"),"utf8")),authWorker=await readFile(resolve(root,"cloudflare-auth/worker.js"),"utf8"),authSchema=await readFile(resolve(root,"cloudflare-auth/schema.sql"),"utf8");
+const output=resolve(root,"dist-mobile"),files=(await readdir(output)).sort(),html=await readFile(resolve(output,"index.html"),"utf8"),css=await readFile(resolve(output,"mobile.css"),"utf8"),app=await readFile(resolve(output,"mobile-app.js"),"utf8"),assetRepository=await readFile(resolve(output,"mobile-asset-repository.js"),"utf8"),transport=await readFile(resolve(output,"mobile-google-drive.js"),"utf8"),config=await readFile(resolve(output,"mobile-config.js"),"utf8"),manifest=JSON.parse(await readFile(resolve(output,"manifest.webmanifest"),"utf8")),serviceWorker=await readFile(resolve(output,"service-worker.js"),"utf8"),lucide=await readFile(resolve(output,"vendor/lucide/lucide.min.js"),"utf8"),vercel=JSON.parse(await readFile(resolve(root,"vercel.json"),"utf8")),authWorker=await readFile(resolve(root,"cloudflare-auth/worker.js"),"utf8"),authSchema=await readFile(resolve(root,"cloudflare-auth/schema.sql"),"utf8");
 const checks=[],check=(name,run)=>{run();checks.push(name)};
-check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["favicon.ico","icons","index.html","manifest.webmanifest","mobile-app.js","mobile-config.js","mobile-google-drive.js","mobile.css","service-worker.js","shared","vendor"]));
+check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["favicon.ico","icons","index.html","manifest.webmanifest","mobile-app.js","mobile-asset-repository.js","mobile-config.js","mobile-google-drive.js","mobile.css","service-worker.js","shared","vendor"]));
 check("mobile index uses deployment-local shared modules",()=>{assert.match(html,/src="\.\/shared\/sync-state-model\.js"/);assert.doesNotMatch(html,/\.\.\/shared/)});
 check("runtime config loads before Google Drive transport",()=>assert.ok(html.indexOf("mobile-config.js")<html.indexOf("mobile-google-drive.js")));
 check("versioned mobile assets prevent stale mixed deployments",()=>{
-  for(const asset of ["mobile.css","sync-state-model.js","project-repository.js","lucide.min.js","mobile-config.js","mobile-google-drive.js","mobile-app.js"]){
+  for(const asset of ["mobile.css","sync-state-model.js","project-repository.js","lucide.min.js","mobile-config.js","mobile-google-drive.js","mobile-asset-repository.js","mobile-app.js"]){
     assert.ok(html.includes(asset+"?v="+mobileVersion),asset+" should include the current mobile version")
   }
 });
@@ -101,7 +101,18 @@ check("PWA install icons reuse the existing Hamboard desktop artwork",async()=>{
 check("home account flow separates sync data and manual backups",()=>{assert.match(html,/id="cloudSourceScreen"/);assert.match(html,/동기화 데이터/);assert.match(html,/수동 백업/);assert.match(transport,/listBackups/);assert.match(transport,/getBackupManifest/)});
 check("visible mobile shell avoids leftover English micro labels",()=>{assert.doesNotMatch(html,/HAMBOARD|GOOGLE DRIVE|>NEW<|>SEARCH</)});
 check("auth server URL is injected without OAuth secrets",()=>{assert.match(config,/authBaseUrl:"https:\/\/auth\.hamboard\.test"/);assert.doesNotMatch(config,/clientSecret|refreshToken|GOOGLE_OAUTH_CLIENT_SECRET/i)});
-check("mobile version is injected into runtime config",()=>assert.match(config,/version:"0\.3\.30"/));
+check("mobile version is injected into runtime config",()=>assert.ok(config.includes(`version:${JSON.stringify(mobileVersion)}`)));
+check("mobile cloud imports cache current image assets and render them",()=>{
+  assert.match(assetRepository,/hamboard-mobile-assets/);
+  assert.match(assetRepository,/putMany/);
+  assert.match(transport,/async function getObjectByKey/);
+  assert.match(app,/downloadCurrentSyncAssets/);
+  assert.match(app,/downloadCurrentBackupAssets/);
+  assert.match(app,/mapWithConcurrency\(topology\.path,6/);
+  assert.match(app,/img\[data-note-image\]/);
+  assert.match(app,/node\.type==="image"&&node\.assetId/);
+  assert.match(app,/hydrateLibraryCardImage/);
+});
 check("browser transport uses server sessions but calls Drive directly",()=>{
   assert.match(transport,/credentials:"include"/);
   assert.match(transport,/\/api\/session/);

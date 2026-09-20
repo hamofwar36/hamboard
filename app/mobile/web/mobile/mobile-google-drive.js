@@ -6,6 +6,7 @@
   const MAX_SYNC_OBJECT_BYTES=16*1024*1024;
   const MAX_SYNC_OBJECTS=50000;
   const MAX_BACKUP_MANIFEST_BYTES=16*1024*1024;
+  const MAX_ASSET_OBJECT_BYTES=256*1024*1024;
   const MAX_BACKUPS=100;
 
   let accessToken="";
@@ -192,6 +193,26 @@
     return {objectKey,content,contentSha256:expectedSha,byteSize:expectedSize}
   }
 
+  async function getObjectByKey(request={}){
+    const objectKey=String(request.objectKey||""),expectedSha=String(request.contentSha256||"").toLowerCase(),expectedSize=Math.max(0,Number(request.byteSize)||0),requestedMime=String(request.mimeType||"application/octet-stream");
+    if(!/^[A-Za-z0-9._/-]{1,180}$/.test(objectKey)||!validSha(expectedSha)||expectedSize<1||expectedSize>MAX_ASSET_OBJECT_BYTES)throw new Error("google-drive-asset-object-request-invalid");
+    const url=new URL(DRIVE_FILES_URL);
+    url.searchParams.set("spaces","appDataFolder");
+    url.searchParams.set("pageSize","100");
+    url.searchParams.set("q",`trashed = false and appProperties has { key='hamboardObjectKey' and value='${objectKey}' }`);
+    url.searchParams.set("fields","files(id,size,mimeType,appProperties)");
+    const value=await (await authorizedFetch(url)).json();
+    const file=(value.files||[]).find(item=>{
+      const properties=item.appProperties||{};
+      return property(properties,"ObjectKey")===objectKey&&property(properties,"ContentSha256").toLowerCase()===expectedSha&&Number(item.size)===expectedSize&&validRemoteId(item.id)
+    });
+    if(!file)throw new Error("google-drive-asset-object-not-found");
+    const response=await authorizedFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(file.id)}?alt=media`),bytes=await response.arrayBuffer();
+    if(bytes.byteLength!==expectedSize||await sha256Hex(bytes)!==expectedSha)throw new Error("google-drive-download-integrity-mismatch");
+    const mimeType=String(file.mimeType||requestedMime||"application/octet-stream");
+    return {objectKey,blob:new Blob([bytes],{type:mimeType}),contentSha256:expectedSha,byteSize:expectedSize,mimeType}
+  }
+
   async function listBackups(){
     const backups=[];let pageToken="";
     do{
@@ -232,6 +253,6 @@
   }
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncObjects,getSyncObject,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

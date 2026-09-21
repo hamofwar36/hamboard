@@ -66,6 +66,8 @@
   const createFormBack=$("#createFormBack");
   const createFormClose=$("#createFormClose");
   const createFormStatus=$("#createFormStatus");
+  const createActions=$("#createActions");
+  const createDelete=$("#createDelete");
   const createSubmit=$("#createSubmit");
   const menuCloud=$("#menuCloud");
   const menuDisplay=$("#menuDisplay");
@@ -109,6 +111,7 @@
   let silentReconnectFailed=false;
   let silentReconnectPromise=null;
   let activeCreateType="";
+  let activeEditDocument=null;
   let createProjectKindValue="short";
   let createColorValue="";
   let createColorCustom=false;
@@ -250,6 +253,7 @@
 
   function resetCreateSheet(){
     activeCreateType="";
+    activeEditDocument=null;
     createProjectKindValue="short";
     createChooser.hidden=false;
     createForm.hidden=true;
@@ -263,6 +267,10 @@
     createColorGrid.replaceChildren();
     createColorOptions.hidden=true;
     createColorEditor.hidden=true;
+    createDelete.hidden=true;
+    createActions.classList.remove("editing");
+    createFormBack.textContent="이전";
+    createSubmit.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>만들기</span>';
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
     createSheet.classList.remove("form-open")
   }
@@ -305,12 +313,17 @@
   function openCreateForm(type){
     const config=CREATE_TYPES[type];
     if(!config)return;
+    activeEditDocument=null;
     activeCreateType=type;
     createProjectKindValue="short";
     createChooser.hidden=true;
     createForm.hidden=false;
     createProjectKind.hidden=type!=="project";
     createSubtitleField.hidden=false;
+    createDelete.hidden=true;
+    createActions.classList.remove("editing");
+    createFormBack.textContent="이전";
+    createSubmit.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>만들기</span>';
     createTitleLabel.textContent=type==="folder"?"폴더 이름":"제목";
     createSubtitleField.querySelector("span").innerHTML=type==="folder"?"부제 <small>· 선택</small>":"부제 <small>· 선택</small>";
     createFolderLabel.innerHTML=type==="folder"?"상위 폴더 <small>· 선택</small>":"폴더 <small>· 선택</small>";
@@ -331,6 +344,116 @@
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
     refreshLucideIcons();
     requestAnimationFrame(()=>{createTitleInput.focus();createTitleInput.select()})
+  }
+
+  function documentCollectionKey(type){
+    return type==="project"?"projects":type==="note"?"notes":type==="mindmap"?"mindmaps":""
+  }
+
+  function openDocumentEditForm(type,id){
+    const config=CREATE_TYPES[type],key=documentCollectionKey(type);
+    if(!config||!key)return;
+    const state=snapshot(),item=(state[key]||[]).find(row=>String(row?.id||"")===String(id||""));
+    if(!item)return;
+    activeCreateType=type;
+    activeEditDocument={type,id:String(item.id||"")};
+    createChooser.hidden=true;
+    createForm.hidden=false;
+    createProjectKind.hidden=true;
+    createSubtitleField.hidden=false;
+    createTitleLabel.textContent="제목";
+    createSubtitleField.querySelector("span").innerHTML='부제 <small>· 선택</small>';
+    createFolderLabel.innerHTML='폴더 <small>· 선택</small>';
+    createFormKind.textContent=config.label+" 정보 편집";
+    createFormIcon.innerHTML='<i data-lucide="'+safeIcon(item.icon,config.icon)+'" aria-hidden="true"></i>';
+    createSheet.classList.add("form-open");
+    createTitleInput.value=String(item.title||"");
+    createSubtitleInput.value=String(item.subtitle||"");
+    createSubtitleInput.placeholder=type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
+    createColorValue=safeColor(item.color,randomCardColor());
+    createColorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===createColorValue.toLowerCase());
+    createColorExpanded=false;
+    createColorField.hidden=false;
+    renderCreateColorOptions();
+    fillCreateFolderOptions(false);
+    createFolderSelect.value=item.folderId?String(item.folderId):"";
+    createFormStatus.hidden=true;
+    createFormStatus.textContent="";
+    createDelete.hidden=false;
+    createActions.classList.add("editing");
+    createFormBack.textContent="취소";
+    createSubmit.innerHTML='<i data-lucide="check" aria-hidden="true"></i><span>저장</span>';
+    openBottomSheet(createSheet);
+    refreshLucideIcons();
+    requestAnimationFrame(()=>{createTitleInput.focus();createTitleInput.select()})
+  }
+
+  async function saveEditedDocument(){
+    const edit=activeEditDocument;
+    if(!edit)return;
+    const config=CREATE_TYPES[edit.type],key=documentCollectionKey(edit.type),state=snapshot(),list=state[key]||[];
+    const index=list.findIndex(item=>String(item?.id||"")===String(edit.id||""));
+    if(!config||!key||index<0){
+      createFormStatus.textContent="편집할 문서를 찾지 못했습니다.";
+      createFormStatus.hidden=false;
+      return
+    }
+    const item=list[index],selectedColor=safeColor(createColorValue,item.color||randomCardColor());
+    item.title=createTitleInput.value.trim()||config.defaultTitle;
+    item.subtitle=createSubtitleInput.value.trim();
+    item.folderId=createFolderSelect.value?String(createFolderSelect.value):null;
+    item.color=selectedColor;
+    item.updatedAt=new Date().toISOString();
+    createSubmit.disabled=true;
+    createFormStatus.hidden=true;
+    try{
+      await repository.replaceState(state);
+      closeBottomSheet(createSheet);
+      resetCreateSheet();
+      renderLibrary()
+    }catch(error){
+      logDiagnostic("error","REPOSITORY",config.label+" 정보 저장에 실패했습니다.",error);
+      createFormStatus.textContent="저장하지 못했습니다. 다시 시도해 주세요.";
+      createFormStatus.hidden=false
+    }finally{
+      createSubmit.disabled=false
+    }
+  }
+
+  async function deleteEditedDocument(){
+    const edit=activeEditDocument;
+    if(!edit)return;
+    const key=documentCollectionKey(edit.type),state=snapshot(),list=state[key]||[];
+    const index=list.findIndex(item=>String(item?.id||"")===String(edit.id||""));
+    if(!key||index<0){
+      createFormStatus.textContent="삭제할 문서를 찾지 못했습니다.";
+      createFormStatus.hidden=false;
+      return
+    }
+    const item=list[index],fallback=CREATE_TYPES[edit.type]?.defaultTitle||"삭제된 문서";
+    const confirmed=await openMobileConfirm({
+      title:"삭제하시겠습니까?",
+      message:"이 문서를 휴지통으로 이동합니다.",
+      confirmLabel:"삭제",
+      cancelLabel:"취소",
+      destructive:true
+    });
+    if(!confirmed)return;
+    createDelete.disabled=true;
+    createFormStatus.hidden=true;
+    try{
+      pushMobileTrash(state,edit.type,item.title||fallback,item,{index});
+      list.splice(index,1);
+      await repository.replaceState(state);
+      closeBottomSheet(createSheet);
+      resetCreateSheet();
+      renderLibrary()
+    }catch(error){
+      logDiagnostic("error","REPOSITORY","문서를 휴지통으로 이동하지 못했습니다.",error);
+      createDelete.disabled=false;
+      createFormStatus.textContent="삭제하지 못했습니다. 다시 시도해 주세요.";
+      createFormStatus.hidden=false
+    }
   }
 
   async function createNewDocument(){
@@ -895,15 +1018,14 @@
     }
     hideStatus();
     for(const entry of documents){
-      const {type,item}=entry,descriptor=documentDescriptor(type,item,state),button=element("button",`project-card ${type==="project"?"story-card":type==="note"?"note-card":"mindmap-card"}`);
-      button.type="button";
-      button.dataset.documentType=type;
-      button.dataset.documentId=String(item.id||"");
-      button.style.setProperty("--card-color",descriptor.color);
+      const {type,item}=entry,descriptor=documentDescriptor(type,item,state),card=element("article",`project-card ${type==="project"?"story-card":type==="note"?"note-card":"mindmap-card"}`);
+      card.dataset.documentType=type;
+      card.dataset.documentId=String(item.id||"");
+      card.style.setProperty("--card-color",descriptor.color);
       const cardInk=cardForeground(descriptor.color);
       if(cardInk){
-        button.style.setProperty("--custom-on",cardInk);
-        button.style.setProperty("--custom-muted",cardInk)
+        card.style.setProperty("--custom-on",cardInk);
+        card.style.setProperty("--custom-muted",cardInk)
       }
 
       const background=element("img","project-card-background");
@@ -920,15 +1042,25 @@
       if(descriptor.folder)label.append(document.createTextNode(` · ${descriptor.folder}`));
       folder.append(icon,label);
 
-      const heading=element("div","project-title",item.title||(
-        type==="project"?"제목 없는 작품":type==="note"?"제목 없는 노트":"제목 없는 마인드맵"
-      ));
-      button.append(background,veil,folder,heading);
-      if(item.cardImageAssetId)hydrateLibraryCardImage(button,item.cardImageAssetId);
-      if(descriptor.subtitle)button.append(element("div","work-card-subtitle",descriptor.subtitle));
-      if(descriptor.meta)button.append(element("div","project-meta",descriptor.meta));
-      button.onclick=()=>openDocument(type,item.id);
-      host.append(button)
+      const fallbackTitle=type==="project"?"제목 없는 작품":type==="note"?"제목 없는 노트":"제목 없는 마인드맵";
+      const heading=element("div","project-title",item.title||fallbackTitle);
+      const open=element("button","project-card-open");
+      open.type="button";
+      open.setAttribute("aria-label",(item.title||fallbackTitle)+" 열기");
+      open.onclick=()=>openDocument(type,item.id);
+      const menu=element("button","document-card-menu");
+      menu.type="button";
+      menu.setAttribute("aria-label",(item.title||fallbackTitle)+" 정보 편집");
+      menu.title="문서 정보 편집";
+      menu.innerHTML='<i data-lucide="ellipsis-vertical" aria-hidden="true"></i>';
+      menu.onclick=event=>{event.stopPropagation();openDocumentEditForm(type,item.id)};
+
+      card.append(background,veil,folder,heading);
+      if(item.cardImageAssetId)hydrateLibraryCardImage(card,item.cardImageAssetId);
+      if(descriptor.subtitle)card.append(element("div","work-card-subtitle",descriptor.subtitle));
+      if(descriptor.meta)card.append(element("div","project-meta",descriptor.meta));
+      card.append(open,menu);
+      host.append(card)
     }
     refreshLucideIcons()
   }
@@ -2834,14 +2966,18 @@
     createColorValue=value;
     renderCreateColorOptions()
   };
-  createFormBack.onclick=resetCreateSheet;
+  createFormBack.onclick=()=>{
+    if(activeEditDocument){closeBottomSheet(createSheet);resetCreateSheet()}
+    else resetCreateSheet()
+  };
+  createDelete.onclick=deleteEditedDocument;
   createProjectKind.onclick=event=>{
     const button=event.target.closest("[data-project-kind]");
     if(!button)return;
     createProjectKindValue=button.dataset.projectKind==="long"?"long":"short";
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(item=>item.classList.toggle("active",item===button))
   };
-  createForm.onsubmit=event=>{event.preventDefault();createNewDocument()};
+  createForm.onsubmit=event=>{event.preventDefault();activeEditDocument?saveEditedDocument():createNewDocument()};
   noteReaderContent.addEventListener("input",()=>{
     captureMobileNoteSelection();
     scheduleMobileNoteSave();

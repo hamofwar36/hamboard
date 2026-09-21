@@ -16,16 +16,13 @@
   const libraryScreen=$("#libraryScreen");
   const projectReaderScreen=$("#projectReaderScreen");
   const blockEditorScreen=$("#projectBlockEditorScreen");
-  const blockEditorForm=$("#blockEditorForm");
   const blockEditorContext=$("#blockEditorContext");
   const blockEditorTitle=$("#blockEditorTitle");
   const blockEditorSummary=$("#blockEditorSummary");
   const blockEditorNotes=$("#blockEditorNotes");
-  const blockEditorCompleted=$("#blockEditorCompleted");
+  const blockEditorCompletion=$("#blockEditorCompletion");
   const blockEditorStatus=$("#blockEditorStatus");
   const blockEditorDelete=$("#blockEditorDelete");
-  const blockEditorSave=$("#blockEditorSave");
-  const blockEditorSaveLabel=$("#blockEditorSaveLabel");
   const noteReaderScreen=$("#noteReaderScreen");
   const noteReaderContent=$("#noteReaderContent");
   const noteEditorControls=$("#noteEditorControls");
@@ -114,6 +111,8 @@
   let activeDocumentId="";
   let activeEpisodeId="";
   let activeBlockEditor=null;
+  let blockSaveTimer=0;
+  let blockSaveChain=Promise.resolve();
   let cloudSyncListing=null;
   let cloudSyncImportPromise=null;
   let cloudSyncProgressRun=0;
@@ -1464,7 +1463,99 @@
     blockEditorStatus.hidden=!message
   }
 
+  function syncMobileBlockCompletion(){
+    const completed=Boolean(activeBlockEditor?.completed);
+    blockEditorCompletion.textContent=completed?"● 완료":"○ 미완료";
+    blockEditorCompletion.setAttribute("aria-pressed",String(completed))
+  }
+
+  function blockEditorHasContent(){
+    return Boolean(blockEditorTitle.value.trim()||blockEditorSummary.value||blockEditorNotes.value||activeBlockEditor?.completed)
+  }
+
+  async function persistMobileGeneralBlock(){
+    const edit=activeBlockEditor;
+    if(!edit)return true;
+    const current=mobileProjectContext(edit.projectId,edit.episodeId);
+    if(!current.project||!current.unit){
+      setMobileBlockEditorStatus("편집할 작품 또는 화를 찾지 못했습니다.");
+      return false
+    }
+    current.unit.stages=current.unit.stages&&typeof current.unit.stages==="object"?current.unit.stages:{};
+    const list=Array.isArray(current.unit.stages[edit.stageId])?current.unit.stages[edit.stageId]:null;
+    if(!list){
+      setMobileBlockEditorStatus("편집할 파트를 찾지 못했습니다.");
+      return false
+    }
+    if(edit.creating){
+      if(!blockEditorHasContent())return true;
+      const block={
+        id:uid(),
+        title:blockEditorTitle.value.trim(),
+        summary:blockEditorSummary.value,
+        notes:blockEditorNotes.value,
+        completed:Boolean(edit.completed),
+        children:[]
+      };
+      list.push(block);
+      edit.blockIndex=list.length-1;
+      edit.blockId=String(block.id);
+      edit.creating=false
+    }else{
+      let target=edit.blockId?list.find(item=>String(item?.id||"")===edit.blockId):null;
+      if(!target&&edit.blockIndex>=0&&edit.blockIndex<list.length)target=list[edit.blockIndex];
+      if(!target||target.type==="script"){
+        setMobileBlockEditorStatus("편집할 일반 블록을 찾지 못했습니다.");
+        return false
+      }
+      target.title=blockEditorTitle.value.trim();
+      target.summary=blockEditorSummary.value;
+      target.notes=blockEditorNotes.value;
+      target.completed=Boolean(edit.completed);
+      edit.blockId=String(target.id||edit.blockId||"")
+    }
+    current.project.updatedAt=new Date().toISOString();
+    try{
+      await repository.replaceState(current.state);
+      if(activeBlockEditor===edit){
+        blockEditorDelete.hidden=edit.creating;
+        blockEditorDelete.disabled=false;
+        setMobileBlockEditorStatus("")
+      }
+      return true
+    }catch(error){
+      console.error("모바일 일반 블록 자동 저장 실패",error);
+      logDiagnostic("error","REPOSITORY","일반 블록 자동 저장에 실패했습니다.",error);
+      if(activeBlockEditor===edit)setMobileBlockEditorStatus("자동 저장하지 못했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.");
+      return false
+    }
+  }
+
+  function queueMobileGeneralBlockSave(){
+    const edit=activeBlockEditor;
+    if(!edit)return Promise.resolve(true);
+    blockSaveChain=blockSaveChain.then(()=>activeBlockEditor===edit?persistMobileGeneralBlock():true);
+    return blockSaveChain
+  }
+
+  function scheduleMobileGeneralBlockSave(){
+    if(!activeBlockEditor)return;
+    clearTimeout(blockSaveTimer);
+    blockSaveTimer=setTimeout(()=>{
+      blockSaveTimer=0;
+      queueMobileGeneralBlockSave()
+    },350)
+  }
+
+  async function flushMobileGeneralBlockSave(){
+    clearTimeout(blockSaveTimer);
+    blockSaveTimer=0;
+    return queueMobileGeneralBlockSave()
+  }
+
   function closeMobileGeneralBlockEditor(){
+    clearTimeout(blockSaveTimer);
+    blockSaveTimer=0;
     activeBlockEditor=null;
     const project=(snapshot().projects||[]).find(item=>String(item?.id||"")===String(activeDocumentId||""));
     if(!project){renderHome();return}
@@ -1479,76 +1570,33 @@
     const index=Number(blockIndex),existing=blocks&&Number.isInteger(index)&&index>=0&&index<blocks.length?blocks[index]:null;
     if(!initial.project||!initial.unit||!blocks||existing?.type==="script")return;
     const stage=(initial.unit.stageDefs||[]).find(item=>String(item?.id||"")===String(stageId||""));
-    activeBlockEditor={projectId,episodeId,stageId:String(stageId||""),blockIndex:existing?index:-1,creating:!existing};
+    clearTimeout(blockSaveTimer);
+    blockSaveTimer=0;
+    activeBlockEditor={
+      projectId,episodeId,stageId:String(stageId||""),blockIndex:existing?index:-1,
+      blockId:existing?String(existing.id||""):"",creating:!existing,completed:Boolean(existing?.completed)
+    };
     blockEditorTitle.value=String(existing?.title||"");
     blockEditorSummary.value=String(existing?.summary||"");
     blockEditorNotes.value=String(existing?.notes||"");
-    blockEditorCompleted.checked=Boolean(existing?.completed);
     blockEditorContext.textContent=(stage?.name||"파트")+(initial.project.kind==="long"&&initial.unit?.title?" · "+initial.unit.title:"");
     blockEditorDelete.hidden=!existing;
     blockEditorDelete.disabled=false;
-    blockEditorSave.disabled=false;
-    blockEditorSaveLabel.textContent=existing?"저장":"추가";
     setMobileBlockEditorStatus("");
+    syncMobileBlockCompletion();
     showScreen(blockEditorScreen,{heading:existing?"블록 편집":"새 블록",back:true,account:false,nav:"library"});
     requestAnimationFrame(()=>blockEditorTitle.focus())
-  }
-
-  async function saveMobileGeneralBlock(){
-    const edit=activeBlockEditor;
-    if(!edit)return;
-    const current=mobileProjectContext(edit.projectId,edit.episodeId);
-    if(!current.project||!current.unit){
-      setMobileBlockEditorStatus("편집할 작품 또는 화를 찾지 못했습니다.");
-      return
-    }
-    current.unit.stages=current.unit.stages&&typeof current.unit.stages==="object"?current.unit.stages:{};
-    const list=Array.isArray(current.unit.stages[edit.stageId])?current.unit.stages[edit.stageId]:null;
-    if(!list){
-      setMobileBlockEditorStatus("편집할 파트를 찾지 못했습니다.");
-      return
-    }
-    if(edit.creating){
-      list.push({
-        id:uid(),
-        title:blockEditorTitle.value.trim(),
-        summary:blockEditorSummary.value,
-        notes:blockEditorNotes.value,
-        completed:blockEditorCompleted.checked,
-        children:[]
-      })
-    }else{
-      const target=edit.blockIndex>=0&&edit.blockIndex<list.length?list[edit.blockIndex]:null;
-      if(!target||target.type==="script"){
-        setMobileBlockEditorStatus("편집할 일반 블록을 찾지 못했습니다.");
-        return
-      }
-      target.title=blockEditorTitle.value.trim();
-      target.summary=blockEditorSummary.value;
-      target.notes=blockEditorNotes.value;
-      target.completed=blockEditorCompleted.checked
-    }
-    current.project.updatedAt=new Date().toISOString();
-    blockEditorSave.disabled=true;
-    blockEditorDelete.disabled=true;
-    setMobileBlockEditorStatus("");
-    try{
-      await repository.replaceState(current.state);
-      closeMobileGeneralBlockEditor()
-    }catch(error){
-      console.error("모바일 일반 블록 저장 실패",error);
-      logDiagnostic("error","REPOSITORY","일반 블록 저장에 실패했습니다.",error);
-      blockEditorSave.disabled=false;
-      blockEditorDelete.disabled=edit.creating;
-      setMobileBlockEditorStatus("저장하지 못했습니다. 다시 시도해 주세요.")
-    }
   }
 
   async function deleteMobileGeneralBlock(){
     const edit=activeBlockEditor;
     if(!edit||edit.creating)return;
+    clearTimeout(blockSaveTimer);
+    blockSaveTimer=0;
+    await blockSaveChain;
+    if(activeBlockEditor!==edit)return;
     const current=mobileProjectContext(edit.projectId,edit.episodeId),list=Array.isArray(current.unit?.stages?.[edit.stageId])?current.unit.stages[edit.stageId]:null;
-    const target=list&&edit.blockIndex>=0&&edit.blockIndex<list.length?list[edit.blockIndex]:null;
+    const target=(list||[]).find(item=>String(item?.id||"")===String(edit.blockId||""))||(list&&edit.blockIndex>=0&&edit.blockIndex<list.length?list[edit.blockIndex]:null);
     if(!current.project||!current.unit||!target||target.type==="script"){
       setMobileBlockEditorStatus("삭제할 일반 블록을 찾지 못했습니다.");
       return
@@ -1562,11 +1610,11 @@
     });
     if(!confirmed)return;
     blockEditorDelete.disabled=true;
-    blockEditorSave.disabled=true;
     setMobileBlockEditorStatus("");
     try{
-      pushMobileTrash(current.state,"block",target.title||"제목 없는 블록",target,{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,stageId:edit.stageId,index:edit.blockIndex});
-      list.splice(edit.blockIndex,1);
+      const index=list.indexOf(target);
+      pushMobileTrash(current.state,"block",target.title||"제목 없는 블록",target,{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,stageId:edit.stageId,index});
+      list.splice(index,1);
       current.project.updatedAt=new Date().toISOString();
       await repository.replaceState(current.state);
       closeMobileGeneralBlockEditor()
@@ -1574,7 +1622,6 @@
       console.error("모바일 일반 블록 삭제 실패",error);
       logDiagnostic("error","REPOSITORY","일반 블록 삭제에 실패했습니다.",error);
       blockEditorDelete.disabled=false;
-      blockEditorSave.disabled=false;
       setMobileBlockEditorStatus("삭제하지 못했습니다. 다시 시도해 주세요.")
     }
   }
@@ -3227,12 +3274,22 @@
     }
   }
 
-  backButton.onclick=()=>{
-    if(!blockEditorScreen.hidden){closeMobileGeneralBlockEditor();return}
+  backButton.onclick=async()=>{
+    if(!blockEditorScreen.hidden){
+      const saved=await flushMobileGeneralBlockSave();
+      if(saved)closeMobileGeneralBlockEditor();
+      return
+    }
     if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}openLibrary({replace:true})}
     else handleBack()
   };
-  blockEditorForm.onsubmit=event=>{event.preventDefault();saveMobileGeneralBlock()};
+  [blockEditorTitle,blockEditorSummary,blockEditorNotes].forEach(field=>field.addEventListener("input",scheduleMobileGeneralBlockSave));
+  blockEditorCompletion.onclick=()=>{
+    if(!activeBlockEditor)return;
+    activeBlockEditor.completed=!activeBlockEditor.completed;
+    syncMobileBlockCompletion();
+    scheduleMobileGeneralBlockSave()
+  };
   blockEditorDelete.onclick=deleteMobileGeneralBlock;
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
@@ -3398,7 +3455,7 @@
       updateMobileNoteFormatState()
     }
   });
-  window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave()});
+  window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave();if(activeBlockEditor)flushMobileGeneralBlockSave()});
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
   menuDisplay.onclick=()=>openSettings("display");

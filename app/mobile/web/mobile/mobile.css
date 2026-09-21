@@ -810,6 +810,36 @@ body.note-html-mode .note-editor-controls{display:none}
 .search-result small{margin-top:3px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .search-empty{padding:26px 12px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}
 
+.mobile-trash-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;padding:2px 2px 0
+}
+.mobile-trash-head p{margin:0;color:var(--ui-muted);font-size:var(--fs-xs);line-height:1.4}
+.mobile-trash-head button{
+  min-height:34px;padding:0 10px;border:1px solid var(--ui-status-error-border);border-radius:9px;
+  background:var(--ui-status-error-bg);color:var(--ui-status-error-fg);font:inherit;font-size:var(--fs-compact-10);font-weight:700
+}
+.mobile-trash-list{
+  overflow:hidden;border:1px solid var(--ui-border-default);border-radius:16px;background:var(--ui-surface-default);
+  color:var(--ui-fg);--ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
+}
+.mobile-trash-item{
+  min-height:72px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;
+  border-bottom:1px solid color-mix(in srgb,var(--ui-border-default) 70%,transparent)
+}
+.mobile-trash-item:last-child{border-bottom:0}
+.mobile-trash-copy{min-width:0}
+.mobile-trash-kind{display:block;color:var(--ui-muted);font-size:var(--fs-compact-10);font-weight:700}
+.mobile-trash-copy strong{display:block;margin-top:2px;font-size:var(--fs-sm);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mobile-trash-copy small{display:block;margin-top:4px;color:var(--ui-muted);font-size:var(--fs-compact-10)}
+.mobile-trash-actions{display:flex;align-items:center;gap:6px}
+.mobile-trash-actions button{
+  min-height:34px;padding:0 9px;border-radius:9px;font:inherit;font-size:var(--fs-compact-10);font-weight:700;white-space:nowrap
+}
+.mobile-trash-restore{border:1px solid var(--ui-control-neutral-border);background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg)}
+.mobile-trash-delete{border:1px solid var(--ui-status-error-border);background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)}
+.mobile-trash-actions button:disabled{opacity:.5}
+.mobile-trash-empty{padding:34px 12px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}
+
 .cloud-account-card{
   display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;padding:14px;
   border:1px solid var(--ui-border-default);border-radius:16px;background:var(--ui-surface-default);color:var(--ui-fg);

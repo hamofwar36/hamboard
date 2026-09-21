@@ -957,6 +957,39 @@
     }
     return card
   }
+  function openMobileConfirm({title="삭제하시겠습니까?",message="",confirmLabel="삭제",cancelLabel="취소",destructive=false}={}){
+    document.querySelector("[data-mobile-confirm]")?.remove();
+    return new Promise(resolve=>{
+      const wrap=element("div","nav-sheet-backdrop mobile-confirm-backdrop"),panel=element("section","nav-sheet mobile-confirm-panel");
+      wrap.dataset.mobileConfirm="1";
+      panel.setAttribute("role","alertdialog");
+      panel.setAttribute("aria-modal","true");
+      panel.setAttribute("aria-label",title);
+      const copy=element("div","mobile-confirm-copy");
+      copy.append(element("h3","",title));
+      if(message)copy.append(element("p","",message));
+      const actions=element("div","mobile-confirm-actions");
+      const cancel=element("button","mobile-confirm-cancel",cancelLabel),confirm=element("button","mobile-confirm-submit"+(destructive?" destructive":""),confirmLabel);
+      cancel.type="button";
+      confirm.type="button";
+      actions.append(cancel,confirm);
+      panel.append(copy,actions);
+      wrap.append(panel);
+      document.body.append(wrap);
+      let settled=false;
+      const finish=value=>{
+        if(settled)return;
+        settled=true;
+        wrap.remove();
+        resolve(value)
+      };
+      cancel.onclick=()=>finish(false);
+      confirm.onclick=()=>finish(true);
+      wrap.onclick=event=>{if(event.target===wrap)finish(false)};
+      requestAnimationFrame(()=>cancel.focus())
+    })
+  }
+
   function mobileProjectContext(projectId=activeDocumentId,episodeId=activeEpisodeId){
     const state=snapshot(),project=(state.projects||[]).find(item=>String(item?.id||"")===String(projectId||""));
     if(!project)return {state,project:null,unit:null};
@@ -1001,8 +1034,10 @@
       '<input type="text" data-project-stage-color-hex maxlength="7" spellcheck="false" autocomplete="off" aria-label="HEX 색상">'+
       '</div></div></fieldset>'+
       '<p class="project-stage-editor-status" data-project-stage-status hidden></p>'+
+      '<div class="project-stage-editor-footer">'+
+      (existing?'<button type="button" class="project-stage-delete" data-project-stage-delete><i data-lucide="trash-2" aria-hidden="true"></i><span>삭제</span></button>':'<span></span>')+
       '<div class="note-sheet-actions"><button type="button" class="secondary" data-project-stage-close>취소</button><button type="button" class="primary" data-project-stage-save>'+(existing?"저장":"추가")+'</button></div>'+
-      '</div>';
+      '</div></div>';
     wrap.append(panel);
     document.body.append(wrap);
 
@@ -1091,6 +1126,48 @@
     };
     panel.querySelectorAll("[data-project-stage-close]").forEach(button=>button.onclick=closeMobileProjectStageEditor);
     wrap.onclick=event=>{if(event.target===wrap)closeMobileProjectStageEditor()};
+    const deleteButton=panel.querySelector("[data-project-stage-delete]");
+    if(deleteButton)deleteButton.onclick=async()=>{
+      const current=mobileProjectContext(projectId,episodeId);
+      if(!current.project||!current.unit){
+        setStatus("편집할 작품 또는 화를 찾지 못했습니다.");
+        return
+      }
+      const defs=Array.isArray(current.unit.stageDefs)?current.unit.stageDefs:[];
+      if(defs.length<=1){
+        setStatus("파트는 최소 1개가 필요합니다.");
+        return
+      }
+      const index=defs.findIndex(stage=>String(stage?.id||"")===String(stageId));
+      if(index<0){
+        setStatus("삭제할 파트를 찾지 못했습니다.");
+        return
+      }
+      const blockCount=Array.isArray(current.unit.stages?.[stageId])?current.unit.stages[stageId].length:0;
+      const confirmed=await openMobileConfirm({
+        title:"삭제하시겠습니까?",
+        message:blockCount?"이 파트와 안의 블록 "+blockCount+"개가 함께 삭제됩니다.":"이 파트를 삭제합니다.",
+        confirmLabel:"삭제",
+        cancelLabel:"취소",
+        destructive:true
+      });
+      if(!confirmed)return;
+      deleteButton.disabled=true;
+      setStatus("");
+      try{
+        defs.splice(index,1);
+        if(current.unit.stages&&typeof current.unit.stages==="object")delete current.unit.stages[stageId];
+        current.project.updatedAt=new Date().toISOString();
+        await repository.replaceState(current.state);
+        closeMobileProjectStageEditor();
+        if(activeDocumentType==="project"&&String(activeDocumentId)===projectId&&String(activeEpisodeId||"")===episodeId)renderProject(current.project)
+      }catch(error){
+        console.error("모바일 작품 파트 삭제 실패",error);
+        logDiagnostic("error","REPOSITORY","작품 파트 삭제에 실패했습니다.",error);
+        deleteButton.disabled=false;
+        setStatus("삭제하지 못했습니다. 다시 시도해 주세요.")
+      }
+    };
     save.onclick=async()=>{
       const nextTitle=title.value.trim()||"새 파트",nextSubtitle=subtitle.value.trim();
       const current=mobileProjectContext(projectId,episodeId);

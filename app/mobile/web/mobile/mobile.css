@@ -678,6 +678,25 @@ body.note-html-mode .note-editor-controls{display:none}
 .note-correction-status{margin:0;padding:8px 10px;border-radius:9px;background:var(--ui-status-success-bg);color:var(--ui-status-success-fg);font-size:var(--fs-xs);line-height:1.45}
 .note-correction-status.error{background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)}
 
+.nav-sheet-backdrop.mobile-confirm-backdrop{align-items:center;padding:16px;z-index:140}
+.nav-sheet.mobile-confirm-panel{
+  position:relative;z-index:1;width:min(100%,340px);padding:18px;overflow:hidden
+}
+.mobile-confirm-copy h3{margin:0;font-size:var(--fs-lg);font-weight:700;line-height:1.3}
+.mobile-confirm-copy p{margin:8px 0 0;color:var(--ui-muted);font-size:var(--fs-sm);line-height:1.5}
+.mobile-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}
+.mobile-confirm-actions button{
+  min-height:42px;padding:0 13px;border-radius:11px;font:inherit;font-size:var(--fs-xs);font-weight:700
+}
+.mobile-confirm-cancel{
+  border:1px solid var(--ui-control-neutral-border);background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg)
+}
+.mobile-confirm-submit{border:0;background:var(--ui-control-primary-bg);color:var(--ui-control-primary-fg)}
+.mobile-confirm-submit.destructive{
+  border:1px solid var(--ui-status-error-border);background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)
+}
+.mobile-confirm-submit.destructive:active{background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)}
+
 .nav-sheet-backdrop.project-stage-backdrop{align-items:center;padding:16px}
 .nav-sheet.project-stage-panel{
   position:relative;z-index:1;width:min(100%,420px);max-height:min(620px,calc(100dvh - 32px));
@@ -687,6 +706,16 @@ body.note-html-mode .note-editor-controls{display:none}
 .project-stage-editor-head h3{margin:0;font-size:var(--fs-lg);line-height:1.25}
 .project-stage-editor-body{display:grid;gap:12px}
 .project-stage-color-field{margin:0}
+.project-stage-editor-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.project-stage-editor-footer .note-sheet-actions{margin-top:0}
+.project-stage-delete{
+  min-height:42px;display:inline-flex;align-items:center;gap:6px;padding:0 11px;
+  border:1px solid var(--ui-status-error-border);border-radius:11px;background:var(--ui-status-error-bg);
+  color:var(--ui-status-error-fg);font:inherit;font-size:var(--fs-xs);font-weight:700
+}
+.project-stage-delete:active{background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)}
+.project-stage-delete:disabled{opacity:.55}
+.project-stage-delete svg{width:15px;height:15px}
 .project-stage-editor-status{
   margin:0;padding:8px 10px;border:1px solid var(--ui-status-error-border);border-radius:10px;
   background:var(--ui-status-error-bg);color:var(--ui-status-error-fg);font-size:var(--fs-xs);line-height:1.4

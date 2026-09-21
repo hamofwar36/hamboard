@@ -107,6 +107,7 @@
   const loadSyncSource=$("#loadSyncSource");
   const backupSourceList=$("#backupSourceList");
 
+  let currentScreen=libraryScreen;
   let activeDocumentType="";
   let activeDocumentId="";
   let activeEpisodeId="";
@@ -652,7 +653,6 @@
   function documentScreen(type){
     return type==="project"?projectReaderScreen:type==="note"?noteReaderScreen:type==="mindmap"?mindmapReaderScreen:null
   }
-  function hideDocumentScreens(){for(const screen of [projectReaderScreen,noteReaderScreen,mindmapReaderScreen])screen.hidden=true}
   const appBaseUrl=()=>location.pathname+location.search;
   function appRouteUrl(route){
     return route?.view==="document"&&route.type&&route.id?`${appBaseUrl()}#${route.type}/${encodeURIComponent(route.id)}`:appBaseUrl()
@@ -662,7 +662,6 @@
     history[replace?"replaceState":"pushState"](state,"",appRouteUrl(state))
   }
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
-  function hideAllScreens(){for(const screen of mobileScroll.querySelectorAll(".mobile-screen"))screen.hidden=true}
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
   function resetTopbarVisibility(){
     document.body.classList.remove("topbar-hidden");
@@ -733,8 +732,9 @@
   }
 
   function showScreen(screen,{heading="햄보드",back=false,account=false,nav=""}={}){
-    hideAllScreens();
+    if(currentScreen&&currentScreen!==screen)currentScreen.hidden=true;
     screen.hidden=false;
+    currentScreen=screen;
     const blockEditorOpen=screen===blockEditorScreen;
     const documentOpen=screen===projectReaderScreen||screen===noteReaderScreen||screen===mindmapReaderScreen||blockEditorOpen;
     document.body.classList.toggle("document-open",documentOpen);

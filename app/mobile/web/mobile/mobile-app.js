@@ -662,7 +662,7 @@
     history[replace?"replaceState":"pushState"](state,"",appRouteUrl(state))
   }
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
-  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,trashScreen,settingsScreen,cloudSourceScreen])screen.hidden=true}
+  function hideAllScreens(){for(const screen of mobileScroll.querySelectorAll(".mobile-screen"))screen.hidden=true}
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
   function resetTopbarVisibility(){
     document.body.classList.remove("topbar-hidden");

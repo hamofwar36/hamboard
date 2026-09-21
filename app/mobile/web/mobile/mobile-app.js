@@ -1079,9 +1079,22 @@
     return String(block.summary||"").trim()
   }
 
-  function blockElement(block,{compact=false}={}){
-    const card=element("article","block-card"+(compact?" compact-block-card":""));
+  function blockElement(block,{compact=false,stageId="",blockIndex=-1}={}){
+    const editable=Boolean(stageId)&&block?.type!=="script";
+    const card=element("article","block-card"+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
     const titleText=String(block.title||"").trim();
+    if(editable){
+      card.setAttribute("role","button");
+      card.tabIndex=0;
+      card.setAttribute("aria-label",(titleText||"제목 없는 블록")+" 편집");
+      const openEditor=()=>openMobileGeneralBlockEditor(stageId,blockIndex);
+      card.onclick=openEditor;
+      card.onkeydown=event=>{
+        if(event.key!=="Enter"&&event.key!==" ")return;
+        event.preventDefault();
+        openEditor()
+      }
+    }
     if(compact){
       if(titleText||block.completed){
         const head=element("div","block-head");
@@ -1432,6 +1445,134 @@
     requestAnimationFrame(()=>{title.focus();title.select()})
   }
 
+  function closeMobileGeneralBlockEditor(){
+    document.querySelector("[data-project-block-editor]")?.remove()
+  }
+
+  function openMobileGeneralBlockEditor(stageId,blockIndex=-1){
+    const projectId=String(activeDocumentId||""),episodeId=String(activeEpisodeId||"");
+    const initial=mobileProjectContext(projectId,episodeId);
+    const blocks=Array.isArray(initial.unit?.stages?.[stageId])?initial.unit.stages[stageId]:null;
+    const index=Number(blockIndex),existing=blocks&&Number.isInteger(index)&&index>=0&&index<blocks.length?blocks[index]:null;
+    if(!initial.project||!initial.unit||!blocks||existing?.type==="script")return;
+    closeMobileGeneralBlockEditor();
+
+    const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel project-block-panel");
+    wrap.dataset.projectBlockEditor=existing?"edit":"create";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label",existing?"블록 편집":"새 일반 블록");
+    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="square-pen" aria-hidden="true"></i></span><strong>'+(existing?"블록 편집":"새 일반 블록")+'</strong></div><button type="button" class="sheet-close" data-project-block-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+      '<div class="project-stage-editor-body">'+
+      '<label class="create-field"><span>제목 <small>· 선택</small></span><input type="text" data-project-block-title maxlength="120" autocomplete="off" placeholder="블록 제목"></label>'+
+      '<label class="create-field project-block-field"><span>본문</span><textarea data-project-block-summary rows="7" spellcheck="true" placeholder="내용을 입력하세요."></textarea></label>'+
+      '<label class="create-field project-block-field"><span>메모 <small>· 선택</small></span><textarea data-project-block-notes rows="4" spellcheck="true" placeholder="블록에 대한 메모"></textarea></label>'+
+      '<label class="project-block-complete"><input type="checkbox" data-project-block-completed><span><strong>완료 표시</strong><small>완료한 블록으로 표시합니다.</small></span></label>'+
+      '<p class="project-stage-editor-status" data-project-block-status hidden></p>'+
+      '<div class="project-stage-editor-footer">'+
+      (existing?'<button type="button" class="project-stage-delete" data-project-block-delete><i data-lucide="trash-2" aria-hidden="true"></i><span>삭제</span></button>':'<span></span>')+
+      '<div class="note-sheet-actions"><button type="button" class="secondary" data-project-block-close>취소</button><button type="button" class="primary" data-project-block-save>'+(existing?"저장":"추가")+'</button></div>'+
+      '</div></div>';
+    wrap.append(panel);
+    document.body.append(wrap);
+
+    const title=panel.querySelector("[data-project-block-title]"),summary=panel.querySelector("[data-project-block-summary]");
+    const notes=panel.querySelector("[data-project-block-notes]"),completed=panel.querySelector("[data-project-block-completed]");
+    const status=panel.querySelector("[data-project-block-status]"),save=panel.querySelector("[data-project-block-save]");
+    title.value=String(existing?.title||"");
+    summary.value=String(existing?.summary||"");
+    notes.value=String(existing?.notes||"");
+    completed.checked=Boolean(existing?.completed);
+    const setStatus=(message="")=>{
+      status.textContent=String(message||"");
+      status.hidden=!message
+    };
+    panel.querySelectorAll("[data-project-block-close]").forEach(button=>button.onclick=closeMobileGeneralBlockEditor);
+    wrap.onclick=event=>{if(event.target===wrap)closeMobileGeneralBlockEditor()};
+
+    const deleteButton=panel.querySelector("[data-project-block-delete]");
+    if(deleteButton)deleteButton.onclick=async()=>{
+      const current=mobileProjectContext(projectId,episodeId),list=Array.isArray(current.unit?.stages?.[stageId])?current.unit.stages[stageId]:null;
+      const target=list&&index>=0&&index<list.length?list[index]:null;
+      if(!current.project||!current.unit||!target||target.type==="script"){
+        setStatus("삭제할 일반 블록을 찾지 못했습니다.");
+        return
+      }
+      const confirmed=await openMobileConfirm({
+        title:"블록을 삭제하시겠습니까?",
+        message:Array.isArray(target.children)&&target.children.length?"하위 블록도 함께 휴지통으로 이동합니다.":"이 블록을 휴지통으로 이동합니다.",
+        confirmLabel:"삭제",
+        cancelLabel:"취소",
+        destructive:true
+      });
+      if(!confirmed)return;
+      deleteButton.disabled=true;
+      setStatus("");
+      try{
+        pushMobileTrash(current.state,"block",target.title||"제목 없는 블록",target,{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,stageId,index});
+        list.splice(index,1);
+        current.project.updatedAt=new Date().toISOString();
+        await repository.replaceState(current.state);
+        closeMobileGeneralBlockEditor();
+        if(activeDocumentType==="project"&&String(activeDocumentId)===projectId&&String(activeEpisodeId||"")===episodeId)renderProject(current.project)
+      }catch(error){
+        console.error("모바일 일반 블록 삭제 실패",error);
+        logDiagnostic("error","REPOSITORY","일반 블록 삭제에 실패했습니다.",error);
+        deleteButton.disabled=false;
+        setStatus("삭제하지 못했습니다. 다시 시도해 주세요.")
+      }
+    };
+
+    save.onclick=async()=>{
+      const current=mobileProjectContext(projectId,episodeId);
+      if(!current.project||!current.unit){
+        setStatus("편집할 작품 또는 화를 찾지 못했습니다.");
+        return
+      }
+      current.unit.stages=current.unit.stages&&typeof current.unit.stages==="object"?current.unit.stages:{};
+      const list=Array.isArray(current.unit.stages[stageId])?current.unit.stages[stageId]:null;
+      if(!list){
+        setStatus("편집할 파트를 찾지 못했습니다.");
+        return
+      }
+      if(existing){
+        const target=index>=0&&index<list.length?list[index]:null;
+        if(!target||target.type==="script"){
+          setStatus("편집할 일반 블록을 찾지 못했습니다.");
+          return
+        }
+        target.title=title.value.trim();
+        target.summary=summary.value;
+        target.notes=notes.value;
+        target.completed=completed.checked
+      }else{
+        list.push({
+          id:uid(),
+          title:title.value.trim(),
+          summary:summary.value,
+          notes:notes.value,
+          completed:completed.checked,
+          children:[]
+        })
+      }
+      current.project.updatedAt=new Date().toISOString();
+      save.disabled=true;
+      setStatus("");
+      try{
+        await repository.replaceState(current.state);
+        closeMobileGeneralBlockEditor();
+        if(activeDocumentType==="project"&&String(activeDocumentId)===projectId&&String(activeEpisodeId||"")===episodeId)renderProject(current.project)
+      }catch(error){
+        console.error("모바일 일반 블록 저장 실패",error);
+        logDiagnostic("error","REPOSITORY","일반 블록 저장에 실패했습니다.",error);
+        save.disabled=false;
+        setStatus("저장하지 못했습니다. 다시 시도해 주세요.")
+      }
+    };
+    refreshLucideIcons();
+    requestAnimationFrame(()=>title.focus())
+  }
+
   function renderUnit(unit,index=0,{showHeading=true,compactBlocks=false,onBack=null}={}){
     const host=$("#projectContent");
     host.replaceChildren();
@@ -1486,9 +1627,13 @@
       edit.onclick=()=>openMobileProjectStageEditor(stage.id);
       stageHead.append(stripe,copy,edit);
       const blocks=element("div","block-list"),items=Array.isArray(unit.stages?.[stage.id])?unit.stages[stage.id]:[];
-      if(items.length)for(const block of items)blocks.append(blockElement(block,{compact:compactBlocks}));
+      if(items.length)items.forEach((block,blockIndex)=>blocks.append(blockElement(block,{compact:compactBlocks,stageId:stage.id,blockIndex})));
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
-      section.append(stageHead,blocks);
+      const addBlock=element("button","stage-add-block","");
+      addBlock.type="button";
+      addBlock.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>일반 블록 추가</span>';
+      addBlock.onclick=()=>openMobileGeneralBlockEditor(stage.id);
+      section.append(stageHead,blocks,addBlock);
       carousel.append(section);
       sections.push(section)
     }

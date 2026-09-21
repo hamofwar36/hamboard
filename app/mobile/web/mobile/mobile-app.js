@@ -30,6 +30,7 @@
   const noteHtmlStatus=$("#noteHtmlStatus");
   const mindmapReaderScreen=$("#mindmapReaderScreen");
   const menuScreen=$("#menuScreen");
+  const trashScreen=$("#trashScreen");
   const settingsScreen=$("#settingsScreen");
   const cloudSourceScreen=$("#cloudSourceScreen");
   const backButton=$("#mobileBack");
@@ -67,6 +68,11 @@
   const createFormStatus=$("#createFormStatus");
   const createSubmit=$("#createSubmit");
   const menuCloud=$("#menuCloud");
+  const menuTrash=$("#menuTrash");
+  const menuTrashMeta=$("#menuTrashMeta");
+  const trashSubtitle=$("#trashSubtitle");
+  const trashList=$("#trashList");
+  const emptyTrashButton=$("#emptyTrashButton");
   const menuSettings=$("#menuSettings");
   const installApp=$("#installApp");
   const modeSetting=$("#modeSetting");
@@ -519,7 +525,7 @@
     history[replace?"replaceState":"pushState"](state,"",appRouteUrl(state))
   }
   function documentCount(state=snapshot()){return (state.projects||[]).length+(state.notes||[]).length+(state.mindmaps||[]).length}
-  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,settingsScreen,cloudSourceScreen])screen.hidden=true}
+  function hideAllScreens(){for(const screen of [libraryScreen,projectReaderScreen,noteReaderScreen,mindmapReaderScreen,menuScreen,trashScreen,settingsScreen,cloudSourceScreen])screen.hidden=true}
   function activateNav(name=""){libraryNav.classList.toggle("active",name==="library");menuNav.classList.toggle("active",name==="menu")}
   function resetTopbarVisibility(){
     document.body.classList.remove("topbar-hidden");
@@ -702,6 +708,25 @@
     return set
   }
 
+  function collectMobileTrashAssetIds(item,set=new Set()){
+    if(!item)return set;
+    const payload=item.payload;
+    if(item.type==="project")collectDocumentAssetIds("project",payload,set);
+    else if(item.type==="note")collectDocumentAssetIds("note",payload,set);
+    else if(item.type==="mindmap")collectDocumentAssetIds("mindmap",payload,set);
+    else if(item.type==="resource"&&payload?.id)set.add(String(payload.id));
+    else if(item.type==="quickMemo")for(const id of payload?.imageAssetIds||[])if(id)set.add(String(id));
+    else if(item.type==="character"){
+      if(payload?.avatarAssetId)set.add(String(payload.avatarAssetId));
+      for(const id of payload?.imageAssetIds||[])if(id)set.add(String(id))
+    }else if(item.type==="folder"){
+      for(const row of payload?.projects||[])collectDocumentAssetIds("project",row?.data,set);
+      for(const row of payload?.notes||[])collectDocumentAssetIds("note",row?.data,set);
+      for(const row of payload?.mindmaps||[])collectDocumentAssetIds("mindmap",row?.data,set)
+    }
+    return set
+  }
+
   function currentMobileAssetIds(stateValue=snapshot()){
     const ids=new Set();
     for(const project of stateValue.projects||[])collectDocumentAssetIds("project",project,ids);
@@ -712,6 +737,7 @@
       for(const id of character?.imageAssetIds||[])if(id)ids.add(String(id))
     }
     for(const memo of stateValue.quickMemos||[])for(const id of memo?.imageAssetIds||[])if(id)ids.add(String(id));
+    for(const item of stateValue.trash||[])collectMobileTrashAssetIds(item,ids);
     return ids
   }
 
@@ -957,6 +983,69 @@
     }
     return card
   }
+  const MOBILE_TRASH_LABELS=Object.freeze({project:"작품",mindmap:"마인드맵",note:"노트",folder:"폴더",episode:"화",stage:"파트",block:"블록",character:"캐릭터",memo:"메모",quickMemo:"퀵메모",resource:"이미지"});
+  function mobileTrashLabel(type){return MOBILE_TRASH_LABELS[String(type||"")]||"항목"}
+  function pushMobileTrash(state,type,label,payload,meta={}){
+    state.trash=Array.isArray(state.trash)?state.trash:[];
+    const item={id:uid(),type:String(type||""),label:String(label||mobileTrashLabel(type)),payload:clone(payload),meta:clone(meta&&typeof meta==="object"?meta:{}),deletedAt:new Date().toISOString()};
+    state.trash.unshift(item);
+    return item
+  }
+  function mobileTrashDate(value){
+    const date=new Date(String(value||""));
+    if(Number.isNaN(date.getTime()))return "";
+    return new Intl.DateTimeFormat("ko-KR",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(date)
+  }
+  function mobileTrashUnit(state,meta={}){
+    const project=(state.projects||[]).find(item=>String(item?.id||"")===String(meta.projectId||""));
+    if(!project)return null;
+    if(project.kind==="long")return (project.episodes||[]).find(item=>String(item?.id||"")===String(meta.episodeId||""))||null;
+    return project
+  }
+  function mobileTrashFindBlock(unit,stageId,path=[]){
+    let list=unit?.stages?.[stageId]||[],node=null;
+    for(const id of path||[]){node=list.find(item=>String(item?.id||"")===String(id||""));if(!node)return null;list=Array.isArray(node.children)?node.children:[]}
+    return node
+  }
+  async function restoreMobileTrashItem(id){
+    const state=snapshot(),trash=Array.isArray(state.trash)?state.trash:[],trashIndex=trash.findIndex(item=>String(item?.id||"")===String(id||""));
+    if(trashIndex<0)return false;
+    const item=trash[trashIndex],meta=item?.meta&&typeof item.meta==="object"?item.meta:{},payload=clone(item?.payload),type=String(item?.type||"");
+    const insert=(list,value,at=list.length)=>list.splice(Math.max(0,Math.min(Number(at)||0,list.length)),0,value);
+    let restored=false;
+    try{
+      if(type==="project"&&payload&&typeof payload==="object"){state.projects=Array.isArray(state.projects)?state.projects:[];insert(state.projects,payload,meta.index??state.projects.length);restored=true}
+      else if(type==="note"&&payload&&typeof payload==="object"){state.notes=Array.isArray(state.notes)?state.notes:[];insert(state.notes,payload,meta.index??state.notes.length);restored=true}
+      else if(type==="mindmap"&&payload&&typeof payload==="object"){state.mindmaps=Array.isArray(state.mindmaps)?state.mindmaps:[];insert(state.mindmaps,payload,meta.index??state.mindmaps.length);restored=true}
+      else if(type==="folder"&&payload&&typeof payload==="object"){
+        state.folders=Array.isArray(state.folders)?state.folders:[];state.projects=Array.isArray(state.projects)?state.projects:[];state.notes=Array.isArray(state.notes)?state.notes:[];state.mindmaps=Array.isArray(state.mindmaps)?state.mindmaps:[];
+        const rows=(value,target)=>[...(value||[])].sort((a,b)=>(Number(a?.index)||0)-(Number(b?.index)||0)).forEach(row=>{if(row?.data)insert(target,clone(row.data),row.index)});
+        rows(payload.folders,state.folders);rows(payload.projects,state.projects);rows(payload.notes,state.notes);rows(payload.mindmaps,state.mindmaps);restored=true
+      }else if(type==="episode"&&payload&&typeof payload==="object"){
+        const project=(state.projects||[]).find(row=>String(row?.id||"")===String(meta.projectId||""));
+        if(project?.kind==="long"){project.episodes=Array.isArray(project.episodes)?project.episodes:[];insert(project.episodes,payload,meta.index??project.episodes.length);restored=true}
+      }else if(type==="stage"){
+        const unit=mobileTrashUnit(state,meta),base=payload&&typeof payload==="object"?payload:{},raw=base.stageDef&&typeof base.stageDef==="object"?clone(base.stageDef):null;
+        if(unit&&raw){unit.stageDefs=Array.isArray(unit.stageDefs)?unit.stageDefs:[];unit.stages=unit.stages&&typeof unit.stages==="object"?unit.stages:{};let stageId=String(raw.id||uid());if(unit.stageDefs.some(stage=>String(stage?.id||"")===stageId))stageId=uid();raw.id=stageId;insert(unit.stageDefs,raw,meta.index??unit.stageDefs.length);unit.stages[stageId]=Array.isArray(base.blocks)?clone(base.blocks):[];restored=true}
+      }else if(type==="block"&&payload&&typeof payload==="object"){
+        const unit=mobileTrashUnit(state,meta);
+        if(unit?.stages?.[meta.stageId]){let target=unit.stages[meta.stageId];if(Array.isArray(meta.parentPath)&&meta.parentPath.length){const parent=mobileTrashFindBlock(unit,meta.stageId,meta.parentPath);if(parent){parent.children=Array.isArray(parent.children)?parent.children:[];target=parent.children}else target=null}if(target){insert(target,payload,meta.index??target.length);restored=true}}
+      }else if(type==="character"&&payload&&typeof payload==="object"){
+        let owner=null;if(meta.ownerType==="repository"){state.characterRepository=Array.isArray(state.characterRepository)?state.characterRepository:[];owner={characters:state.characterRepository}}else if(meta.ownerType==="note")owner=(state.notes||[]).find(row=>String(row?.id||"")===String(meta.ownerId||""));else owner=(state.projects||[]).find(row=>String(row?.id||"")===String(meta.ownerId||""));
+        if(owner){owner.characters=Array.isArray(owner.characters)?owner.characters:[];insert(owner.characters,payload,meta.index??owner.characters.length);restored=true}
+      }else if(type==="memo"&&payload&&typeof payload==="object"){
+        const owner=meta.ownerType==="note"?(state.notes||[]).find(row=>String(row?.id||"")===String(meta.ownerId||"")):(state.projects||[]).find(row=>String(row?.id||"")===String(meta.ownerId||""));
+        if(owner){owner.memos=Array.isArray(owner.memos)?owner.memos:[];insert(owner.memos,payload,meta.index??owner.memos.length);restored=true}
+      }else if(type==="quickMemo"&&payload&&typeof payload==="object"){state.quickMemos=Array.isArray(state.quickMemos)?state.quickMemos:[];insert(state.quickMemos,payload,meta.index??state.quickMemos.length);restored=true}
+      else if(type==="resource"&&payload&&typeof payload==="object"){
+        const owner=meta.ownerType==="note"?(state.notes||[]).find(row=>String(row?.id||"")===String(meta.ownerId||"")):(state.projects||[]).find(row=>String(row?.id||"")===String(meta.ownerId||""));
+        if(owner){owner.resources=Array.isArray(owner.resources)?owner.resources:[];insert(owner.resources,payload,meta.index??owner.resources.length);restored=true}
+      }
+      if(!restored)return false;
+      trash.splice(trashIndex,1);state.trash=trash;await repository.replaceState(state);return true
+    }catch(error){console.error("모바일 휴지통 복구 실패",error);logDiagnostic("error","REPOSITORY","휴지통 항목 복구에 실패했습니다.",error);return false}
+  }
+
   function openMobileConfirm({title="삭제하시겠습니까?",message="",confirmLabel="삭제",cancelLabel="취소",destructive=false}={}){
     document.querySelector("[data-mobile-confirm]")?.remove();
     return new Promise(resolve=>{
@@ -1143,10 +1232,10 @@
         setStatus("삭제할 파트를 찾지 못했습니다.");
         return
       }
-      const blockCount=Array.isArray(current.unit.stages?.[stageId])?current.unit.stages[stageId].length:0;
+      const blocks=Array.isArray(current.unit.stages?.[stageId])?current.unit.stages[stageId]:[],blockCount=blocks.length,target=defs[index];
       const confirmed=await openMobileConfirm({
         title:"삭제하시겠습니까?",
-        message:blockCount?"이 파트와 안의 블록 "+blockCount+"개가 함께 삭제됩니다.":"이 파트를 삭제합니다.",
+        message:blockCount?"이 파트와 안의 블록 "+blockCount+"개가 휴지통으로 이동합니다.":"이 파트를 휴지통으로 이동합니다.",
         confirmLabel:"삭제",
         cancelLabel:"취소",
         destructive:true
@@ -1155,6 +1244,7 @@
       deleteButton.disabled=true;
       setStatus("");
       try{
+        pushMobileTrash(current.state,"stage",target?.name||"이름 없는 파트",{stageDef:target,blocks},{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,index});
         defs.splice(index,1);
         if(current.unit.stages&&typeof current.unit.stages==="object")delete current.unit.stages[stageId];
         current.project.updatedAt=new Date().toISOString();
@@ -2247,6 +2337,8 @@
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
+    const count=(snapshot().trash||[]).length;
+    if(menuTrashMeta)menuTrashMeta.textContent=count?"삭제된 항목 "+count+"개":"삭제된 항목이 없습니다.";
     showScreen(menuScreen,{heading:"메뉴",back:false,account:false,nav:"menu"})
   }
 
@@ -2254,6 +2346,30 @@
     renderMenu();
     writeRoute({view:"menu"},{replace})
   }
+
+  function renderMobileTrash(){
+    const items=Array.isArray(snapshot().trash)?snapshot().trash:[];
+    trashList.replaceChildren();
+    trashSubtitle.textContent=items.length?"삭제된 항목 "+items.length+"개":"삭제된 항목이 없습니다.";
+    emptyTrashButton.hidden=!items.length;
+    if(!items.length){trashList.append(element("div","mobile-trash-empty","휴지통이 비어 있습니다."));return}
+    for(const item of items){
+      const row=element("article","mobile-trash-item"),copy=element("div","mobile-trash-copy"),actions=element("div","mobile-trash-actions");
+      copy.append(element("span","mobile-trash-kind",mobileTrashLabel(item.type)),element("strong","",item.label||"삭제된 항목"));
+      const deleted=mobileTrashDate(item.deletedAt);if(deleted)copy.append(element("small","",deleted));
+      const restore=element("button","mobile-trash-restore","복구"),remove=element("button","mobile-trash-delete","영구 삭제");
+      restore.type="button";remove.type="button";
+      restore.onclick=async()=>{restore.disabled=true;const ok=await restoreMobileTrashItem(item.id);if(!ok){restore.disabled=false;await openMobileConfirm({title:"복구할 수 없습니다.",message:"원래 위치가 없거나 모바일에서 지원하지 않는 휴지통 항목입니다.",confirmLabel:"확인",cancelLabel:"닫기"})}renderMobileTrash()};
+      remove.onclick=async()=>{
+        const confirmed=await openMobileConfirm({title:"영구 삭제하시겠습니까?",message:"이 작업은 되돌릴 수 없습니다.",confirmLabel:"영구 삭제",cancelLabel:"취소",destructive:true});if(!confirmed)return;
+        const state=snapshot();state.trash=(state.trash||[]).filter(entry=>String(entry?.id||"")!==String(item.id||""));
+        try{await repository.replaceState(state);renderMobileTrash()}catch(error){console.error("모바일 휴지통 영구 삭제 실패",error);logDiagnostic("error","REPOSITORY","휴지통 영구 삭제에 실패했습니다.",error)}
+      };
+      actions.append(restore,remove);row.append(copy,actions);trashList.append(row)
+    }
+  }
+  function renderTrashScreen(){activeDocumentType="";activeDocumentId="";activeEpisodeId="";showScreen(trashScreen,{heading:"휴지통",back:true,account:false,nav:"menu"});renderMobileTrash()}
+  function openTrash({replace=false}={}){renderTrashScreen();writeRoute({view:"trash"},{replace})}
 
   function renderSettingsScreen(){
     activeDocumentType="";
@@ -2608,6 +2724,7 @@
     if(!route||route.hamboard!==true){renderHome();return}
     if(route.view==="document"){renderDocument(route.type,route.id);return}
     if(route.view==="menu"){renderMenu();return}
+    if(route.view==="trash"){renderTrashScreen();return}
     if(route.view==="settings"){renderSettingsScreen();return}
     if(route.view==="cloud"){
       cloudReturnView=route.returnView==="menu"?"menu":"library";
@@ -2819,7 +2936,15 @@
   window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave()});
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
+  menuTrash.onclick=()=>openTrash();
   menuSettings.onclick=()=>openSettings();
+  emptyTrashButton.onclick=async()=>{
+    const items=snapshot().trash||[];if(!items.length)return;
+    const confirmed=await openMobileConfirm({title:"휴지통을 비우시겠습니까?",message:"모든 항목을 영구 삭제합니다. 이 작업은 되돌릴 수 없습니다.",confirmLabel:"모두 삭제",cancelLabel:"취소",destructive:true});
+    if(!confirmed)return;
+    const state=snapshot();state.trash=[];
+    try{await repository.replaceState(state);renderMobileTrash()}catch(error){console.error("모바일 휴지통 비우기 실패",error);logDiagnostic("error","REPOSITORY","휴지통 비우기에 실패했습니다.",error)}
+  };
   installApp.onclick=async()=>{
     if(!deferredInstallPrompt)return;
     const prompt=deferredInstallPrompt;
@@ -2902,7 +3027,7 @@
   };
 
   window.HamboardMobileApp=Object.freeze({
-    start,repository,assetRepository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCheckpoint,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openSettings,openCloudSources,refreshCloudSources,snapshot
+    start,repository,assetRepository,importCanonicalState,applyCloudCommits,syncFromCloud,commitTopology,readCloudCheckpoint,readCloudCommit,openDocument,closeDocument,openLibrary,openMenu,openTrash,openSettings,openCloudSources,refreshCloudSources,snapshot
   });
   start();
 })();

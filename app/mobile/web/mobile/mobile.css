@@ -387,7 +387,20 @@ svg.lucide{stroke:currentColor}
   background:var(--card-color,var(--ui-surface-default));color:var(--ui-fg);box-shadow:var(--soft-shadow);text-align:left;
   --ui-fg:var(--custom-on,var(--ui-content-default));--ui-muted:var(--custom-muted,var(--ui-content-muted))
 }
+.episode-button{cursor:pointer}
 .episode-button:active{transform:translateY(1px);box-shadow:var(--ui-press-shadow)}
+.episode-card-open{
+  position:absolute;z-index:2;inset:0;width:100%;height:100%;padding:0;border:0;border-radius:inherit;
+  background:transparent;color:transparent;cursor:pointer
+}
+.episode-card-open:focus-visible{outline:2px solid var(--ui-field-focus-border);outline-offset:-3px}
+.episode-card-menu{
+  position:absolute;z-index:3;top:7px;right:7px;width:22px;height:22px;display:grid;place-items:center;padding:0;
+  border:0;border-radius:6px;background:transparent;color:var(--ui-muted)
+}
+.episode-card-menu:active{background:transparent;color:var(--ui-fg)}
+.episode-card-menu svg{width:12px;height:12px}
+.episode-number,.episode-title,.episode-desc{position:relative;z-index:1}
 .episode-number{display:block;margin:0 0 8px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700;line-height:1.2}
 .episode-title{
   display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;
@@ -653,7 +666,7 @@ body.note-html-mode .note-editor-controls{display:none}
 .note-style-align button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg);border-color:transparent}
 .note-style-align svg{width:18px;height:18px}
 .note-sheet-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
-.note-sheet-actions button{height:var(--button-large-height);padding:0 var(--button-large-padding-x);border:0;border-radius:12px;font:inherit;font-size:var(--fs-sm);font-weight:700}
+.note-sheet-actions button{height:40px;padding:0 10px;border:0;border-radius:11px;font:inherit;font-size:var(--fs-sm);font-weight:700}
 .note-sheet-actions .secondary{background:var(--ui-surface-subtle);color:var(--ui-fg)}
 .note-sheet-actions .primary{background:var(--ui-control-primary-bg);color:var(--ui-control-primary-fg)}
 
@@ -722,8 +735,8 @@ body.note-html-mode .note-editor-controls{display:none}
 }
 .project-stage-editor-footer .note-sheet-actions{display:contents;margin-top:0}
 .project-stage-delete{
-  height:var(--button-large-height);display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  padding:0 var(--button-large-padding-x);border:0;border-radius:12px;background:transparent;
+  height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:0 10px;border:0;border-radius:11px;background:transparent;
   color:var(--ui-status-error-fg);font:inherit;font-size:var(--fs-sm);font-weight:700
 }
 .project-stage-delete:active{background:transparent;color:var(--ui-status-error-fg)}
@@ -1179,8 +1192,8 @@ body.note-keyboard-open .mobile-bottom-nav{display:none}
 .create-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:8px;margin-top:2px}
 .create-actions.editing{grid-template-columns:minmax(0,.85fr) minmax(0,1fr) minmax(0,1.15fr)}
 .create-actions button{
-  height:var(--button-large-height);display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  padding:0 var(--button-large-padding-x);border-radius:12px;font-size:var(--fs-sm);font-weight:700
+  height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:0 10px;border-radius:11px;font-size:var(--fs-sm);font-weight:700
 }
 .create-actions button svg{width:17px;height:17px}
 .create-secondary{border:1px solid var(--ui-control-neutral-border);background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-muted)}

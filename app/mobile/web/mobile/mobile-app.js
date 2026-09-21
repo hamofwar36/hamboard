@@ -1543,6 +1543,72 @@
     if(carousel.childElementCount)host.append(carousel);
     refreshLucideIcons()
   }
+  function closeMobileEpisodeEditor(){
+    document.querySelector("[data-episode-editor]")?.remove()
+  }
+
+  function openMobileEpisodeEditor(episodeId){
+    const projectId=String(activeDocumentId||""),state=snapshot();
+    const project=(state.projects||[]).find(item=>String(item?.id||"")===projectId);
+    if(!project||project.kind!=="long")return;
+    const episode=(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||""));
+    if(!episode)return;
+    closeMobileEpisodeEditor();
+    const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel");
+    wrap.dataset.episodeEditor="1";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label","화 편집");
+    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="files" aria-hidden="true"></i></span><strong>화 편집</strong></div><button type="button" class="sheet-close" data-episode-editor-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+      '<div class="project-stage-editor-body">'+
+      '<label class="create-field"><span>제목</span><input type="text" data-episode-title maxlength="120" autocomplete="off"></label>'+
+      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-episode-subtitle maxlength="240" autocomplete="off" placeholder="이번 화의 핵심"></label>'+
+      '<p class="project-stage-editor-status" data-episode-status hidden></p>'+
+      '<div class="note-sheet-actions"><button type="button" class="secondary" data-episode-editor-close>취소</button><button type="button" class="primary" data-episode-save>저장</button></div>'+
+      '</div>';
+    wrap.append(panel);
+    document.body.append(wrap);
+
+    const title=panel.querySelector("[data-episode-title]"),subtitle=panel.querySelector("[data-episode-subtitle]");
+    const status=panel.querySelector("[data-episode-status]"),save=panel.querySelector("[data-episode-save]");
+    title.value=String(episode.title||"");
+    subtitle.value=String(episode.subtitle||"");
+    const setStatus=message=>{
+      status.textContent=String(message||"");
+      status.hidden=!message
+    };
+    panel.querySelectorAll("[data-episode-editor-close]").forEach(button=>button.onclick=closeMobileEpisodeEditor);
+    wrap.onclick=event=>{if(event.target===wrap)closeMobileEpisodeEditor()};
+    save.onclick=async()=>{
+      const current=snapshot(),targetProject=(current.projects||[]).find(item=>String(item?.id||"")===projectId);
+      const target=targetProject?.kind==="long"?(targetProject.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||"")):null;
+      if(!targetProject||!target){
+        setStatus("편집할 화를 찾지 못했습니다.");
+        return
+      }
+      target.title=title.value.trim()||"제목 없는 화";
+      target.subtitle=subtitle.value.trim();
+      targetProject.updatedAt=new Date().toISOString();
+      save.disabled=true;
+      setStatus("");
+      try{
+        await repository.replaceState(current);
+        closeMobileEpisodeEditor();
+        if(activeDocumentType==="project"&&String(activeDocumentId)===projectId){
+          activeEpisodeId="";
+          renderProject(targetProject)
+        }
+      }catch(error){
+        console.error("모바일 화 정보 저장 실패",error);
+        logDiagnostic("error","REPOSITORY","화 정보 저장에 실패했습니다.",error);
+        save.disabled=false;
+        setStatus("저장하지 못했습니다. 다시 시도해 주세요.")
+      }
+    };
+    refreshLucideIcons();
+    requestAnimationFrame(()=>{title.focus();title.select()})
+  }
+
   function renderProject(project){
     $("#readerTitle").textContent=project.title||"제목 없는 작품";
     $("#readerSubtitle").textContent=project.subtitle||"";
@@ -1565,14 +1631,13 @@
         content.replaceChildren();
         const showCompletion=snapshot().settings?.completionEnabled!==false;
         list.forEach((episode,index)=>{
-          const button=element("button","episode-button");
-          button.type="button";
+          const card=element("article","episode-button");
           const episodeColor=safeColor(episode.color,"#A9D6FF"),cardInk=cardForeground(episodeColor);
-          button.style.setProperty("--card-color",episodeColor);
-          button.style.setProperty("--custom-on",cardInk);
-          button.style.setProperty("--custom-muted",cardInk);
+          card.style.setProperty("--card-color",episodeColor);
+          card.style.setProperty("--custom-on",cardInk);
+          card.style.setProperty("--custom-muted",cardInk);
           const blocks=allBlocks(episode),done=blocks.filter(block=>block.completed).length,todo=blocks.length-done;
-          button.append(
+          card.append(
             element("span","episode-number",(index+1)+"화"),
             element("strong","episode-title",episode.title||(index+1)+"화"),
             element("span","episode-desc",episode.subtitle||blocks.length+"개 블록")
@@ -1580,14 +1645,24 @@
           if(showCompletion){
             const completion=element("span","episode-completion");
             completion.append(element("span","","완성 "+done),element("span","","미완성 "+todo));
-            button.append(completion)
+            card.append(completion)
           }
-          button.onclick=()=>{
+          const open=element("button","episode-card-open");
+          open.type="button";
+          open.setAttribute("aria-label",(episode.title||(index+1)+"화")+" 열기");
+          open.onclick=()=>{
             activeEpisodeId=String(episode.id);
             renderProject(project);
             scrollAppToTop({smooth:true})
           };
-          episodes.append(button)
+          const menu=element("button","episode-card-menu");
+          menu.type="button";
+          menu.title="화 편집";
+          menu.setAttribute("aria-label",(episode.title||(index+1)+"화")+" 편집");
+          menu.innerHTML='<i data-lucide="ellipsis-vertical" aria-hidden="true"></i>';
+          menu.onclick=event=>{event.stopPropagation();openMobileEpisodeEditor(episode.id)};
+          card.append(open,menu);
+          episodes.append(card)
         });
         return
       }

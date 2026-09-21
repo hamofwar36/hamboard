@@ -1465,8 +1465,9 @@
 
   function syncMobileBlockCompletion(){
     const completed=Boolean(activeBlockEditor?.completed);
-    blockEditorCompletion.textContent=completed?"● 완료":"○ 미완료";
-    blockEditorCompletion.setAttribute("aria-pressed",String(completed))
+    blockEditorCompletion.innerHTML='<i data-lucide="'+(completed?"circle-check":"circle")+'" aria-hidden="true"></i><span>'+(completed?"완료":"미완료")+'</span>';
+    blockEditorCompletion.setAttribute("aria-pressed",String(completed));
+    refreshLucideIcons()
   }
 
   function blockEditorHasContent(){

@@ -438,16 +438,16 @@ svg.lucide{stroke:currentColor}
   );
   color:var(--ui-fg);--ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
 }
-.stage-heading{display:grid;grid-template-columns:4px minmax(0,1fr) 30px;gap:10px;padding:3px 3px 13px;border:0}
+.stage-heading{display:grid;grid-template-columns:4px minmax(0,1fr) 22px;gap:8px;padding:3px 3px 13px;border:0}
 .stage-color{border-radius:999px;background:var(--stage-color,var(--primary-base))}
 .stage-heading h4{margin:0;font-size:var(--fs-lg);font-weight:700;line-height:1.15}
 .stage-heading p{margin:7px 0 0;color:var(--ui-fg);font-size:var(--fs-sm);line-height:1.5}
 .stage-edit-button{
-  width:30px;height:30px;display:grid;place-items:center;align-self:start;padding:0;border:0;border-radius:9px;
-  background:color-mix(in srgb,var(--ui-surface-default) 72%,transparent);color:var(--ui-muted)
+  width:22px;height:22px;display:grid;place-items:center;align-self:start;padding:0;border:0;border-radius:6px;
+  background:transparent;color:var(--ui-muted)
 }
-.stage-edit-button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
-.stage-edit-button svg{width:14px;height:14px}
+.stage-edit-button:active{background:transparent;color:var(--ui-fg)}
+.stage-edit-button svg{width:11px;height:11px}
 .project-stage-empty{
   display:grid;justify-items:center;gap:9px;padding:28px 12px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center
 }
@@ -686,16 +686,7 @@ body.note-html-mode .note-editor-controls{display:none}
 .project-stage-editor-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .project-stage-editor-head h3{margin:0;font-size:var(--fs-lg);line-height:1.25}
 .project-stage-editor-body{display:grid;gap:12px}
-.project-stage-color-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.project-stage-color-row>span{color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700}
-.project-stage-color-toggle{
-  width:38px;height:38px;display:grid;grid-template-columns:24px;place-items:center;padding:0;
-  border:1px solid var(--ui-control-neutral-border);border-radius:10px;background:var(--ui-control-neutral-bg);color:var(--ui-muted)
-}
-.project-stage-color-toggle .create-color-preview{width:24px;height:24px}
-.project-stage-color-toggle>svg{display:none}
-.project-stage-color-options{padding:2px 0 0}
-.project-stage-color-options[hidden]{display:none}
+.project-stage-color-field{margin:0}
 .project-stage-editor-status{
   margin:0;padding:8px 10px;border:1px solid var(--ui-status-error-border);border-radius:10px;
   background:var(--ui-status-error-bg);color:var(--ui-status-error-fg);font-size:var(--fs-xs);line-height:1.4

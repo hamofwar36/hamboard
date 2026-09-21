@@ -978,6 +978,7 @@
     closeMobileProjectStageEditor();
     const existing=stageId?(unit.stageDefs||[]).find(stage=>String(stage?.id||"")===String(stageId)):null;
     let selectedColor=safeColor(existing?.color||randomCardColor(),randomCardColor()),colorsOpen=false;
+    let colorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===selectedColor.toLowerCase());
     const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel");
     wrap.dataset.projectStageEditor=existing?"edit":"create";
     panel.setAttribute("role","dialog");
@@ -987,8 +988,18 @@
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-project-stage-title maxlength="120" placeholder="예: 만남, 동행, 균열, 이별"></label>'+
       '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트의 간단한 설명"></label>'+
-      '<div class="project-stage-color-row"><span>색상</span><button type="button" class="project-stage-color-toggle" data-project-stage-color-toggle aria-label="파트 색상 선택" aria-expanded="false"><span class="create-color-preview" data-project-stage-color-preview></span><i data-lucide="chevron-down" aria-hidden="true"></i></button></div>'+
-      '<div class="project-stage-color-options" data-project-stage-color-options hidden><div class="create-color-grid" data-project-stage-color-grid></div></div>'+
+      '<fieldset class="create-color-field project-stage-color-field">'+
+      '<legend>색상</legend>'+
+      '<button class="create-color-toggle" type="button" data-project-stage-color-toggle aria-expanded="false">'+
+      '<span class="create-color-preview" data-project-stage-color-preview aria-hidden="true"></span>'+
+      '<span class="create-color-toggle-label">색상 선택</span>'+
+      '<i data-lucide="chevron-down" aria-hidden="true"></i></button>'+
+      '<div class="create-color-options" data-project-stage-color-options hidden>'+
+      '<div class="create-color-grid" data-project-stage-color-grid aria-label="파트 색상"></div>'+
+      '<div class="create-color-editor" data-project-stage-color-editor hidden>'+
+      '<input type="color" data-project-stage-color-picker aria-label="직접 색상 선택">'+
+      '<input type="text" data-project-stage-color-hex maxlength="7" spellcheck="false" autocomplete="off" aria-label="HEX 색상">'+
+      '</div></div></fieldset>'+
       '<p class="project-stage-editor-status" data-project-stage-status hidden></p>'+
       '<div class="note-sheet-actions"><button type="button" class="secondary" data-project-stage-close>취소</button><button type="button" class="primary" data-project-stage-save>'+(existing?"저장":"추가")+'</button></div>'+
       '</div>';
@@ -998,7 +1009,8 @@
     const title=panel.querySelector("[data-project-stage-title]"),subtitle=panel.querySelector("[data-project-stage-subtitle]");
     const colorToggle=panel.querySelector("[data-project-stage-color-toggle]"),colorPreview=panel.querySelector("[data-project-stage-color-preview]");
     const colorOptions=panel.querySelector("[data-project-stage-color-options]"),colorGrid=panel.querySelector("[data-project-stage-color-grid]");
-    const status=panel.querySelector("[data-project-stage-status]"),save=panel.querySelector("[data-project-stage-save]");
+    const colorEditor=panel.querySelector("[data-project-stage-color-editor]"),colorPicker=panel.querySelector("[data-project-stage-color-picker]");
+    const colorHex=panel.querySelector("[data-project-stage-color-hex]"),status=panel.querySelector("[data-project-stage-status]"),save=panel.querySelector("[data-project-stage-save]");
     title.value=existing?.name||"";
     subtitle.value=existing?.hint||"";
 
@@ -1011,12 +1023,19 @@
       colorPreview.style.setProperty("--swatch",selectedColor);
       colorToggle.setAttribute("aria-expanded",String(colorsOpen));
       colorOptions.hidden=!colorsOpen;
-      colorToggle.querySelector("svg")?.classList.toggle("rotated",colorsOpen);
+      colorEditor.hidden=!colorCustom;
+      colorPicker.value=selectedColor;
+      colorHex.value=selectedColor.toUpperCase();
       colorGrid.querySelectorAll("[data-stage-color]").forEach(button=>{
-        const active=String(button.dataset.stageColor||"").toLowerCase()===selectedColor.toLowerCase();
+        const active=!colorCustom&&String(button.dataset.stageColor||"").toLowerCase()===selectedColor.toLowerCase();
         button.classList.toggle("active",active);
         button.setAttribute("aria-pressed",String(active))
-      })
+      });
+      const custom=colorGrid.querySelector("[data-stage-color-custom]");
+      if(custom){
+        custom.classList.toggle("active",colorCustom);
+        custom.setAttribute("aria-pressed",String(colorCustom))
+      }
     };
     for(const color of CARD_COLORS){
       const button=document.createElement("button");
@@ -1027,13 +1046,47 @@
       button.setAttribute("aria-label","색상 "+color.toUpperCase());
       button.onclick=()=>{
         selectedColor=color;
+        colorCustom=false;
         colorsOpen=false;
         syncColor()
       };
       colorGrid.append(button)
     }
+    const customColor=document.createElement("button");
+    customColor.type="button";
+    customColor.className="create-color-swatch custom";
+    customColor.dataset.stageColorCustom="true";
+    customColor.setAttribute("aria-label","직접 색상");
+    customColor.innerHTML='<i data-lucide="palette" aria-hidden="true"></i>';
+    customColor.onclick=()=>{
+      colorCustom=true;
+      colorsOpen=true;
+      syncColor();
+      requestAnimationFrame(()=>colorHex.focus())
+    };
+    colorGrid.append(customColor);
     colorToggle.onclick=()=>{
       colorsOpen=!colorsOpen;
+      syncColor()
+    };
+    colorPicker.oninput=()=>{
+      colorCustom=true;
+      colorsOpen=true;
+      selectedColor=safeColor(colorPicker.value,selectedColor||CARD_COLORS[0]);
+      syncColor()
+    };
+    colorHex.oninput=()=>{
+      const value=safeColor(colorHex.value,"");
+      if(!value)return;
+      colorCustom=true;
+      colorsOpen=true;
+      selectedColor=value;
+      colorPicker.value=value;
+      colorPreview.style.setProperty("--swatch",value)
+    };
+    colorHex.onblur=()=>{
+      selectedColor=safeColor(colorHex.value,selectedColor||CARD_COLORS[0]);
+      colorCustom=true;
       syncColor()
     };
     panel.querySelectorAll("[data-project-stage-close]").forEach(button=>button.onclick=closeMobileProjectStageEditor);

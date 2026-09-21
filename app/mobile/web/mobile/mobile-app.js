@@ -957,6 +957,126 @@
     }
     return card
   }
+  function mobileProjectContext(projectId=activeDocumentId,episodeId=activeEpisodeId){
+    const state=snapshot(),project=(state.projects||[]).find(item=>String(item?.id||"")===String(projectId||""));
+    if(!project)return {state,project:null,unit:null};
+    if(project.kind==="long"){
+      const unit=(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||""))||null;
+      return {state,project,unit}
+    }
+    return {state,project,unit:project}
+  }
+
+  function closeMobileProjectStageEditor(){
+    document.querySelector("[data-project-stage-editor]")?.remove()
+  }
+
+  function openMobileProjectStageEditor(stageId=""){
+    const projectId=String(activeDocumentId||""),episodeId=String(activeEpisodeId||"");
+    const {project,unit}=mobileProjectContext(projectId,episodeId);
+    if(!project||!unit)return;
+    closeMobileProjectStageEditor();
+    const existing=stageId?(unit.stageDefs||[]).find(stage=>String(stage?.id||"")===String(stageId)):null;
+    let selectedColor=safeColor(existing?.color||randomCardColor(),randomCardColor()),colorsOpen=false;
+    const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel");
+    wrap.dataset.projectStageEditor=existing?"edit":"create";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label",existing?"파트 편집":"새 파트 추가");
+    panel.innerHTML='<div class="project-stage-editor-head"><h3>'+(existing?"파트 편집":"새 파트 추가")+'</h3><button type="button" class="sheet-close" data-project-stage-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+      '<div class="project-stage-editor-body">'+
+      '<label class="create-field"><span>제목</span><input type="text" data-project-stage-title maxlength="120" placeholder="예: 만남, 동행, 균열, 이별"></label>'+
+      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트의 간단한 설명"></label>'+
+      '<div class="project-stage-color-row"><span>색상</span><button type="button" class="project-stage-color-toggle" data-project-stage-color-toggle aria-label="파트 색상 선택" aria-expanded="false"><span class="create-color-preview" data-project-stage-color-preview></span><i data-lucide="chevron-down" aria-hidden="true"></i></button></div>'+
+      '<div class="project-stage-color-options" data-project-stage-color-options hidden><div class="create-color-grid" data-project-stage-color-grid></div></div>'+
+      '<p class="project-stage-editor-status" data-project-stage-status hidden></p>'+
+      '<div class="note-sheet-actions"><button type="button" class="secondary" data-project-stage-close>취소</button><button type="button" class="primary" data-project-stage-save>'+(existing?"저장":"추가")+'</button></div>'+
+      '</div>';
+    wrap.append(panel);
+    document.body.append(wrap);
+
+    const title=panel.querySelector("[data-project-stage-title]"),subtitle=panel.querySelector("[data-project-stage-subtitle]");
+    const colorToggle=panel.querySelector("[data-project-stage-color-toggle]"),colorPreview=panel.querySelector("[data-project-stage-color-preview]");
+    const colorOptions=panel.querySelector("[data-project-stage-color-options]"),colorGrid=panel.querySelector("[data-project-stage-color-grid]");
+    const status=panel.querySelector("[data-project-stage-status]"),save=panel.querySelector("[data-project-stage-save]");
+    title.value=existing?.name||"";
+    subtitle.value=existing?.hint||"";
+
+    const setStatus=(message="")=>{
+      status.textContent=String(message||"");
+      status.hidden=!message
+    };
+    const syncColor=()=>{
+      selectedColor=safeColor(selectedColor,CARD_COLORS[0]);
+      colorPreview.style.setProperty("--swatch",selectedColor);
+      colorToggle.setAttribute("aria-expanded",String(colorsOpen));
+      colorOptions.hidden=!colorsOpen;
+      colorToggle.querySelector("svg")?.classList.toggle("rotated",colorsOpen);
+      colorGrid.querySelectorAll("[data-stage-color]").forEach(button=>{
+        const active=String(button.dataset.stageColor||"").toLowerCase()===selectedColor.toLowerCase();
+        button.classList.toggle("active",active);
+        button.setAttribute("aria-pressed",String(active))
+      })
+    };
+    for(const color of CARD_COLORS){
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="create-color-swatch";
+      button.dataset.stageColor=color;
+      button.style.setProperty("--swatch",color);
+      button.setAttribute("aria-label","색상 "+color.toUpperCase());
+      button.onclick=()=>{
+        selectedColor=color;
+        colorsOpen=false;
+        syncColor()
+      };
+      colorGrid.append(button)
+    }
+    colorToggle.onclick=()=>{
+      colorsOpen=!colorsOpen;
+      syncColor()
+    };
+    panel.querySelectorAll("[data-project-stage-close]").forEach(button=>button.onclick=closeMobileProjectStageEditor);
+    wrap.onclick=event=>{if(event.target===wrap)closeMobileProjectStageEditor()};
+    save.onclick=async()=>{
+      const nextTitle=title.value.trim()||"새 파트",nextSubtitle=subtitle.value.trim();
+      const current=mobileProjectContext(projectId,episodeId);
+      if(!current.project||!current.unit){
+        setStatus("편집할 작품 또는 화를 찾지 못했습니다.");
+        return
+      }
+      const defs=Array.isArray(current.unit.stageDefs)?current.unit.stageDefs:(current.unit.stageDefs=[]);
+      current.unit.stages=current.unit.stages&&typeof current.unit.stages==="object"?current.unit.stages:{};
+      if(existing){
+        const target=defs.find(stage=>String(stage?.id||"")===String(stageId));
+        if(!target){setStatus("편집할 파트를 찾지 못했습니다.");return}
+        target.name=nextTitle;
+        target.hint=nextSubtitle;
+        target.color=selectedColor
+      }else{
+        const id=uid();
+        defs.push({id,name:nextTitle,hint:nextSubtitle,color:selectedColor});
+        current.unit.stages[id]=[]
+      }
+      current.project.updatedAt=new Date().toISOString();
+      save.disabled=true;
+      setStatus("");
+      try{
+        await repository.replaceState(current.state);
+        closeMobileProjectStageEditor();
+        if(activeDocumentType==="project"&&String(activeDocumentId)===projectId&&String(activeEpisodeId||"")===episodeId)renderProject(current.project)
+      }catch(error){
+        console.error("모바일 작품 파트 저장 실패",error);
+        logDiagnostic("error","REPOSITORY","작품 파트 저장에 실패했습니다.",error);
+        save.disabled=false;
+        setStatus("저장하지 못했습니다. 다시 시도해 주세요.")
+      }
+    };
+    syncColor();
+    refreshLucideIcons();
+    requestAnimationFrame(()=>{title.focus();title.select()})
+  }
+
   function renderUnit(unit,index=0,{showHeading=true,compactBlocks=false,onBack=null}={}){
     const host=$("#projectContent");
     host.replaceChildren();
@@ -987,7 +1107,14 @@
       stepButtons.push(step);
       tracker.append(step)
     });
-    if(stepButtons.length)host.append(tracker);
+    const addPart=element("button","part-step part-add","");
+    addPart.type="button";
+    addPart.title="파트 추가";
+    addPart.setAttribute("aria-label","파트 추가");
+    addPart.innerHTML='<i data-lucide="plus" aria-hidden="true"></i>';
+    addPart.onclick=()=>openMobileProjectStageEditor();
+    tracker.append(addPart);
+    host.append(tracker);
 
     const carousel=element("div","stage-carousel"),sections=[];
     for(const stage of stageDefs){
@@ -996,13 +1123,27 @@
       stripe.style.setProperty("--stage-color",stageColor);
       copy.append(element("h4","",stage.name||"파트"));
       if(stage.hint)copy.append(element("p","",stage.hint));
-      stageHead.append(stripe,copy);
+      const edit=element("button","stage-edit-button","");
+      edit.type="button";
+      edit.setAttribute("aria-label",(stage.name||"파트")+" 편집");
+      edit.title="파트 편집";
+      edit.innerHTML='<i data-lucide="pencil" aria-hidden="true"></i>';
+      edit.onclick=()=>openMobileProjectStageEditor(stage.id);
+      stageHead.append(stripe,copy,edit);
       const blocks=element("div","block-list"),items=Array.isArray(unit.stages?.[stage.id])?unit.stages[stage.id]:[];
       if(items.length)for(const block of items)blocks.append(blockElement(block,{compact:compactBlocks}));
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
       section.append(stageHead,blocks);
       carousel.append(section);
       sections.push(section)
+    }
+
+    if(!sections.length){
+      const empty=element("div","project-stage-empty"),copy=element("span","","아직 파트가 없습니다."),button=element("button","","첫 파트 추가");
+      button.type="button";
+      button.onclick=()=>openMobileProjectStageEditor();
+      empty.append(copy,button);
+      host.append(empty)
     }
 
     if(sections.length){

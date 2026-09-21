@@ -417,6 +417,8 @@ svg.lucide{stroke:currentColor}
   border-color:var(--ui-control-selected-border);background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg)
 }
 .part-step:active{transform:translateY(1px)}
+.part-step.part-add{min-width:24px;width:24px;padding:0;background:transparent;border-style:dashed;color:var(--ui-muted)}
+.part-step.part-add svg{width:12px;height:12px}
 .stage-carousel{
   display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;
   margin:0 -20px;padding:0 38px 14px 20px;
@@ -436,10 +438,23 @@ svg.lucide{stroke:currentColor}
   );
   color:var(--ui-fg);--ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
 }
-.stage-heading{display:grid;grid-template-columns:4px minmax(0,1fr);gap:10px;padding:3px 3px 13px;border:0}
+.stage-heading{display:grid;grid-template-columns:4px minmax(0,1fr) 30px;gap:10px;padding:3px 3px 13px;border:0}
 .stage-color{border-radius:999px;background:var(--stage-color,var(--primary-base))}
 .stage-heading h4{margin:0;font-size:var(--fs-lg);font-weight:700;line-height:1.15}
 .stage-heading p{margin:7px 0 0;color:var(--ui-fg);font-size:var(--fs-sm);line-height:1.5}
+.stage-edit-button{
+  width:30px;height:30px;display:grid;place-items:center;align-self:start;padding:0;border:0;border-radius:9px;
+  background:color-mix(in srgb,var(--ui-surface-default) 72%,transparent);color:var(--ui-muted)
+}
+.stage-edit-button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
+.stage-edit-button svg{width:14px;height:14px}
+.project-stage-empty{
+  display:grid;justify-items:center;gap:9px;padding:28px 12px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center
+}
+.project-stage-empty button{
+  min-height:38px;padding:0 13px;border:1px solid var(--ui-control-neutral-border);border-radius:10px;
+  background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font:inherit;font-size:var(--fs-xs);font-weight:700
+}
 .block-list{display:grid;gap:10px;padding:0}
 .block-card{
   padding:15px 14px;border:1px solid var(--ui-border-default);border-radius:15px;background:var(--ui-surface-default);
@@ -662,6 +677,29 @@ body.note-html-mode .note-editor-controls{display:none}
 .note-correction-help svg{width:16px;height:16px;flex:0 0 auto;margin-top:1px}
 .note-correction-status{margin:0;padding:8px 10px;border-radius:9px;background:var(--ui-status-success-bg);color:var(--ui-status-success-fg);font-size:var(--fs-xs);line-height:1.45}
 .note-correction-status.error{background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)}
+
+.nav-sheet-backdrop.project-stage-backdrop{align-items:center;padding:16px}
+.nav-sheet.project-stage-panel{
+  position:relative;z-index:1;width:min(100%,420px);max-height:min(620px,calc(100dvh - 32px));
+  padding:15px;overflow-y:auto
+}
+.project-stage-editor-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.project-stage-editor-head h3{margin:0;font-size:var(--fs-lg);line-height:1.25}
+.project-stage-editor-body{display:grid;gap:12px}
+.project-stage-color-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.project-stage-color-row>span{color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700}
+.project-stage-color-toggle{
+  width:38px;height:38px;display:grid;grid-template-columns:24px;place-items:center;padding:0;
+  border:1px solid var(--ui-control-neutral-border);border-radius:10px;background:var(--ui-control-neutral-bg);color:var(--ui-muted)
+}
+.project-stage-color-toggle .create-color-preview{width:24px;height:24px}
+.project-stage-color-toggle>svg{display:none}
+.project-stage-color-options{padding:2px 0 0}
+.project-stage-color-options[hidden]{display:none}
+.project-stage-editor-status{
+  margin:0;padding:8px 10px;border:1px solid var(--ui-status-error-border);border-radius:10px;
+  background:var(--ui-status-error-bg);color:var(--ui-status-error-fg);font-size:var(--fs-xs);line-height:1.4
+}
 
 .mindmap-screen{--document-mobile-max-width:760px}
 .mindmap-mobile-body{

@@ -54,6 +54,40 @@
         </div>
       </section>
 
+      <section id="projectBlockEditorScreen" class="mobile-screen project-block-editor-screen" hidden>
+        <form id="blockEditorForm" class="project-block-editor-shell">
+          <header class="project-block-editor-head">
+            <span class="project-block-editor-kind">일반 블록</span>
+            <p id="blockEditorContext" class="project-block-editor-context"></p>
+            <input id="blockEditorTitle" class="project-block-title-input" type="text" maxlength="120" autocomplete="off" placeholder="블록 제목" aria-label="블록 제목">
+          </header>
+
+          <label class="project-block-editor-section project-block-main-section">
+            <span class="project-block-editor-label">본문</span>
+            <textarea id="blockEditorSummary" class="project-block-main-input" spellcheck="true" placeholder="내용을 입력하세요." aria-label="블록 본문"></textarea>
+          </label>
+
+          <section class="project-block-editor-secondary">
+            <label class="project-block-editor-section">
+              <span class="project-block-editor-label">메모 <small>· 선택</small></span>
+              <textarea id="blockEditorNotes" class="project-block-notes-input" spellcheck="true" placeholder="블록에 대한 메모" aria-label="블록 메모"></textarea>
+            </label>
+
+            <label class="project-block-complete-row">
+              <input id="blockEditorCompleted" type="checkbox">
+              <span><strong>완료 표시</strong><small>완료한 블록으로 표시합니다.</small></span>
+            </label>
+          </section>
+
+          <p id="blockEditorStatus" class="project-block-editor-status" role="status" hidden></p>
+
+          <footer class="project-block-editor-actions">
+            <button id="blockEditorDelete" class="project-block-editor-delete" type="button" hidden><i data-lucide="trash-2" aria-hidden="true"></i><span>삭제</span></button>
+            <button id="blockEditorSave" class="project-block-editor-save" type="submit"><i data-lucide="check" aria-hidden="true"></i><span id="blockEditorSaveLabel">저장</span></button>
+          </footer>
+        </form>
+      </section>
+
       <section id="noteReaderScreen" class="mobile-screen note-screen" hidden>
         <div class="document-mobile-shell note-mobile-shell">
           <header class="document-mobile-head note-mobile-head">

@@ -936,6 +936,18 @@ body.note-html-mode .note-editor-controls{display:none}
   --ui-fg:var(--on-primary-soft);--ui-muted:var(--on-primary-soft-muted)
 }
 .mode-choice-grid button.active svg{color:var(--ui-fg)}
+.settings-action-row{
+  width:100%;min-height:58px;margin-top:8px;display:grid;grid-template-columns:38px minmax(0,1fr) 18px;align-items:center;gap:10px;
+  padding:9px 12px;border:1px solid var(--ui-border-default);border-radius:16px;background:var(--ui-surface-default);color:var(--ui-fg);text-align:left;
+  --ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
+}
+.settings-action-row:active{background:var(--ui-control-pressed-bg);--ui-fg:var(--ui-control-pressed-fg);--ui-muted:var(--ui-control-pressed-muted)}
+.settings-action-row>svg{width:16px;height:16px;color:var(--ui-muted)}
+.settings-action-icon{
+  width:36px;height:36px;display:grid;place-items:center;border-radius:11px;background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg)
+}
+.settings-action-icon svg{width:17px;height:17px}
+
 .settings-inline-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .theme-pair-swap{
   width:30px;height:30px;display:grid;place-items:center;flex:0 0 auto;padding:0;

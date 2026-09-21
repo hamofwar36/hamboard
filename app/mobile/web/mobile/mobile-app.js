@@ -68,12 +68,15 @@
   const createFormStatus=$("#createFormStatus");
   const createSubmit=$("#createSubmit");
   const menuCloud=$("#menuCloud");
+  const menuDisplay=$("#menuDisplay");
+  const menuAppInfo=$("#menuAppInfo");
   const menuTrash=$("#menuTrash");
   const menuTrashMeta=$("#menuTrashMeta");
   const trashSubtitle=$("#trashSubtitle");
   const trashList=$("#trashList");
   const emptyTrashButton=$("#emptyTrashButton");
-  const menuSettings=$("#menuSettings");
+  const displaySettingsSection=$("#displaySettingsSection");
+  const infoSettingsSection=$("#infoSettingsSection");
   const installApp=$("#installApp");
   const modeSetting=$("#modeSetting");
   const themeChoiceGrid=$("#themeChoiceGrid");
@@ -2371,17 +2374,22 @@
   function renderTrashScreen(){activeDocumentType="";activeDocumentId="";activeEpisodeId="";showScreen(trashScreen,{heading:"휴지통",back:true,account:false,nav:"menu"});renderMobileTrash()}
   function openTrash({replace=false}={}){renderTrashScreen();writeRoute({view:"trash"},{replace})}
 
-  function renderSettingsScreen(){
+  function renderSettingsScreen(section="display"){
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
-    showScreen(settingsScreen,{heading:"설정",back:true,account:false,nav:"menu"});
-    renderSettings()
+    const target=section==="info"?"info":"display";
+    displaySettingsSection.hidden=target!=="display";
+    infoSettingsSection.hidden=target!=="info";
+    showScreen(settingsScreen,{heading:target==="info"?"앱 정보":"디스플레이",back:true,account:false,nav:"menu"});
+    renderSettings();
+    renderInstallAction()
   }
 
-  function openSettings({replace=false}={}){
-    renderSettingsScreen();
-    writeRoute({view:"settings"},{replace})
+  function openSettings(section="display",{replace=false}={}){
+    const target=section==="info"?"info":"display";
+    renderSettingsScreen(target);
+    writeRoute({view:"settings",section:target},{replace})
   }
 
   async function importCanonicalState(source){
@@ -2725,7 +2733,7 @@
     if(route.view==="document"){renderDocument(route.type,route.id);return}
     if(route.view==="menu"){renderMenu();return}
     if(route.view==="trash"){renderTrashScreen();return}
-    if(route.view==="settings"){renderSettingsScreen();return}
+    if(route.view==="settings"){renderSettingsScreen(route.section==="info"?"info":"display");return}
     if(route.view==="cloud"){
       cloudReturnView=route.returnView==="menu"?"menu":"library";
       showScreen(cloudSourceScreen,{heading:"클라우드",back:true,account:false,nav:cloudReturnView==="menu"?"menu":"library"});
@@ -2936,8 +2944,9 @@
   window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave()});
   librarySearch.addEventListener("input",renderLibrary);
   menuCloud.onclick=()=>openCloudSources("menu");
+  menuDisplay.onclick=()=>openSettings("display");
+  menuAppInfo.onclick=()=>openSettings("info");
   menuTrash.onclick=()=>openTrash();
-  menuSettings.onclick=()=>openSettings();
   emptyTrashButton.onclick=async()=>{
     const items=snapshot().trash||[];if(!items.length)return;
     const confirmed=await openMobileConfirm({title:"휴지통을 비우시겠습니까?",message:"모든 항목을 영구 삭제합니다. 이 작업은 되돌릴 수 없습니다.",confirmLabel:"모두 삭제",cancelLabel:"취소",destructive:true});

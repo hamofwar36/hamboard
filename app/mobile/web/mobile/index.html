@@ -126,19 +126,19 @@
             <span class="page-menu-copy"><strong>클라우드</strong><small>계정 연결과 데이터 불러오기를 관리합니다.</small></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
+          <button id="menuDisplay" type="button">
+            <span class="page-menu-icon"><i data-lucide="palette" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>디스플레이</strong><small>화면 모드와 테마 색상을 설정합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
+          <button id="menuAppInfo" type="button">
+            <span class="page-menu-icon"><i data-lucide="info" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>앱 정보</strong><small>버전, 상태와 진단 정보를 확인합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
           <button id="menuTrash" type="button">
             <span class="page-menu-icon"><i data-lucide="trash-2" aria-hidden="true"></i></span>
             <span class="page-menu-copy"><strong>휴지통</strong><small id="menuTrashMeta">삭제된 항목을 관리합니다.</small></span>
-            <i data-lucide="chevron-right" aria-hidden="true"></i>
-          </button>
-          <button id="menuSettings" type="button">
-            <span class="page-menu-icon"><i data-lucide="settings" aria-hidden="true"></i></span>
-            <span class="page-menu-copy"><strong>설정</strong><small>디스플레이와 앱 정보를 관리합니다.</small></span>
-            <i data-lucide="chevron-right" aria-hidden="true"></i>
-          </button>
-          <button id="installApp" type="button" hidden>
-            <span class="page-menu-icon"><i data-lucide="download" aria-hidden="true"></i></span>
-            <span class="page-menu-copy"><strong>앱 설치</strong><small>홈 화면에 설치해 앱처럼 실행합니다.</small></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -153,7 +153,7 @@
       </section>
 
       <section id="settingsScreen" class="mobile-screen page-screen" hidden>
-        <section class="settings-category" aria-labelledby="displaySettingsTitle">
+        <section class="settings-category" id="displaySettingsSection" aria-labelledby="displaySettingsTitle">
           <h2 id="displaySettingsTitle">디스플레이</h2>
 
           <div class="settings-block settings-mode-block">
@@ -183,14 +183,20 @@
 
         </section>
 
-        <section class="settings-category" aria-labelledby="infoSettingsTitle">
-          <h2 id="infoSettingsTitle">정보</h2>
+        <section class="settings-category" id="infoSettingsSection" aria-labelledby="infoSettingsTitle">
+          <h2 id="infoSettingsTitle">앱 정보</h2>
           <div class="info-list">
             <div class="info-row"><span>모바일 햄보드 버전</span><strong id="mobileVersion">-</strong></div>
             <div class="info-row"><span>네트워크</span><strong id="statusNetwork">-</strong></div>
             <div class="info-row"><span>클라우드</span><strong id="statusCloud">-</strong></div>
             <div class="info-row"><span>로컬 문서</span><strong id="statusDocuments">-</strong></div>
           </div>
+
+          <button class="settings-action-row" id="installApp" type="button" hidden>
+            <span class="settings-action-icon"><i data-lucide="download" aria-hidden="true"></i></span>
+            <span class="settings-copy"><strong>앱 설치</strong><small>홈 화면에 설치해 앱처럼 실행합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
 
           <div class="diagnostics-panel">
             <div class="diagnostics-head">

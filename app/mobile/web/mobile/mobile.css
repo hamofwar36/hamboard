@@ -782,9 +782,10 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   margin:0;color:var(--ui-muted);font-size:var(--fs-xs);line-height:1.4
 }
 .project-block-completion{
-  align-self:start;padding:2px 0;border:0;background:transparent;color:var(--ui-muted);
+  align-self:start;display:inline-flex;align-items:center;gap:4px;padding:2px 0;border:0;background:transparent;color:var(--ui-muted);
   font:inherit;font-size:var(--fs-compact-10);font-weight:700;line-height:1.4;opacity:.72;white-space:nowrap
 }
+.project-block-completion svg{width:12px;height:12px;stroke:currentColor}
 .project-block-completion[aria-pressed="true"]{color:var(--ui-fg);opacity:.78}
 .project-block-title-input{
   width:100%;padding:4px 0 7px;border:0;border-bottom:1px solid transparent;border-radius:0;outline:0;

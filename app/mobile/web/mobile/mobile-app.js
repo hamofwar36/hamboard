@@ -397,7 +397,7 @@
     createSubmit.innerHTML='<i data-lucide="check" aria-hidden="true"></i><span>저장</span>';
     openBottomSheet(createSheet);
     refreshLucideIcons();
-    requestAnimationFrame(()=>{createTitleInput.focus();createTitleInput.select()})
+    releaseMobileInputFocus()
   }
 
   async function saveEditedDocument(){
@@ -676,6 +676,10 @@
   }
   function scrollAppToTop({smooth=false}={}){
     mobileScroll.scrollTo({top:0,left:0,behavior:smooth?"smooth":"auto"})
+  }
+  function releaseMobileInputFocus(){
+    const active=document.activeElement;
+    if(active&&active!==document.body&&typeof active.blur==="function")active.blur()
   }
   function isStandaloneMode(){
     return window.matchMedia?.("(display-mode: standalone)")?.matches===true||window.navigator.standalone===true
@@ -1455,7 +1459,7 @@
     };
     syncColor();
     refreshLucideIcons();
-    requestAnimationFrame(()=>{title.focus();title.select()})
+    if(existing)releaseMobileInputFocus();else requestAnimationFrame(()=>{title.focus();title.select()})
   }
 
   function setMobileBlockEditorStatus(message=""){
@@ -1586,7 +1590,7 @@
     setMobileBlockEditorStatus("");
     syncMobileBlockCompletion();
     showScreen(blockEditorScreen,{heading:existing?"블록 편집":"새 블록",back:true,account:false,nav:"library"});
-    requestAnimationFrame(()=>{blockEditorSummary.focus();const end=blockEditorSummary.value.length;blockEditorSummary.setSelectionRange(end,end)})
+    releaseMobileInputFocus()
   }
 
   async function deleteMobileGeneralBlock(){
@@ -1892,7 +1896,7 @@
     };
     syncColor();
     refreshLucideIcons();
-    requestAnimationFrame(()=>{title.focus();title.select()})
+    releaseMobileInputFocus()
   }
 
   function renderProject(project){

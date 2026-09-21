@@ -1241,7 +1241,7 @@
     panel.setAttribute("role","dialog");
     panel.setAttribute("aria-modal","true");
     panel.setAttribute("aria-label",existing?"파트 편집":"새 파트 추가");
-    panel.innerHTML='<div class="project-stage-editor-head"><h3>'+(existing?"파트 편집":"새 파트 추가")+'</h3><button type="button" class="sheet-close" data-project-stage-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="layout-list" aria-hidden="true"></i></span><strong>'+(existing?"파트 편집":"새 파트 추가")+'</strong></div><button type="button" class="sheet-close" data-project-stage-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-project-stage-title maxlength="120" placeholder="예: 만남, 동행, 균열, 이별"></label>'+
       '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트의 간단한 설명"></label>'+

@@ -69,13 +69,13 @@
 
           <label class="project-block-editor-section project-block-main-section">
             <span class="project-block-editor-label">본문</span>
-            <textarea id="blockEditorSummary" class="project-block-main-input" spellcheck="true" placeholder="내용을 입력하세요." aria-label="블록 본문"></textarea>
+            <div id="blockEditorSummary" class="project-block-main-input project-block-rich-input" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="내용을 입력하세요." aria-label="블록 본문"></div>
           </label>
 
           <section class="project-block-editor-secondary">
             <label class="project-block-editor-section">
               <span class="project-block-editor-label">메모 <small>· 선택</small></span>
-              <textarea id="blockEditorNotes" class="project-block-notes-input" spellcheck="true" placeholder="블록에 대한 메모" aria-label="블록 메모"></textarea>
+              <div id="blockEditorNotes" class="project-block-notes-input project-block-rich-input" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="블록에 대한 메모" aria-label="블록 메모"></div>
             </label>
             <div class="project-block-secondary-actions">
               <button id="blockEditorDelete" class="project-block-delete-icon" type="button" hidden aria-label="블록 삭제" title="블록 삭제"><i data-lucide="trash-2" aria-hidden="true"></i></button>
@@ -83,6 +83,19 @@
           </section>
 
           <p id="blockEditorStatus" class="project-block-editor-status" role="status" hidden></p>
+          <div id="blockEditorFormatBar" class="project-block-format-bar" role="toolbar" aria-label="블록 텍스트 서식" hidden>
+            <button type="button" data-block-format-command="bold" aria-label="굵게" title="굵게"><i data-lucide="bold" aria-hidden="true"></i></button>
+            <button type="button" data-block-format-command="italic" aria-label="기울임" title="기울임"><i data-lucide="italic" aria-hidden="true"></i></button>
+            <button type="button" data-block-format-command="underline" aria-label="밑줄" title="밑줄"><i data-lucide="underline" aria-hidden="true"></i></button>
+            <button type="button" data-block-format-command="strikeThrough" aria-label="취소선" title="취소선"><i data-lucide="strikethrough" aria-hidden="true"></i></button>
+            <label class="project-block-format-color" aria-label="글자 색" title="글자 색"><i data-lucide="paintbrush" aria-hidden="true"></i><input id="blockEditorFormatColor" type="color" value="#6A6E78" aria-label="글자 색"></label>
+            <select id="blockEditorFormatBlock" aria-label="문단 형식" title="문단 형식">
+              <option value="p">본문</option>
+              <option value="h1">제목 1</option>
+              <option value="h2">제목 2</option>
+              <option value="h3">제목 3</option>
+            </select>
+          </div>
         </div>
       </section>
 

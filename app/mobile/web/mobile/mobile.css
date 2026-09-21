@@ -521,7 +521,7 @@ svg.lucide{stroke:currentColor}
   color:var(--ui-fg);box-shadow:none;font-size:var(--fs-sm);line-height:1.72;overflow-wrap:anywhere;
   --ui-fg:var(--ui-content-default);--ui-muted:var(--ui-content-muted)
 }
-body.note-open .mobile-main{padding-bottom:calc(118px + env(safe-area-inset-bottom))}
+body.note-open .mobile-main{padding-bottom:calc(58px + env(safe-area-inset-bottom))}
 .note-editor-card{outline:0;caret-color:var(--primary-strong);white-space:normal}
 .note-editor-card:focus{outline:0}
 .note-editor-card:empty::before{content:attr(data-placeholder);color:var(--ui-muted);opacity:.72;pointer-events:none}
@@ -542,7 +542,7 @@ body.note-open .mobile-main{padding-bottom:calc(118px + env(safe-area-inset-bott
 .note-editor-card summary{cursor:pointer;padding:9px 11px;font-weight:700;background:var(--ui-control-hover-bg);color:var(--ui-fg)}
 .note-editor-card details> :not(summary){margin-left:11px;margin-right:11px}
 .note-editor-controls{
-  position:fixed;z-index:58;left:0;right:0;bottom:calc(58px + 6px + env(safe-area-inset-bottom));
+  position:fixed;z-index:58;left:0;right:0;bottom:calc(6px + env(safe-area-inset-bottom));
   padding:0 10px;pointer-events:none
 }
 body.note-keyboard-open .note-editor-controls{

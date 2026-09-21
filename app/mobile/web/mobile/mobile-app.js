@@ -23,6 +23,9 @@
   const blockEditorCompletion=$("#blockEditorCompletion");
   const blockEditorStatus=$("#blockEditorStatus");
   const blockEditorDelete=$("#blockEditorDelete");
+  const blockEditorFormatBar=$("#blockEditorFormatBar");
+  const blockEditorFormatColor=$("#blockEditorFormatColor");
+  const blockEditorFormatBlock=$("#blockEditorFormatBlock");
   const noteReaderScreen=$("#noteReaderScreen");
   const noteReaderContent=$("#noteReaderContent");
   const noteEditorControls=$("#noteEditorControls");
@@ -114,6 +117,9 @@
   let activeBlockEditor=null;
   let blockSaveTimer=0;
   let blockSaveChain=Promise.resolve();
+  let blockFormatRange=null;
+  let blockFormatEditor=null;
+  let blockFormatFrame=0;
   let cloudSyncListing=null;
   let cloudSyncImportPromise=null;
   let cloudSyncProgressRun=0;
@@ -1139,8 +1145,16 @@
         lines.append(row)
       }
       if(lines.childElementCount)card.append(lines)
-    }else if(block.summary)card.append(element("p","block-text",block.summary));
-    if(block.notes)card.append(element("div","block-notes",block.notes));
+    }else if(block.summaryHtml||block.summary){
+      const body=element("div","block-text block-rich-preview");
+      body.innerHTML=mobileBlockRichHtml(block.summary,block.summaryHtml);
+      card.append(body)
+    }
+    if(block.notesHtml||block.notes){
+      const notes=element("div","block-notes block-rich-preview");
+      notes.innerHTML=mobileBlockRichHtml(block.notes,block.notesHtml);
+      card.append(notes)
+    }
     if((block.children||[]).length){
       const children=element("div","child-blocks");
       for(const child of block.children)children.append(blockElement(child));
@@ -1462,6 +1476,216 @@
     if(existing)releaseMobileInputFocus();else requestAnimationFrame(()=>{title.focus();title.select()})
   }
 
+  function sanitizedBlockHtml(value,{paste=false}={}){
+    const template=document.createElement("template");
+    template.innerHTML=String(value||"");
+    template.content.querySelectorAll("[data-field-link-token]").forEach(el=>el.replaceWith(document.createTextNode("[["+(el.dataset.fieldLinkToken||"")+"]]")));
+    const allowed=new Set(["B","STRONG","I","EM","U","S","STRIKE","A","SPAN","P","DIV","BR","H1","H2","H3","UL","OL","LI","BLOCKQUOTE","PRE","CODE","SUB","SUP","HR"]);
+    const styles=new Set(paste?["text-align"]:["color","background-color","text-align"]);
+    const aligned=new Set(["P","DIV","H1","H2","H3","LI","BLOCKQUOTE"]);
+    const walk=node=>{
+      [...node.children].forEach(raw=>{
+        let el=raw;
+        if(el.tagName==="FONT"&&!paste){
+          const replacement=document.createElement("span"),legacyColor=String(el.getAttribute("color")||"").trim();
+          if(legacyColor)replacement.style.color=legacyColor;
+          while(el.firstChild)replacement.appendChild(el.firstChild);
+          el.replaceWith(replacement);
+          el=replacement
+        }
+        if(!allowed.has(el.tagName)){
+          const parent=el.parentNode;
+          while(el.firstChild)parent.insertBefore(el.firstChild,el);
+          el.remove();
+          walk(parent);
+          return
+        }
+        if(paste){
+          if(aligned.has(el.tagName)){
+            const align=String(el.getAttribute("align")||"").toLowerCase();
+            if(["left","center","right","justify"].includes(align))el.style.textAlign=align
+          }
+          const weight=String(el.style.fontWeight||"").toLowerCase(),fontStyle=String(el.style.fontStyle||"").toLowerCase(),decoration=(String(el.style.textDecoration||"")+" "+String(el.style.textDecorationLine||"")).toLowerCase();
+          const wrap=tag=>{const wrapper=document.createElement(tag);while(el.firstChild)wrapper.appendChild(el.firstChild);el.appendChild(wrapper)};
+          if(el.tagName!=="B"&&el.tagName!=="STRONG"&&(weight==="bold"||Number.parseInt(weight,10)>=600))wrap("strong");
+          if(el.tagName!=="I"&&el.tagName!=="EM"&&(fontStyle==="italic"||fontStyle==="oblique"))wrap("em");
+          if(el.tagName!=="U"&&decoration.includes("underline"))wrap("u");
+          if(el.tagName!=="S"&&el.tagName!=="STRIKE"&&decoration.includes("line-through"))wrap("s")
+        }
+        for(const attribute of [...el.attributes]){
+          const name=attribute.name.toLowerCase(),rawValue=String(attribute.value||"").trim();
+          if(name==="href"&&el.tagName==="A"){
+            if(!/^(https?:|mailto:|#)/i.test(rawValue))el.removeAttribute(attribute.name)
+          }else if(name==="data-divider"&&el.tagName==="HR"&&["solid","dotted","dashed","double"].includes(rawValue)){
+          }else if(name==="start"&&el.tagName==="OL"&&/^\d+$/.test(rawValue)){
+          }else if(name==="style"){
+            const kept=[...el.style].filter(key=>styles.has(key)).map(key=>key+":"+el.style.getPropertyValue(key)).join(";");
+            if(kept)el.setAttribute("style",kept);else el.removeAttribute("style")
+          }else el.removeAttribute(attribute.name)
+        }
+        if(el.tagName==="A"){el.setAttribute("target","_blank");el.setAttribute("rel","noopener noreferrer")}
+        walk(el)
+      })
+    };
+    walk(template.content);
+    return template.innerHTML
+  }
+
+  function mobileBlockPlainText(root){
+    if(!root)return "";
+    const inline=node=>{
+      if(node.nodeType===Node.TEXT_NODE)return node.data||"";
+      if(node.nodeType!==Node.ELEMENT_NODE)return "";
+      const el=node;
+      if(el.matches?.("[data-field-link-token]"))return "[["+(el.dataset.fieldLinkToken||"")+"]]";
+      const inner=[...el.childNodes].map(inline).join("");
+      if(el.tagName==="BR")return "\n";
+      return inner
+    };
+    const block=node=>{
+      if(node.nodeType===Node.TEXT_NODE)return node.data||"";
+      if(node.nodeType!==Node.ELEMENT_NODE)return "";
+      const el=node;
+      if(el.matches?.("[data-field-link-token]"))return "[["+(el.dataset.fieldLinkToken||"")+"]]";
+      if(["H1","H2","H3"].includes(el.tagName))return [...el.childNodes].map(inline).join("")+"\n";
+      if(el.tagName==="UL"||el.tagName==="OL"){
+        const start=el.tagName==="OL"?Number(el.getAttribute("start")||1):1;
+        return [...el.children].filter(child=>child.tagName==="LI").map((li,index)=>(el.tagName==="OL"?(start+index)+".":"-")+" "+[...li.childNodes].map(inline).join("").replace(/\n+$/g,"")).join("\n")+"\n"
+      }
+      if(["P","DIV","BLOCKQUOTE"].includes(el.tagName)){
+        const inner=[...el.childNodes].map(child=>child.nodeType===Node.ELEMENT_NODE&&["UL","OL","H1","H2","H3"].includes(child.tagName)?block(child):inline(child)).join("");
+        return inner+"\n"
+      }
+      if(el.tagName==="BR")return "\n";
+      return [...el.childNodes].map(inline).join("")
+    };
+    const parts=[];
+    [...root.childNodes].forEach((node,index)=>{
+      const value=block(node),isBlock=node.nodeType===Node.ELEMENT_NODE&&["DIV","P","H1","H2","H3","BLOCKQUOTE","UL","OL"].includes(node.tagName);
+      if(index>0&&isBlock&&parts.length&&!String(parts[parts.length-1]).endsWith("\n"))parts.push("\n");
+      parts.push(value)
+    });
+    return parts.join("").replace(/\n{3,}/g,"\n\n").replace(/\n$/g,"")
+  }
+
+  function mobileBlockRichHtml(plain,html){
+    const rich=sanitizedBlockHtml(html);
+    if(rich.trim())return rich;
+    const holder=document.createElement("div");
+    holder.textContent=String(plain||"");
+    return sanitizedBlockHtml(holder.innerHTML.replace(/\n/g,"<br>"))
+  }
+
+  function mobileBlockEditorData(editor){
+    const html=sanitizedBlockHtml(editor?.innerHTML||""),holder=document.createElement("div");
+    holder.innerHTML=html;
+    return {plain:mobileBlockPlainText(holder),html}
+  }
+
+  function hideMobileBlockFormatBar(){
+    blockEditorFormatBar.hidden=true;
+    blockFormatRange=null;
+    blockFormatEditor=null;
+    if(blockFormatFrame){cancelAnimationFrame(blockFormatFrame);blockFormatFrame=0}
+  }
+
+  function updateMobileBlockFormatState(){
+    if(!blockFormatEditor||!blockFormatRange)return;
+    blockEditorFormatBar.querySelectorAll("[data-block-format-command]").forEach(button=>{
+      let active=false;
+      try{active=!!document.queryCommandState(button.dataset.blockFormatCommand)}catch{}
+      button.classList.toggle("active",active)
+    });
+    let node=blockFormatRange.commonAncestorContainer;
+    node=node.nodeType===Node.ELEMENT_NODE?node:node.parentElement;
+    const tag=node?.closest?.("h1,h2,h3,p")?.tagName?.toLowerCase?.()||"p";
+    blockEditorFormatBlock.value=["h1","h2","h3"].includes(tag)?tag:"p"
+  }
+
+  function positionMobileBlockFormatBar(range){
+    const rect=range?.getBoundingClientRect?.();
+    if(!rect)return;
+    blockEditorFormatBar.hidden=false;
+    blockEditorFormatBar.style.left="8px";
+    blockEditorFormatBar.style.top="8px";
+    if(blockFormatFrame)cancelAnimationFrame(blockFormatFrame);
+    blockFormatFrame=requestAnimationFrame(()=>{
+      blockFormatFrame=0;
+      if(blockEditorFormatBar.hidden)return;
+      const bar=blockEditorFormatBar.getBoundingClientRect(),pad=8,width=Math.max(document.documentElement.clientWidth||0,window.innerWidth||0),height=Math.max(document.documentElement.clientHeight||0,window.innerHeight||0);
+      const left=Math.max(pad,Math.min(rect.left+rect.width/2-bar.width/2,width-bar.width-pad));
+      let top=rect.top-bar.height-8;
+      if(top<pad)top=rect.bottom+8;
+      top=Math.max(pad,Math.min(top,height-bar.height-pad));
+      blockEditorFormatBar.style.left=Math.round(left)+"px";
+      blockEditorFormatBar.style.top=Math.round(top)+"px"
+    })
+  }
+
+  function syncMobileBlockFormatBar(){
+    if(blockEditorScreen.hidden){hideMobileBlockFormatBar();return}
+    const selection=window.getSelection();
+    if(!selection?.rangeCount||selection.isCollapsed){
+      if(blockEditorFormatBar.contains(document.activeElement)&&blockFormatRange&&blockFormatEditor)return;
+      hideMobileBlockFormatBar();
+      return
+    }
+    const range=selection.getRangeAt(0),editor=[blockEditorSummary,blockEditorNotes].find(item=>item.contains(range.commonAncestorContainer));
+    if(!editor){hideMobileBlockFormatBar();return}
+    blockFormatEditor=editor;
+    blockFormatRange=range.cloneRange();
+    updateMobileBlockFormatState();
+    positionMobileBlockFormatBar(range)
+  }
+
+  function restoreMobileBlockFormatSelection(){
+    if(!blockFormatEditor||!blockFormatRange||!blockFormatEditor.contains(blockFormatRange.commonAncestorContainer))return false;
+    const selection=window.getSelection();
+    try{
+      blockFormatEditor.focus({preventScroll:true});
+      selection.removeAllRanges();
+      selection.addRange(blockFormatRange.cloneRange());
+      return true
+    }catch{return false}
+  }
+
+  function execMobileBlockFormat(command,value=null){
+    if(!restoreMobileBlockFormatSelection())return false;
+    let ok=false;
+    try{
+      if(command==="foreColor")document.execCommand("styleWithCSS",false,true);
+      ok=document.execCommand(command,false,value)
+    }catch(error){
+      console.error("모바일 일반 블록 서식 적용 실패",error);
+      logDiagnostic("warn","PROJECT","일반 블록 서식을 적용하지 못했습니다.",error)
+    }finally{
+      if(command==="foreColor")try{document.execCommand("styleWithCSS",false,false)}catch{}
+    }
+    const selection=window.getSelection();
+    if(selection?.rangeCount&&blockFormatEditor.contains(selection.getRangeAt(0).commonAncestorContainer))blockFormatRange=selection.getRangeAt(0).cloneRange();
+    scheduleMobileGeneralBlockSave();
+    requestAnimationFrame(syncMobileBlockFormatBar);
+    return ok
+  }
+
+  function bindMobileBlockRichEditor(editor){
+    editor.addEventListener("input",scheduleMobileGeneralBlockSave);
+    editor.addEventListener("paste",event=>{
+      const html=event.clipboardData?.getData("text/html")||"",plain=event.clipboardData?.getData("text/plain")||"";
+      if(!html&&!plain)return;
+      event.preventDefault();
+      try{
+        if(html)document.execCommand("insertHTML",false,sanitizedBlockHtml(html,{paste:true}));
+        else document.execCommand("insertText",false,plain)
+      }catch(error){
+        console.error("모바일 일반 블록 붙여넣기 실패",error);
+        logDiagnostic("warn","PROJECT","일반 블록 붙여넣기를 처리하지 못했습니다.",error)
+      }
+      scheduleMobileGeneralBlockSave()
+    });
+    editor.addEventListener("blur",()=>setTimeout(syncMobileBlockFormatBar,0))
+  }
+
   function setMobileBlockEditorStatus(message=""){
     blockEditorStatus.textContent=String(message||"");
     blockEditorStatus.hidden=!message
@@ -1475,7 +1699,7 @@
   }
 
   function blockEditorHasContent(){
-    return Boolean(blockEditorTitle.value.trim()||blockEditorSummary.value||blockEditorNotes.value||activeBlockEditor?.completed)
+    return Boolean(blockEditorTitle.value.trim()||mobileBlockPlainText(blockEditorSummary).trim()||mobileBlockPlainText(blockEditorNotes).trim()||activeBlockEditor?.completed)
   }
 
   async function persistMobileGeneralBlock(){
@@ -1494,11 +1718,16 @@
     }
     if(edit.creating){
       if(!blockEditorHasContent())return true;
+      const summary=mobileBlockEditorData(blockEditorSummary),notes=mobileBlockEditorData(blockEditorNotes);
       const block={
         id:uid(),
+        type:"detail",
         title:blockEditorTitle.value.trim(),
-        summary:blockEditorSummary.value,
-        notes:blockEditorNotes.value,
+        summary:summary.plain,
+        notes:notes.plain,
+        summaryHtml:summary.html,
+        notesHtml:notes.html,
+        tags:[],
         completed:Boolean(edit.completed),
         children:[]
       };
@@ -1513,9 +1742,13 @@
         setMobileBlockEditorStatus("편집할 일반 블록을 찾지 못했습니다.");
         return false
       }
+      const summary=mobileBlockEditorData(blockEditorSummary),notes=mobileBlockEditorData(blockEditorNotes);
+      target.type="detail";
       target.title=blockEditorTitle.value.trim();
-      target.summary=blockEditorSummary.value;
-      target.notes=blockEditorNotes.value;
+      target.summary=summary.plain;
+      target.notes=notes.plain;
+      target.summaryHtml=summary.html;
+      target.notesHtml=notes.html;
       target.completed=Boolean(edit.completed);
       edit.blockId=String(target.id||edit.blockId||"")
     }
@@ -1561,6 +1794,7 @@
   function closeMobileGeneralBlockEditor(){
     clearTimeout(blockSaveTimer);
     blockSaveTimer=0;
+    hideMobileBlockFormatBar();
     activeBlockEditor=null;
     const project=(snapshot().projects||[]).find(item=>String(item?.id||"")===String(activeDocumentId||""));
     if(!project){renderHome();return}
@@ -1582,12 +1816,13 @@
       blockId:existing?String(existing.id||""):"",creating:!existing,completed:Boolean(existing?.completed)
     };
     blockEditorTitle.value=String(existing?.title||"");
-    blockEditorSummary.value=String(existing?.summary||"");
-    blockEditorNotes.value=String(existing?.notes||"");
+    blockEditorSummary.innerHTML=mobileBlockRichHtml(existing?.summary,existing?.summaryHtml);
+    blockEditorNotes.innerHTML=mobileBlockRichHtml(existing?.notes,existing?.notesHtml);
     blockEditorContext.textContent=(stage?.name||"파트")+(initial.project.kind==="long"&&initial.unit?.title?" · "+initial.unit.title:"");
     blockEditorDelete.hidden=!existing;
     blockEditorDelete.disabled=false;
     setMobileBlockEditorStatus("");
+    hideMobileBlockFormatBar();
     syncMobileBlockCompletion();
     showScreen(blockEditorScreen,{heading:existing?"블록 편집":"새 블록",back:true,account:false,nav:"library"});
     releaseMobileInputFocus()
@@ -3288,7 +3523,20 @@
     if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}openLibrary({replace:true})}
     else handleBack()
   };
-  [blockEditorTitle,blockEditorSummary,blockEditorNotes].forEach(field=>field.addEventListener("input",scheduleMobileGeneralBlockSave));
+  blockEditorTitle.addEventListener("input",scheduleMobileGeneralBlockSave);
+  [blockEditorSummary,blockEditorNotes].forEach(bindMobileBlockRichEditor);
+  blockEditorFormatBar.addEventListener("pointerdown",event=>{
+    const button=event.target.closest("[data-block-format-command]");
+    if(button)event.preventDefault()
+  });
+  blockEditorFormatBar.addEventListener("click",event=>{
+    const button=event.target.closest("[data-block-format-command]");
+    if(button)execMobileBlockFormat(button.dataset.blockFormatCommand)
+  });
+  blockEditorFormatColor.addEventListener("pointerdown",()=>{const selection=window.getSelection();if(selection?.rangeCount&&!selection.isCollapsed){blockFormatRange=selection.getRangeAt(0).cloneRange()}});
+  blockEditorFormatColor.addEventListener("input",()=>execMobileBlockFormat("foreColor",blockEditorFormatColor.value));
+  blockEditorFormatBlock.addEventListener("pointerdown",()=>{const selection=window.getSelection();if(selection?.rangeCount&&!selection.isCollapsed){blockFormatRange=selection.getRangeAt(0).cloneRange()}});
+  blockEditorFormatBlock.addEventListener("change",()=>execMobileBlockFormat("formatBlock",blockEditorFormatBlock.value));
   blockEditorCompletion.onclick=()=>{
     if(!activeBlockEditor)return;
     activeBlockEditor.completed=!activeBlockEditor.completed;
@@ -3453,6 +3701,10 @@
   });
 
   document.addEventListener("selectionchange",()=>{
+    if(!blockEditorScreen.hidden){
+      requestAnimationFrame(syncMobileBlockFormatBar);
+      return
+    }
     if(activeDocumentType!=="note")return;
     const selection=window.getSelection();
     if(selection?.rangeCount&&noteReaderContent.contains(selection.anchorNode)){

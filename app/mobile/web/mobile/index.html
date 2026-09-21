@@ -55,10 +55,15 @@
       </section>
 
       <section id="projectBlockEditorScreen" class="mobile-screen project-block-editor-screen" hidden>
-        <form id="blockEditorForm" class="project-block-editor-shell">
+        <div class="project-block-editor-shell">
           <header class="project-block-editor-head">
-            <span class="project-block-editor-kind">일반 블록</span>
-            <p id="blockEditorContext" class="project-block-editor-context"></p>
+            <div class="project-block-editor-meta-row">
+              <div>
+                <span class="project-block-editor-kind">일반 블록</span>
+                <p id="blockEditorContext" class="project-block-editor-context"></p>
+              </div>
+              <button id="blockEditorCompletion" class="project-block-completion" type="button" aria-pressed="false">○ 미완료</button>
+            </div>
             <input id="blockEditorTitle" class="project-block-title-input" type="text" maxlength="120" autocomplete="off" placeholder="블록 제목" aria-label="블록 제목">
           </header>
 
@@ -72,20 +77,13 @@
               <span class="project-block-editor-label">메모 <small>· 선택</small></span>
               <textarea id="blockEditorNotes" class="project-block-notes-input" spellcheck="true" placeholder="블록에 대한 메모" aria-label="블록 메모"></textarea>
             </label>
-
-            <label class="project-block-complete-row">
-              <input id="blockEditorCompleted" type="checkbox">
-              <span><strong>완료 표시</strong><small>완료한 블록으로 표시합니다.</small></span>
-            </label>
+            <div class="project-block-secondary-actions">
+              <button id="blockEditorDelete" class="project-block-delete-icon" type="button" hidden aria-label="블록 삭제" title="블록 삭제"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+            </div>
           </section>
 
           <p id="blockEditorStatus" class="project-block-editor-status" role="status" hidden></p>
-
-          <footer class="project-block-editor-actions">
-            <button id="blockEditorDelete" class="project-block-editor-delete" type="button" hidden><i data-lucide="trash-2" aria-hidden="true"></i><span>삭제</span></button>
-            <button id="blockEditorSave" class="project-block-editor-save" type="submit"><i data-lucide="check" aria-hidden="true"></i><span id="blockEditorSaveLabel">저장</span></button>
-          </footer>
-        </form>
+        </div>
       </section>
 
       <section id="noteReaderScreen" class="mobile-screen note-screen" hidden>

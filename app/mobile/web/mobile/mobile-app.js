@@ -1553,6 +1553,8 @@
     if(!project||project.kind!=="long")return;
     const episode=(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||""));
     if(!episode)return;
+    let selectedColor=safeColor(episode.color||randomCardColor(),randomCardColor()),colorsOpen=false;
+    let colorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===selectedColor.toLowerCase());
     closeMobileEpisodeEditor();
     const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel");
     wrap.dataset.episodeEditor="1";
@@ -1563,6 +1565,18 @@
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-episode-title maxlength="120" autocomplete="off"></label>'+
       '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-episode-subtitle maxlength="240" autocomplete="off" placeholder="이번 화의 핵심"></label>'+
+      '<fieldset class="create-color-field project-stage-color-field">'+
+      '<legend>색상</legend>'+
+      '<button class="create-color-toggle" type="button" data-episode-color-toggle aria-expanded="false">'+
+      '<span class="create-color-preview" data-episode-color-preview aria-hidden="true"></span>'+
+      '<span class="create-color-toggle-label">색상 선택</span>'+
+      '<i data-lucide="chevron-down" aria-hidden="true"></i></button>'+
+      '<div class="create-color-options" data-episode-color-options hidden>'+
+      '<div class="create-color-grid" data-episode-color-grid aria-label="화 색상"></div>'+
+      '<div class="create-color-editor" data-episode-color-editor hidden>'+
+      '<input type="color" data-episode-color-picker aria-label="직접 색상 선택">'+
+      '<input type="text" data-episode-color-hex maxlength="7" spellcheck="false" autocomplete="off" aria-label="HEX 색상">'+
+      '</div></div></fieldset>'+
       '<p class="project-stage-editor-status" data-episode-status hidden></p>'+
       '<div class="note-sheet-actions"><button type="button" class="secondary" data-episode-editor-close>취소</button><button type="button" class="primary" data-episode-save>저장</button></div>'+
       '</div>';
@@ -1570,9 +1584,80 @@
     document.body.append(wrap);
 
     const title=panel.querySelector("[data-episode-title]"),subtitle=panel.querySelector("[data-episode-subtitle]");
-    const status=panel.querySelector("[data-episode-status]"),save=panel.querySelector("[data-episode-save]");
+    const colorToggle=panel.querySelector("[data-episode-color-toggle]"),colorPreview=panel.querySelector("[data-episode-color-preview]");
+    const colorOptions=panel.querySelector("[data-episode-color-options]"),colorGrid=panel.querySelector("[data-episode-color-grid]");
+    const colorEditor=panel.querySelector("[data-episode-color-editor]"),colorPicker=panel.querySelector("[data-episode-color-picker]");
+    const colorHex=panel.querySelector("[data-episode-color-hex]"),status=panel.querySelector("[data-episode-status]"),save=panel.querySelector("[data-episode-save]");
     title.value=String(episode.title||"");
     subtitle.value=String(episode.subtitle||"");
+    const syncColor=()=>{
+      selectedColor=safeColor(selectedColor,CARD_COLORS[0]);
+      colorPreview.style.setProperty("--swatch",selectedColor);
+      colorToggle.setAttribute("aria-expanded",String(colorsOpen));
+      colorOptions.hidden=!colorsOpen;
+      colorEditor.hidden=!colorCustom;
+      colorPicker.value=selectedColor;
+      colorHex.value=selectedColor.toUpperCase();
+      colorGrid.querySelectorAll("[data-episode-color]").forEach(button=>{
+        const active=!colorCustom&&String(button.dataset.episodeColor||"").toLowerCase()===selectedColor.toLowerCase();
+        button.classList.toggle("active",active);
+        button.setAttribute("aria-pressed",String(active))
+      });
+      const custom=colorGrid.querySelector("[data-episode-color-custom]");
+      if(custom){
+        custom.classList.toggle("active",colorCustom);
+        custom.setAttribute("aria-pressed",String(colorCustom))
+      }
+    };
+    for(const color of CARD_COLORS){
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="create-color-swatch";
+      button.dataset.episodeColor=color;
+      button.style.setProperty("--swatch",color);
+      button.setAttribute("aria-label","색상 "+color.toUpperCase());
+      button.onclick=()=>{
+        selectedColor=color;
+        colorCustom=false;
+        colorsOpen=false;
+        syncColor()
+      };
+      colorGrid.append(button)
+    }
+    const customColor=document.createElement("button");
+    customColor.type="button";
+    customColor.className="create-color-swatch custom";
+    customColor.dataset.episodeColorCustom="true";
+    customColor.setAttribute("aria-label","직접 색상");
+    customColor.innerHTML='<i data-lucide="palette" aria-hidden="true"></i>';
+    customColor.onclick=()=>{
+      colorCustom=true;
+      colorsOpen=true;
+      syncColor();
+      requestAnimationFrame(()=>colorHex.focus())
+    };
+    colorGrid.append(customColor);
+    colorToggle.onclick=()=>{colorsOpen=!colorsOpen;syncColor()};
+    colorPicker.oninput=()=>{
+      colorCustom=true;
+      colorsOpen=true;
+      selectedColor=safeColor(colorPicker.value,selectedColor||CARD_COLORS[0]);
+      syncColor()
+    };
+    colorHex.oninput=()=>{
+      const value=safeColor(colorHex.value,"");
+      if(!value)return;
+      colorCustom=true;
+      colorsOpen=true;
+      selectedColor=value;
+      colorPicker.value=value;
+      colorPreview.style.setProperty("--swatch",value)
+    };
+    colorHex.onblur=()=>{
+      selectedColor=safeColor(colorHex.value,selectedColor||CARD_COLORS[0]);
+      colorCustom=true;
+      syncColor()
+    };
     const setStatus=message=>{
       status.textContent=String(message||"");
       status.hidden=!message
@@ -1588,6 +1673,7 @@
       }
       target.title=title.value.trim()||"제목 없는 화";
       target.subtitle=subtitle.value.trim();
+      target.color=selectedColor;
       targetProject.updatedAt=new Date().toISOString();
       save.disabled=true;
       setStatus("");
@@ -1605,6 +1691,7 @@
         setStatus("저장하지 못했습니다. 다시 시도해 주세요.")
       }
     };
+    syncColor();
     refreshLucideIcons();
     requestAnimationFrame(()=>{title.focus();title.select()})
   }

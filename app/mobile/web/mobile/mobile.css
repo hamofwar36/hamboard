@@ -800,16 +800,24 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   flex:1;min-height:58dvh;padding:18px 20px 24px
 }
 .project-block-main-input{
-  width:100%;min-height:52dvh;flex:1;padding:0;border:0;outline:0;resize:none;
+  width:100%;min-height:52dvh;flex:1;padding:0;border:0;outline:0;overflow:auto;
   background:transparent;color:var(--ui-fg);font:inherit;font-size:var(--fs-base);font-weight:400;line-height:1.72
 }
-.project-block-main-input::placeholder,.project-block-notes-input::placeholder{color:var(--ui-muted);opacity:.7}
+.project-block-rich-input{white-space:normal;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
+.project-block-rich-input:empty::before{content:attr(data-placeholder);color:var(--ui-muted);opacity:.7;pointer-events:none}
+.project-block-rich-input h1{margin:.9em 0 .35em;font-size:var(--fs-display);line-height:1.2;font-weight:700}
+.project-block-rich-input h2{margin:.85em 0 .32em;font-size:var(--fs-lg);line-height:1.25;font-weight:700}
+.project-block-rich-input h3{margin:.8em 0 .3em;font-size:var(--fs-base);line-height:1.3;font-weight:700}
+.project-block-rich-input p,.project-block-rich-input>div{margin:.25em 0}
+.project-block-rich-input ul,.project-block-rich-input ol{margin:.3em 0;padding-left:1.7em}
+.project-block-rich-input blockquote{margin:.7em 0;padding-left:12px;border-left:3px solid var(--ui-border-strong);color:var(--ui-muted)}
+.project-block-rich-input pre{overflow:auto;white-space:pre-wrap}
 .project-block-editor-secondary{
   display:grid;gap:7px;padding:15px 20px calc(18px + env(safe-area-inset-bottom));
   border-top:1px solid var(--ui-border-default);background:var(--ui-surface-subtle)
 }
 .project-block-notes-input{
-  width:100%;min-height:78px;padding:11px 12px;border:1px solid var(--ui-field-border);border-radius:12px;outline:0;resize:vertical;
+  width:100%;min-height:78px;max-height:34dvh;overflow:auto;padding:11px 12px;border:1px solid var(--ui-field-border);border-radius:12px;outline:0;
   background:var(--ui-field-bg);color:var(--ui-field-fg);font:inherit;font-size:var(--fs-sm);font-weight:400;line-height:1.55
 }
 .project-block-notes-input:focus{border-color:var(--ui-field-focus-border)}
@@ -825,6 +833,32 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   margin:0;padding:9px 20px;border-top:1px solid var(--ui-status-error-border);
   background:var(--ui-status-error-bg);color:var(--ui-status-error-fg);font-size:var(--fs-xs);line-height:1.45
 }
+.project-block-format-bar{
+  position:fixed;z-index:90;display:flex;align-items:center;gap:2px;max-width:calc(100vw - 16px);
+  min-height:38px;padding:4px;border:1px solid var(--ui-chrome-border);border-radius:11px;
+  background:var(--ui-chrome-bg);color:var(--ui-content-default);box-shadow:var(--popup-shadow);backdrop-filter:blur(18px)
+}
+.project-block-format-bar[hidden]{display:none}
+.project-block-format-bar button,.project-block-format-color{
+  width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;padding:0;border:0;border-radius:8px;
+  background:transparent;color:var(--ui-content-muted)
+}
+.project-block-format-bar button:active,.project-block-format-bar button.active{background:var(--ui-control-selected-bg);color:var(--ui-control-selected-fg)}
+.project-block-format-bar button svg,.project-block-format-color svg{width:15px;height:15px;stroke:currentColor}
+.project-block-format-color{position:relative;overflow:hidden}
+.project-block-format-color:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
+.project-block-format-color input{
+  position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;opacity:.001;cursor:pointer
+}
+.project-block-format-bar select{
+  width:66px;height:30px;min-width:0;padding:0 5px;border:0;border-radius:8px;outline:0;
+  background:transparent;color:var(--ui-content-muted);font:inherit;font-size:var(--fs-compact-10);font-weight:700
+}
+.project-block-format-bar select:focus{background:var(--ui-control-hover-bg);color:var(--ui-content-default)}
+.block-rich-preview h1,.block-rich-preview h2,.block-rich-preview h3{margin:.45em 0 .2em;font-weight:700;line-height:1.3}
+.block-rich-preview p,.block-rich-preview>div{margin:.2em 0}
+.block-rich-preview ul,.block-rich-preview ol{margin:.25em 0;padding-left:1.45em}
+.block-rich-preview blockquote{margin:.4em 0;padding-left:9px;border-left:2px solid var(--ui-border-strong);color:var(--ui-muted)}
 
 .mindmap-screen{--document-mobile-max-width:760px}
 .mindmap-mobile-body{

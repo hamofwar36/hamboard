@@ -126,6 +126,11 @@
             <span class="page-menu-copy"><strong>클라우드</strong><small>계정 연결과 데이터 불러오기를 관리합니다.</small></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
+          <button id="menuTrash" type="button">
+            <span class="page-menu-icon"><i data-lucide="trash-2" aria-hidden="true"></i></span>
+            <span class="page-menu-copy"><strong>휴지통</strong><small id="menuTrashMeta">삭제된 항목을 관리합니다.</small></span>
+            <i data-lucide="chevron-right" aria-hidden="true"></i>
+          </button>
           <button id="menuSettings" type="button">
             <span class="page-menu-icon"><i data-lucide="settings" aria-hidden="true"></i></span>
             <span class="page-menu-copy"><strong>설정</strong><small>디스플레이와 앱 정보를 관리합니다.</small></span>
@@ -137,6 +142,14 @@
             <i data-lucide="chevron-right" aria-hidden="true"></i>
           </button>
         </div>
+      </section>
+
+      <section id="trashScreen" class="mobile-screen page-screen" hidden>
+        <div class="mobile-trash-head">
+          <p id="trashSubtitle">삭제된 항목이 없습니다.</p>
+          <button id="emptyTrashButton" type="button" hidden>휴지통 비우기</button>
+        </div>
+        <div class="mobile-trash-list" id="trashList"></div>
       </section>
 
       <section id="settingsScreen" class="mobile-screen page-screen" hidden>

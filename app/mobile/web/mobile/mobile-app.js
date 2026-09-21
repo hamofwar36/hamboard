@@ -1586,7 +1586,7 @@
     setMobileBlockEditorStatus("");
     syncMobileBlockCompletion();
     showScreen(blockEditorScreen,{heading:existing?"블록 편집":"새 블록",back:true,account:false,nav:"library"});
-    requestAnimationFrame(()=>blockEditorTitle.focus())
+    requestAnimationFrame(()=>{blockEditorSummary.focus();const end=blockEditorSummary.value.length;blockEditorSummary.setSelectionRange(end,end)})
   }
 
   async function deleteMobileGeneralBlock(){

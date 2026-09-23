@@ -493,9 +493,6 @@ svg.lucide{stroke:currentColor}
   box-shadow:var(--ui-card-shadow)
 }
 .script-block-card{border:1px solid var(--ui-border-strong);border-left:4px solid var(--primary-base);margin-block:3px}
-.script-block-meta{margin-top:4px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700}
-.script-block-card .script-lines{gap:3px}
-.script-block-card .block-preview{-webkit-line-clamp:2}
 .editable-block-card{cursor:pointer;touch-action:manipulation}
 .editable-block-card:active{background:var(--ui-control-hover-bg)}
 .editable-block-card:focus-visible{outline:0;border-color:var(--ui-field-focus-border)}
@@ -512,11 +509,8 @@ svg.lucide{stroke:currentColor}
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden
 }
 .block-preview.no-title{margin-top:0;-webkit-line-clamp:2}
+.script-block-card .block-preview{white-space:pre-wrap;-webkit-line-clamp:3}
 .block-notes{padding:9px 10px;margin-top:8px;border-radius:10px;background:var(--ui-surface-subtle);color:var(--ui-muted);font-size:var(--fs-xs);line-height:1.6;white-space:pre-wrap}
-.script-lines{display:grid;gap:6px;margin-top:9px}
-.script-line{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:start;font-size:var(--fs-xs);line-height:1.55}
-.script-line-label{padding:2px 6px;border-radius:7px;background:var(--ui-surface-subtle);color:var(--ui-muted);font-size:var(--fs-xs);font-weight:400}
-.script-speaker{font-weight:700}
 .child-blocks{margin:12px 0 0 10px;padding-left:10px;border-left:2px solid var(--ui-border-default)}
 .empty-stage{padding:18px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}
 .note-screen{--document-mobile-max-width:680px}
@@ -818,7 +812,7 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font:inherit;font-size:var(--fs-xs)
 }
 .project-block-script-rows{
-  display:block;border:1px solid var(--ui-border-default);border-radius:14px;
+  display:block;border:1px solid var(--ui-border-default);border-radius:0;
   background:var(--ui-surface-default);color:var(--ui-content-default)
 }
 .project-script-row{
@@ -834,9 +828,9 @@ body.block-editor-open .mobile-bottom-nav{display:none}
 .project-script-row[data-line-type="direction"] .project-script-text,
 .project-script-preview-row[data-line-type="background"] .project-script-preview-content,
 .project-script-preview-row[data-line-type="direction"] .project-script-preview-content{color:var(--ui-content-muted)}
-.project-script-line-meta{display:flex;align-items:center;gap:7px;margin-bottom:4px}
-.project-script-row-number{font-size:var(--fs-xs);color:var(--ui-content-muted)}
-.project-script-row-label{color:var(--ui-content-muted);font-size:var(--fs-xs);font-weight:400}
+.project-script-line-main{display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
+.project-script-line-main.project-script-marked{grid-template-columns:auto minmax(0,1fr);gap:9px}
+.project-script-row-label{padding-top:4px;color:var(--ui-content-muted);font-size:var(--fs-xs);font-weight:400}
 .project-script-speaker-input,.project-script-text{
   display:block;width:100%;min-width:0;padding:2px 0;border:0;outline:0;
   background:transparent;color:var(--ui-content-default);font:inherit;font-size:var(--fs-sm)
@@ -922,7 +916,8 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   width:100%;min-height:38px;justify-content:flex-start;padding:0 10px;border:0;background:transparent;text-align:left
 }
 .project-block-script-section.preview .project-block-script-add{display:none}
-.project-script-preview-row:not(.project-script-divider){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:10px}
+.project-script-preview-row:not(.project-script-divider){display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
+.project-script-preview-row.project-script-marked{grid-template-columns:auto minmax(0,1fr);gap:9px}
 .project-script-preview-body{min-width:0;font-size:var(--fs-sm);line-height:1.6;overflow-wrap:anywhere}
 .project-script-speaker{display:block;color:var(--dialogue-color,var(--ui-content-default))}
 .project-script-preview-content h1,.project-script-preview-content h2,.project-script-preview-content h3{margin:0;font-size:var(--fs-base)}

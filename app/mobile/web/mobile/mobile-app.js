@@ -1105,11 +1105,13 @@
         .map(line=>{
           const text=String(line?.text||"").trim(),speaker=line?.type==="dialogue"?String(line?.speaker||"").trim():"";
           if(!text&&!speaker)return "";
-          return speaker&&text?speaker+" · "+text:text||speaker
+          if(line.type==="background")return "# "+text;
+          if(line.type==="direction")return "- "+text;
+          return speaker&&text?speaker+": "+text:text||speaker
         })
         .filter(Boolean)
-        .slice(0,2)
-        .join(" · ")
+        .slice(0,4)
+        .join("\n")
     }
     return String(block.summary||"").trim()
   }
@@ -1137,7 +1139,6 @@
         if(block.completed)head.append(element("span","complete-badge","완료"));
         card.append(head)
       }
-      if(block.type==="script")card.append(element("div","script-block-meta","스크립트 · "+(block.scriptBlocks||[]).length+"줄"));
       const preview=compactBlockPreview(block);
       if(preview)card.append(element("p","block-text block-preview"+(titleText?"":" no-title"),preview));
       return card
@@ -1147,17 +1148,9 @@
     head.append(heading);
     if(block.completed)head.append(element("span","complete-badge","완료"));
     card.append(head);
-    if(block.type==="script")card.append(element("div","script-block-meta","스크립트 · "+(block.scriptBlocks||[]).length+"줄"));
     if(block.type==="script"){
-      const lines=element("div","script-lines");
-      for(const line of (block.scriptBlocks||[]).filter(item=>String(item?.text||"").trim()||String(item?.speaker||"").trim()).slice(0,2)){
-        const row=element("div","script-line"),label=element("span","script-line-label",scriptLabels[line.type]||"지문"),body=element("span","");
-        if(line.type==="dialogue"&&line.speaker)body.append(element("span","script-speaker",line.speaker+" · "));
-        body.append(document.createTextNode(String(line.text||"")));
-        row.append(label,body);
-        lines.append(row)
-      }
-      if(lines.childElementCount)card.append(lines)
+      const preview=compactBlockPreview(block);
+      if(preview)card.append(element("p","block-text block-preview",preview))
     }else if(block.summaryHtml||block.summary){
       const body=element("div","block-text block-rich-preview");
       body.innerHTML=mobileBlockRichHtml(block.summary,block.summaryHtml);
@@ -1807,7 +1800,8 @@
     blockEditorScriptPreview.setAttribute("aria-pressed",String(preview));
     edit.scriptBlocks.forEach((line,index)=>{
       const divider=line.type==="page"||line.type==="cut";
-      const row=element("div","project-script-row"+(divider?" project-script-divider":"")+(preview?" project-script-preview-row":""));
+      const marker=line.type==="background"?"#":line.type==="direction"?"-":"";
+      const row=element("div","project-script-row"+(divider?" project-script-divider":"")+(preview?" project-script-preview-row":"")+(marker?" project-script-marked":""));
       row.dataset.lineId=String(line.id);
       row.dataset.lineType=String(line.type||"narration");
       const character=line.type==="dialogue"?characters.find(item=>String(item.id)===String(line.characterId||""))||matchMobileScriptCharacter(line.speaker,characters):null;
@@ -1831,17 +1825,14 @@
           row.append(editor)
         }
       }else if(preview){
-        const label=element("span","project-script-row-label",scriptLabels[line.type]||"지문");
         const body=element("div","project-script-preview-body");
         if(line.type==="dialogue"&&line.speaker)body.append(element("strong","project-script-speaker",line.speaker));
         const content=element("div","project-script-preview-content");
         content.innerHTML=mobileScriptPreviewHtml(line.text);
         body.append(content);
-        row.append(label,body)
+        if(marker)row.append(element("span","project-script-row-label",marker));
+        row.append(body)
       }else{
-        const meta=element("div","project-script-line-meta");
-        meta.append(element("span","project-script-row-number",String(index+1)),element("span","project-script-row-label",scriptLabels[line.type]||"지문"));
-        row.append(meta);
         if(line.type==="dialogue"){
           const speaker=element("input","project-script-speaker-input");
           speaker.type="text";speaker.placeholder="화자 이름";speaker.value=String(line.speaker||"");
@@ -1853,7 +1844,10 @@
         field.dataset.scriptField="text";field.rows=1;field.value=String(line.text||"");
         field.setAttribute("aria-label",(index+1)+"번째 "+(scriptLabels[line.type]||"지문")+" 내용");
         field.placeholder=line.type==="dialogue"?"대사를 입력하세요":line.type==="direction"?"연출 / 구도를 입력하세요":line.type==="background"?"장소·시간·분위기를 입력하세요":"행동, 서술, 메모 등을 입력하세요";
-        row.append(field)
+        const main=element("div","project-script-line-main"+(marker?" project-script-marked":""));
+        if(marker)main.append(element("span","project-script-row-label",marker));
+        main.append(field);
+        row.append(main)
       }
       if(!preview){
         const tools=element("div","project-script-row-tools");

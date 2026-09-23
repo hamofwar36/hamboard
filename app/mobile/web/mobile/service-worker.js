@@ -10,6 +10,7 @@ const core=[
   "./icons/hamboard-512.svg",
   `./mobile.css${versionTag}`,
   `./shared/sync-state-model.js${versionTag}`,
+  `./shared/cloud-payload.js${versionTag}`,
   `./shared/project-repository.js${versionTag}`,
   `./vendor/lucide/lucide.min.js${versionTag}`,
   `./mobile-config.js${versionTag}`,
@@ -19,7 +20,7 @@ const core=[
 ];
 const cacheablePaths=new Set([
   "/manifest.webmanifest","/favicon.ico","/icons/hamboard-192.svg","/icons/hamboard-512.svg",
-  "/mobile.css","/shared/sync-state-model.js","/shared/project-repository.js",
+  "/mobile.css","/shared/sync-state-model.js","/shared/project-repository.js","/shared/cloud-payload.js",
   "/vendor/lucide/lucide.min.js","/mobile-config.js","/mobile-google-drive.js","/mobile-asset-repository.js","/mobile-app.js"
 ]);
 

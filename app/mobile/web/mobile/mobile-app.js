@@ -2,10 +2,11 @@
   "use strict";
 
   const syncModel=window.HamboardSyncStateModel;
+  const cloudPayload=window.HamboardCloudPayload;
   const repositoryCore=window.HamboardProjectRepository;
   const googleDrive=window.HamboardMobileGoogleDrive;
   const assetRepositoryCore=window.HamboardMobileAssetRepository;
-  if(!syncModel||!repositoryCore||!assetRepositoryCore)throw new Error("hamboard-mobile-dependencies-unavailable");
+  if(!syncModel||!cloudPayload||!repositoryCore||!assetRepositoryCore)throw new Error("hamboard-mobile-dependencies-unavailable");
 
   const storage=repositoryCore.createIndexedDbStateStorage({databaseName:"hamboard-mobile",storeName:"state",stateKey:"mobile-core"});
   const repository=repositoryCore.createProjectRepository({storage,syncModel,clientProfile:"mobile-core"});
@@ -3172,9 +3173,7 @@
   }
 
   async function readCloudCheckpoint(object){
-    const result=await googleDrive.getSyncObject({remoteObjectId:String(object?.remoteObjectId||""),objectKey:String(object?.objectKey||""),contentSha256:String(object?.contentSha256||""),byteSize:Number(object?.byteSize)||0});
-    let checkpoint;
-    try{checkpoint=JSON.parse(String(result.content||""))}catch{throw new Error("sync-checkpoint-json-invalid")}
+    const checkpoint=await googleDrive.getSyncValue(object);
     if(checkpoint?.format!=="hamboard-sync-checkpoint"||checkpoint?.formatVersion!==1||checkpoint?.stateSchemaVersion!==1||String(checkpoint.revision||"")!==String(object?.revision||"")||!checkpoint.state||typeof checkpoint.state!=="object"||Array.isArray(checkpoint.state)||Number(checkpoint.state.schemaVersion)!==1)throw new Error("sync-checkpoint-header-invalid");
     return checkpoint
   }
@@ -3189,9 +3188,7 @@
   }
 
   async function readCloudCommit(object){
-    const result=await googleDrive.getSyncObject({remoteObjectId:String(object.remoteObjectId||""),objectKey:String(object.objectKey||""),contentSha256:String(object.contentSha256||""),byteSize:Number(object.byteSize)||0});
-    let commit;
-    try{commit=JSON.parse(String(result.content||""))}catch{throw new Error("sync-commit-json-invalid")}
+    const commit=await googleDrive.getSyncValue(object);
     if(commit?.format!=="hamboard-sync-commit"||commit?.formatVersion!==1||commit?.stateSchemaVersion!==1||String(commit.revision||"")!==String(object.revision||"")||String(commit.baseRevision||"")!==String(object.baseRevision||"")||!Array.isArray(commit.changes))throw new Error("sync-commit-header-invalid");
     const profile=syncModel.clientProfileForCommit(commit),profileId=syncModel.clientProfileId(profile);
     if(object.clientProfile&&String(object.clientProfile)!==profileId)throw new Error("sync-commit-client-profile-mismatch");
@@ -3382,8 +3379,15 @@
     cloudSourceStatus.hidden=false;
     cloudSourceStatus.textContent="선택한 백업을 불러오는 중입니다.";
     try{
-      const manifest=await googleDrive.getBackupManifest(entry);
-      const canonical=manifest?.state;
+      let manifest=await googleDrive.getBackupManifest(entry);
+      let canonical;
+      if(manifest.formatVersion===3){
+        manifest=await cloudPayload.hydrateSections(manifest,googleDrive.getBackupPage,{
+          skipSections:["versions","workTracking","deviceStateDelta","syncContext","missingAssets"]
+        });
+        if(manifest.cloudUserData?.schemaVersion!==1||manifest.cloudUserData?.cloudUserDataVersion!==syncModel.CLOUD_USER_DATA_VERSION)throw new Error("mobile-backup-cloud-data-invalid");
+        canonical=syncModel.applyCloudUserData({},manifest.cloudUserData,syncModel.CLIENT_PROFILES.desktop)
+      }else canonical=cloudPayload.unpackUserState(manifest,syncModel);
       if(!canonical||typeof canonical!=="object"||Array.isArray(canonical))throw new Error("mobile-state-invalid");
       const projection=syncModel.projectCanonicalState(canonical,syncModel.CLIENT_PROFILES.mobileCore);
       cloudSourceStatus.textContent="백업 스냅샷을 적용하는 중입니다. 60%";

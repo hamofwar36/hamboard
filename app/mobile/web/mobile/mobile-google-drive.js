@@ -9,6 +9,7 @@
   const MAX_BACKUP_MANIFEST_BYTES=16*1024*1024;
   const MAX_ASSET_OBJECT_BYTES=256*1024*1024;
   const MAX_BACKUPS=100;
+  const cloudPayload=root.HamboardCloudPayload;
 
   let accessToken="";
   let accessTokenExpiresAt=0;
@@ -242,6 +243,37 @@
     return {objectKey,content,contentSha256:expectedSha,byteSize:expectedSize}
   }
 
+  async function readContentPage(page){
+    const downloaded=await getObjectByKey(page);
+    let rows;try{rows=JSON.parse(await downloaded.blob.text())}catch{throw new Error("cloud-page-json-invalid")}
+    if(!Array.isArray(rows))throw new Error("cloud-page-rows-invalid");
+    return rows
+  }
+
+  async function decodeCloudRoot(value){
+    if(value?.format===cloudPayload.SYNC_PAGES_FORMAT){
+      if(value.formatVersion!==1||value.encoding!==cloudPayload.TREE_ENCODING)throw new Error("sync-pages-version-invalid");
+      const decoded=await cloudPayload.decodeTreePages(cloudPayload.validatePageReferences(value.pages),readContentPage);
+      if(!["hamboard-sync-checkpoint","hamboard-sync-commit"].includes(decoded?.format))throw new Error("sync-pages-content-invalid");
+      return decoded
+    }
+    if(value?.format===cloudPayload.FORMAT){
+      if(value.formatVersion!==1||!["sync","manifest"].includes(value.objectKind))throw new Error("cloud-envelope-invalid");
+      const transport=cloudPayload.createTransport({
+        readBytes:async part=>(await getObjectByKey(part)).blob.arrayBuffer(),
+        sha256:async blob=>sha256Hex(await blob.arrayBuffer())
+      });
+      return transport.downloadPayload(value.payload)
+    }
+    return value
+  }
+
+  async function getSyncValue(request={}){
+    const raw=await getSyncObject(request);
+    let value;try{value=JSON.parse(raw.content)}catch{throw new Error("google-drive-sync-json-invalid")}
+    return decodeCloudRoot(value)
+  }
+
   async function loadObjectIndex({force=false}={}){
     if(!force&&objectIndex&&Date.now()-objectIndexLoadedAt<OBJECT_INDEX_TTL_MS)return objectIndex;
     if(objectIndexPromise)return objectIndexPromise;
@@ -304,13 +336,35 @@
   async function putSyncCheckpoint({revision,state,createdAtMs=Date.now()}={}){
     const safeRevision=String(revision||"");
     if(!/^[A-Za-z0-9._:-]{1,120}$/.test(safeRevision)||!state||typeof state!=="object"||Array.isArray(state)||Number(state.schemaVersion)!==1)throw new Error("google-drive-sync-checkpoint-request-invalid");
-    const checkpoint={format:"hamboard-sync-checkpoint",formatVersion:1,stateSchemaVersion:1,revision:safeRevision,createdAtMs:Number(createdAtMs)||Date.now(),state};
-    const content=JSON.stringify(checkpoint),bytes=new TextEncoder().encode(content);
+    const cloudState=root.HamboardSyncStateModel.projectCloudUserData(state,root.HamboardSyncStateModel.CLIENT_PROFILES.desktop);
+    const checkpoint={format:"hamboard-sync-checkpoint",formatVersion:1,stateSchemaVersion:1,cloudUserDataVersion:root.HamboardSyncStateModel.CLOUD_USER_DATA_VERSION,revision:safeRevision,createdAtMs:Number(createdAtMs)||Date.now(),state:cloudState};
+    const pages=[];
+    for await(const pageContent of cloudPayload.jsonPages(cloudPayload.treeRecords(checkpoint))){
+      const pageBytes=new TextEncoder().encode(pageContent),pageSha=await sha256Hex(pageBytes),pageKey=`objects/content-v1/${pageSha}`;
+      const existing=await findObjectByKeyDirect(pageKey,pageSha,pageBytes.byteLength);
+      if(!existing){
+        const pageBoundary=`hamboard-${pageSha.slice(0,24)}`;
+        const pageMetadata={name:`hamboard-content-${pageSha}.json`,parents:["appDataFolder"],mimeType:"application/octet-stream",appProperties:{
+          hamboardObjectKey:pageKey,hamboardContentSha256:pageSha,hamboardByteSize:String(pageBytes.byteLength),hamboardFormatVersion:"1",hamboardKind:"asset",hamboardCreatedAtMs:String(Date.now())
+        }};
+        const pageBody=new Blob([
+          `--${pageBoundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(pageMetadata)}\r\n`,
+          `--${pageBoundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
+          pageBytes,
+          `\r\n--${pageBoundary}--\r\n`
+        ],{type:`multipart/related; boundary=${pageBoundary}`});
+        const pageUrl=new URL(DRIVE_UPLOAD_URL);pageUrl.searchParams.set("uploadType","multipart");pageUrl.searchParams.set("fields","id,size");
+        const uploaded=await (await authorizedFetch(pageUrl,{method:"POST",headers:{"Content-Type":`multipart/related; boundary=${pageBoundary}`},body:pageBody})).json();
+        if(!validRemoteId(uploaded.id)||Number(uploaded.size)!==pageBytes.byteLength)throw new Error("google-drive-sync-page-upload-invalid")
+      }
+      pages.push({objectKey:pageKey,contentSha256:pageSha,byteSize:pageBytes.byteLength})
+    }
+    const content=JSON.stringify({format:cloudPayload.SYNC_PAGES_FORMAT,formatVersion:1,encoding:cloudPayload.TREE_ENCODING,pages}),bytes=new TextEncoder().encode(content);
     if(bytes.byteLength<1||bytes.byteLength>MAX_SYNC_OBJECT_BYTES)throw new Error("google-drive-sync-checkpoint-too-large");
     const contentSha256=await sha256Hex(bytes),objectKey=`sync/checkpoints/${safeRevision}.json`,boundary=`hamboard-${contentSha256.slice(0,24)}`;
     const metadata={name:`hamboard-sync-checkpoint-${contentSha256.slice(0,24)}.json`,parents:["appDataFolder"],mimeType:"application/json",appProperties:{
       hamboardObjectKey:objectKey,hamboardContentSha256:contentSha256,hamboardByteSize:String(bytes.byteLength),hamboardFormatVersion:"1",hamboardKind:"sync",
-      hamboardSyncType:"checkpoint",hamboardRevision:safeRevision,hamboardBaseRevision:"",hamboardDeviceId:"mobile-web",hamboardClientProfile:"canonical",hamboardCreatedAtMs:String(checkpoint.createdAtMs),hamboardExpiresAtMs:"0"
+      hamboardSyncType:"checkpoint",hamboardRevision:safeRevision,hamboardBaseRevision:"",hamboardDeviceId:"mobile-web",hamboardClientProfile:"desktop",hamboardCreatedAtMs:String(checkpoint.createdAtMs),hamboardExpiresAtMs:"0"
     }};
     const body=new Blob([
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
@@ -324,7 +378,7 @@
     const response=await authorizedFetch(url,{method:"POST",headers:{"Content-Type":`multipart/related; boundary=${boundary}`},body}),value=await response.json();
     if(!validRemoteId(value.id))throw new Error("google-drive-sync-checkpoint-upload-invalid");
     clearObjectIndex();
-    return {remoteObjectId:String(value.id),objectKey,contentSha256,byteSize:bytes.byteLength,syncType:"checkpoint",revision:safeRevision,baseRevision:"",deviceId:"mobile-web",clientProfile:"canonical",createdAtMs:String(checkpoint.createdAtMs),expiresAtMs:"0",assetId:"",quality:""}
+    return {remoteObjectId:String(value.id),objectKey,contentSha256,byteSize:bytes.byteLength,syncType:"checkpoint",revision:safeRevision,baseRevision:"",deviceId:"mobile-web",clientProfile:"desktop",createdAtMs:String(checkpoint.createdAtMs),expiresAtMs:"0",assetId:"",quality:""}
   }
 
   async function listBackups(){
@@ -362,11 +416,18 @@
     if(bytes.byteLength!==expectedSize||await sha256Hex(bytes)!==expectedSha)throw new Error("google-drive-download-integrity-mismatch");
     let content;try{content=new TextDecoder("utf-8",{fatal:true}).decode(bytes)}catch{throw new Error("google-drive-backup-text-invalid")}
     let manifest;try{manifest=JSON.parse(content)}catch{throw new Error("google-drive-backup-json-invalid")}
-    if(manifest?.format!=="hamboard-cloud-backup"||manifest?.formatVersion!==1||manifest?.complete!==true||manifest?.stateSchemaVersion!==1||manifest?.state?.schemaVersion!==1)throw new Error("google-drive-backup-header-invalid");
+    manifest=await decodeCloudRoot(manifest);
+    if(manifest?.format!=="hamboard-cloud-backup"||![1,2,3].includes(manifest?.formatVersion)||manifest?.complete!==true||manifest?.stateSchemaVersion!==1)throw new Error("google-drive-backup-header-invalid");
+    if(manifest.formatVersion===3){
+      if(manifest.cloudUserDataVersion!==root.HamboardSyncStateModel?.CLOUD_USER_DATA_VERSION)throw new Error("google-drive-backup-version-invalid");
+      cloudPayload.validateSections(manifest.sections)
+    }else if(manifest.state?.schemaVersion!==1&&manifest.deviceStateEncoding===undefined)throw new Error("google-drive-backup-state-invalid");
     return manifest
   }
 
+  async function getBackupPage(page={}){return readContentPage(page)}
+
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncRestoreSource,listSyncObjects,listSyncAssetDescriptors,getSyncObject,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,configuredAuthBaseUrl,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncRestoreSource,listSyncObjects,listSyncAssetDescriptors,getSyncObject,getSyncValue,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,getBackupPage,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

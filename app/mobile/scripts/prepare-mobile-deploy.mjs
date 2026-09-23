@@ -19,6 +19,7 @@ await mkdir(resolve(outputRoot,"icons"),{recursive:true});
 let html=await readFile(resolve(mobileRoot,"index.html"),"utf8");
 html=html
   .replaceAll('src="../shared/','src="./shared/')
+  .replace('src="../../../window/web/shared/cloud-payload.js"','src="./shared/cloud-payload.js"')
   .replace('src="../../../window/web/assets/vendor/lucide/lucide.min.js"','src="./vendor/lucide/lucide.min.js"')
   .replace('  <script src="./mobile-google-drive.js"></script>','  <script src="./mobile-config.js"></script>\n  <script src="./mobile-google-drive.js"></script>');
 
@@ -28,6 +29,7 @@ for(const asset of [
   "./manifest.webmanifest",
   "./shared/sync-state-model.js",
   "./shared/project-repository.js",
+  "./shared/cloud-payload.js",
   "./vendor/lucide/lucide.min.js",
   "./mobile-config.js",
   "./mobile-google-drive.js",
@@ -48,6 +50,7 @@ await Promise.all([
   cp(resolve(mobileRoot,"icons"),resolve(outputRoot,"icons"),{recursive:true}),
   cp(resolve(sharedRoot,"sync-state-model.js"),resolve(outputRoot,"shared/sync-state-model.js")),
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
+  cp(resolve(sharedRoot,"cloud-payload.js"),resolve(outputRoot,"shared/cloud-payload.js")),
   cp(resolve(projectRoot,"../window/web/assets/vendor/lucide"),resolve(outputRoot,"vendor/lucide"),{recursive:true}),
   cp(resolve(projectRoot,"web/favicon.ico"),resolve(outputRoot,"favicon.ico")),
   writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({authBaseUrl:${JSON.stringify(authBaseUrl)},version:${JSON.stringify(mobileVersion)},assetVersion:${JSON.stringify(assetVersion)}});\n`)

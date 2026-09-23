@@ -1,11 +1,12 @@
 {
   "name": "hamboard-mobile-web",
   "private": true,
-  "version": "0.3.47",
+  "version": "0.3.48",
   "description": "Hamboard mobile web app deployment package",
   "scripts": {
     "mobile:build": "node scripts/prepare-mobile-deploy.mjs",
     "mobile:preview": "npm run mobile:build && node scripts/serve.mjs dist-mobile",
-    "qa:mobile-deploy": "node scripts/validate-mobile-deploy.mjs"
+    "qa:mobile-deploy": "node scripts/validate-mobile-deploy.mjs",
+    "qa:cloud-formats": "node scripts/validate-cloud-formats.mjs"
   }
 }

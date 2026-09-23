@@ -1845,6 +1845,9 @@
         type.value=MOBILE_SCRIPT_TYPES[line.type]?line.type:"narration";
         tools.append(type);
         if(line.type==="dialogue"&&characters.length){
+          const picker=element("span","project-script-picker");
+          const selected=characters.find(item=>String(item.id)===String(line.characterId||""));
+          picker.append(element("span","project-script-picker-label",selected?.name||"캐릭터 선택"));
           const chooser=element("select","project-script-character-select");
           chooser.dataset.scriptField="character";chooser.setAttribute("aria-label","작품 캐릭터 선택");
           const placeholder=element("option","","캐릭터 선택");placeholder.value="";chooser.append(placeholder);
@@ -1853,15 +1856,19 @@
             option.value=String(item.id||"");chooser.append(option)
           });
           chooser.value=String(line.characterId||"");
-          tools.append(chooser)
+          picker.append(chooser);
+          tools.append(picker)
         }
         if(line.type==="direction"){
+          const picker=element("span","project-script-picker");
+          picker.append(element("span","project-script-picker-label",MOBILE_SHOT_PRESETS.includes(line.text)?line.text:"연출 선택"));
           const chooser=element("select","project-script-shot-select");
           chooser.dataset.scriptField="shot";chooser.setAttribute("aria-label","연출 프리셋");
           const placeholder=element("option","","연출 선택");placeholder.value="";chooser.append(placeholder);
           MOBILE_SHOT_PRESETS.forEach(preset=>{const option=element("option","",preset);option.value=preset;chooser.append(option)});
           chooser.value=MOBILE_SHOT_PRESETS.includes(line.text)?line.text:"";
-          tools.append(chooser)
+          picker.append(chooser);
+          tools.append(picker)
         }
         const insert=element("button","project-script-insert","＋ 다음 줄");
         insert.type="button";insert.dataset.scriptAction="insert";
@@ -3768,16 +3775,29 @@
     if(!line)return;
     if(event.target.dataset.scriptField==="text"){
       line.text=event.target.value;
-      resizeMobileScriptText(event.target)
+      resizeMobileScriptText(event.target);
+      if(line.type==="direction"){
+        const chooser=row.querySelector('[data-script-field="shot"]');
+        if(chooser){
+          chooser.value=MOBILE_SHOT_PRESETS.includes(line.text)?line.text:"";
+          row.querySelector(".project-script-picker-label").textContent=chooser.value||"연출 선택"
+        }
+      }
     }else if(event.target.dataset.scriptField==="divider-text"){
       line.text=event.target.value;
       line.autoLabel=false;
       row.querySelector(".project-script-divider-label").textContent=line.text||line.type.toUpperCase()
     }else if(event.target.dataset.scriptField==="speaker"){
       line.speaker=event.target.value;
-      line.characterId=String(matchMobileScriptCharacter(line.speaker)?.id||"");
+      const character=matchMobileScriptCharacter(line.speaker);
+      line.characterId=String(character?.id||"");
+      if(character?.color)row.style.setProperty("--dialogue-color",safeColor(character.color,"#6A6E78"));
+      else row.style.removeProperty("--dialogue-color");
       const chooser=row.querySelector('[data-script-field="character"]');
-      if(chooser)chooser.value=line.characterId
+      if(chooser){
+        chooser.value=line.characterId;
+        row.querySelector(".project-script-picker-label").textContent=character?.name||"캐릭터 선택"
+      }
     }else return;
     scheduleMobileGeneralBlockSave()
   });
@@ -3806,11 +3826,15 @@
       if(!character)return;
       line.characterId=String(character.id);
       line.speaker=String(character.name||"");
-      row.querySelector('[data-script-field="speaker"]').value=line.speaker
+      row.querySelector('[data-script-field="speaker"]').value=line.speaker;
+      row.querySelector(".project-script-picker-label").textContent=line.speaker;
+      if(character.color)row.style.setProperty("--dialogue-color",safeColor(character.color,"#6A6E78"));
+      else row.style.removeProperty("--dialogue-color")
     }else if(field==="shot"){
       if(!MOBILE_SHOT_PRESETS.includes(event.target.value))return;
       line.text=event.target.value;
-      row.querySelector('[data-script-field="text"]').value=line.text
+      row.querySelector('[data-script-field="text"]').value=line.text;
+      row.querySelector(".project-script-picker-label").textContent=line.text
     }else return;
     scheduleMobileGeneralBlockSave()
   });

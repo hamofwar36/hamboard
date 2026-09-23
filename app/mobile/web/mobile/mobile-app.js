@@ -1107,14 +1107,15 @@
           return speaker&&text?speaker+" · "+text:text||speaker
         })
         .filter(Boolean)
-        .join(" ")
+        .slice(0,2)
+        .join(" · ")
     }
     return String(block.summary||"").trim()
   }
 
   function blockElement(block,{compact=false,stageId="",blockIndex=-1}={}){
     const editable=Boolean(stageId);
-    const card=element("article","block-card"+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
+    const card=element("article","block-card"+(block.type==="script"?" script-block-card":"")+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
     const titleText=String(block.title||"").trim();
     if(editable){
       card.setAttribute("role","button");
@@ -1135,6 +1136,7 @@
         if(block.completed)head.append(element("span","complete-badge","완료"));
         card.append(head)
       }
+      if(block.type==="script")card.append(element("div","script-block-meta","스크립트 · "+(block.scriptBlocks||[]).length+"줄"));
       const preview=compactBlockPreview(block);
       if(preview)card.append(element("p","block-text block-preview"+(titleText?"":" no-title"),preview));
       return card
@@ -1144,10 +1146,10 @@
     head.append(heading);
     if(block.completed)head.append(element("span","complete-badge","완료"));
     card.append(head);
+    if(block.type==="script")card.append(element("div","script-block-meta","스크립트 · "+(block.scriptBlocks||[]).length+"줄"));
     if(block.type==="script"){
       const lines=element("div","script-lines");
-      for(const line of block.scriptBlocks||[]){
-        if(!String(line?.text||"").trim()&&!String(line?.speaker||"").trim())continue;
+      for(const line of (block.scriptBlocks||[]).filter(item=>String(item?.text||"").trim()||String(item?.speaker||"").trim()).slice(0,2)){
         const row=element("div","script-line"),label=element("span","script-line-label",scriptLabels[line.type]||"지문"),body=element("span","");
         if(line.type==="dialogue"&&line.speaker)body.append(element("span","script-speaker",line.speaker+" · "));
         body.append(document.createTextNode(String(line.text||"")));
@@ -1160,7 +1162,7 @@
       body.innerHTML=mobileBlockRichHtml(block.summary,block.summaryHtml);
       card.append(body)
     }
-    if(block.notesHtml||block.notes){
+    if(block.type!=="script"&&(block.notesHtml||block.notes)){
       const notes=element("div","block-notes block-rich-preview");
       notes.innerHTML=mobileBlockRichHtml(block.notes,block.notesHtml);
       card.append(notes)
@@ -1753,21 +1755,61 @@
     }).join("")
   }
 
+  function resizeMobileScriptText(field){
+    field.style.height="auto";
+    field.style.height=Math.max(34,field.scrollHeight)+"px"
+  }
+
+  function selectMobileScriptRow(id){
+    if(activeBlockEditor?.type!=="script")return;
+    activeBlockEditor.activeLineId=String(id||"");
+    blockEditorScriptRows.querySelectorAll(".project-script-row").forEach(row=>{
+      const selected=row.dataset.lineId===activeBlockEditor.activeLineId;
+      row.classList.toggle("active",selected);
+      if(!selected){
+        row.classList.remove("editing");
+        const menu=row.querySelector(".project-script-row-menu");
+        if(menu)menu.hidden=true
+      }
+    })
+  }
+
   function renderMobileScriptRows(focusId=""){
     const edit=activeBlockEditor;
     if(edit?.type!=="script")return;
     const preview=Boolean(edit.preview),characters=mobileScriptCharacters();
+    if(focusId)edit.activeLineId=String(focusId);
+    if(!edit.scriptBlocks.some(line=>String(line.id)===edit.activeLineId))edit.activeLineId="";
     blockEditorScriptRows.replaceChildren();
     blockEditorScriptSection.classList.toggle("preview",preview);
     blockEditorScriptPreview.textContent=preview?"편집으로 돌아가기":"미리보기";
     blockEditorScriptPreview.setAttribute("aria-pressed",String(preview));
     edit.scriptBlocks.forEach((line,index)=>{
-      const row=element("div","project-script-row"+(preview?" project-script-preview-row":""));
+      const divider=line.type==="page"||line.type==="cut";
+      const row=element("div","project-script-row"+(divider?" project-script-divider":"")+(preview?" project-script-preview-row":""));
       row.dataset.lineId=String(line.id);
       row.dataset.lineType=String(line.type||"narration");
       const character=line.type==="dialogue"?characters.find(item=>String(item.id)===String(line.characterId||""))||matchMobileScriptCharacter(line.speaker,characters):null;
       if(character?.color)row.style.setProperty("--dialogue-color",safeColor(character.color,"#6A6E78"));
-      if(preview){
+      if(divider){
+        const marker=element(preview?"span":"button","project-script-divider-label",String(line.text||line.type.toUpperCase()));
+        if(!preview){
+          marker.type="button";
+          marker.dataset.scriptAction="divider";
+          marker.setAttribute("aria-label",MOBILE_SCRIPT_TYPES[line.type]+" 이름 수정")
+        }
+        row.append(element("span","project-script-divider-rule"),marker,element("span","project-script-divider-rule"));
+        if(!preview){
+          const editor=element("div","project-script-divider-edit");
+          const input=element("input","");
+          input.type="text";input.value=String(line.text||"");input.dataset.scriptField="divider-text";
+          input.setAttribute("aria-label",MOBILE_SCRIPT_TYPES[line.type]+" 이름");
+          const auto=element("button","","자동 번호");
+          auto.type="button";auto.dataset.scriptAction="auto";
+          editor.append(input,auto);
+          row.append(editor)
+        }
+      }else if(preview){
         const label=element("span","project-script-row-label",scriptLabels[line.type]||"지문");
         const body=element("div","project-script-preview-body");
         if(line.type==="dialogue"&&line.speaker)body.append(element("strong","project-script-speaker",line.speaker));
@@ -1776,68 +1818,88 @@
         body.append(content);
         row.append(label,body)
       }else{
-        const header=element("div","project-script-row-head");
-        const number=element("span","project-script-row-number",String(index+1));
+        const meta=element("div","project-script-line-meta");
+        meta.append(element("span","project-script-row-number",String(index+1)),element("span","project-script-row-label",scriptLabels[line.type]||"지문"));
+        row.append(meta);
+        if(line.type==="dialogue"){
+          const speaker=element("input","project-script-speaker-input");
+          speaker.type="text";speaker.placeholder="화자 이름";speaker.value=String(line.speaker||"");
+          speaker.dataset.scriptField="speaker";
+          speaker.setAttribute("aria-label",(index+1)+"번째 줄 화자");
+          row.append(speaker)
+        }
+        const field=element("textarea","project-script-text");
+        field.dataset.scriptField="text";field.rows=1;field.value=String(line.text||"");
+        field.setAttribute("aria-label",(index+1)+"번째 "+(scriptLabels[line.type]||"지문")+" 내용");
+        field.placeholder=line.type==="dialogue"?"대사를 입력하세요":line.type==="direction"?"연출 / 구도를 입력하세요":line.type==="background"?"장소·시간·분위기를 입력하세요":"행동, 서술, 메모 등을 입력하세요";
+        row.append(field)
+      }
+      if(!preview){
+        const tools=element("div","project-script-row-tools");
         const type=element("select","project-script-type");
         type.dataset.scriptField="type";
-        type.setAttribute("aria-label",(index+1)+"번째 줄 유형");
+        type.setAttribute("aria-label",(index+1)+"번째 줄 유형 변경");
         Object.entries(MOBILE_SCRIPT_TYPES).forEach(([key,label])=>{
           const option=element("option","",label);option.value=key;type.append(option)
         });
         type.value=MOBILE_SCRIPT_TYPES[line.type]?line.type:"narration";
-        const up=element("button","project-script-row-action","");
-        up.type="button";up.dataset.scriptAction="up";up.disabled=index===0;
-        up.setAttribute("aria-label",(index+1)+"번째 줄 위로 이동");
-        up.innerHTML='<i data-lucide="arrow-up" aria-hidden="true"></i>';
-        const down=element("button","project-script-row-action","");
-        down.type="button";down.dataset.scriptAction="down";down.disabled=index===edit.scriptBlocks.length-1;
-        down.setAttribute("aria-label",(index+1)+"번째 줄 아래로 이동");
-        down.innerHTML='<i data-lucide="arrow-down" aria-hidden="true"></i>';
-        const remove=element("button","project-script-row-action project-script-row-delete","");
-        remove.type="button";remove.dataset.scriptAction="delete";
-        remove.setAttribute("aria-label",(index+1)+"번째 줄 삭제");
-        remove.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';
-        header.append(number,type,up,down,remove);
-        row.append(header);
-        if(line.type==="dialogue"){
-          const speaker=element("input","project-script-speaker-input");
-          speaker.type="text";speaker.placeholder="캐릭터 선택 또는 이름 입력";
-          speaker.value=String(line.speaker||"");speaker.dataset.scriptField="speaker";
-          speaker.setAttribute("aria-label",(index+1)+"번째 줄 화자");
-          row.append(speaker);
-          if(characters.length){
-            const chooser=element("select","project-script-character-select");
-            chooser.dataset.scriptField="character";chooser.setAttribute("aria-label","작품 캐릭터 선택");
-            const placeholder=element("option","","작품 캐릭터 선택");placeholder.value="";chooser.append(placeholder);
-            characters.forEach(character=>{
-              const option=element("option","",String(character.name||"이름 없음"));option.value=String(character.id||"");chooser.append(option)
-            });
-            chooser.value=String(line.characterId||"");
-            row.append(chooser)
-          }
+        tools.append(type);
+        if(line.type==="dialogue"&&characters.length){
+          const chooser=element("select","project-script-character-select");
+          chooser.dataset.scriptField="character";chooser.setAttribute("aria-label","작품 캐릭터 선택");
+          const placeholder=element("option","","캐릭터 선택");placeholder.value="";chooser.append(placeholder);
+          characters.forEach(item=>{
+            const option=element("option","",String(item.name||"이름 없음"));
+            option.value=String(item.id||"");chooser.append(option)
+          });
+          chooser.value=String(line.characterId||"");
+          tools.append(chooser)
         }
         if(line.type==="direction"){
           const chooser=element("select","project-script-shot-select");
           chooser.dataset.scriptField="shot";chooser.setAttribute("aria-label","연출 프리셋");
-          const placeholder=element("option","","연출 / 구도 선택");placeholder.value="";chooser.append(placeholder);
+          const placeholder=element("option","","연출 선택");placeholder.value="";chooser.append(placeholder);
           MOBILE_SHOT_PRESETS.forEach(preset=>{const option=element("option","",preset);option.value=preset;chooser.append(option)});
           chooser.value=MOBILE_SHOT_PRESETS.includes(line.text)?line.text:"";
-          row.append(chooser)
+          tools.append(chooser)
         }
-        const field=element("textarea","project-script-text");
-        field.dataset.scriptField="text";field.value=String(line.text||"");
-        field.setAttribute("aria-label",(index+1)+"번째 "+(scriptLabels[line.type]||"지문")+" 내용");
-        field.placeholder=line.type==="dialogue"?"대사를 입력하세요":line.type==="direction"?"연출 / 구도를 입력하세요":line.type==="background"?"장소·시간·분위기를 입력하세요":line.type==="page"||line.type==="cut"?"구분선 이름": "행동, 서술, 메모 등을 입력하세요";
-        row.append(field)
+        const insert=element("button","project-script-insert","＋ 다음 줄");
+        insert.type="button";insert.dataset.scriptAction="insert";
+        const more=element("button","project-script-more","⋯");
+        more.type="button";more.dataset.scriptAction="menu";
+        more.setAttribute("aria-label",(index+1)+"번째 줄 작업");
+        more.setAttribute("aria-expanded","false");
+        const menu=element("div","project-script-row-menu");
+        menu.hidden=true;
+        for(const [action,label,disabled] of [["up","위로 이동",index===0],["down","아래로 이동",index===edit.scriptBlocks.length-1],["delete","줄 삭제",false]]){
+          const button=element("button","",label);
+          button.type="button";button.dataset.scriptAction=action;button.disabled=disabled;
+          menu.append(button)
+        }
+        tools.append(insert,more,menu);
+        row.append(tools);
+        if(edit.activeLineId===String(line.id))row.classList.add("active")
       }
       blockEditorScriptRows.append(row)
     });
-    refreshLucideIcons();
-    if(focusId)blockEditorScriptRows.querySelectorAll(".project-script-row").forEach(row=>{
-      if(row.dataset.lineId===focusId)row.querySelector("textarea")?.focus()
-    })
+    blockEditorScriptRows.querySelectorAll("textarea").forEach(resizeMobileScriptText);
+    if(focusId){
+      const selected=[...blockEditorScriptRows.querySelectorAll(".project-script-row")].find(row=>row.dataset.lineId===String(focusId));
+      selected?.querySelector("textarea,[data-script-action=divider]")?.focus()
+    }
   }
 
+  function addMobileScriptLine(type="narration",afterId=""){
+    const edit=activeBlockEditor;
+    if(edit?.type!=="script")return;
+    const line=mobileScriptLine(MOBILE_SCRIPT_TYPES[type]?type:"narration");
+    const index=edit.scriptBlocks.findIndex(item=>String(item.id)===String(afterId));
+    edit.scriptBlocks.splice(index<0?edit.scriptBlocks.length:index+1,0,line);
+    renumberMobileScriptLines();
+    edit.preview=false;
+    renderMobileScriptRows(line.id);
+    scheduleMobileGeneralBlockSave()
+  }
   function blockEditorHasContent(){
     const scriptContent=activeBlockEditor?.type==="script"&&activeBlockEditor.scriptBlocks.some(line=>String(line.text||"").trim()||String(line.speaker||"").trim());
     return Boolean(blockEditorTitle.value.trim()||scriptContent||activeBlockEditor?.type!=="script"&&mobileBlockPlainText(blockEditorSummary).trim()||mobileBlockPlainText(blockEditorNotes).trim()||activeBlockEditor?.completed)
@@ -3688,17 +3750,12 @@
   };
   blockEditorTitle.addEventListener("input",scheduleMobileGeneralBlockSave);
   [blockEditorSummary,blockEditorNotes].forEach(bindMobileBlockRichEditor);
-  blockEditorScriptAdd.onclick=()=>{
-    const edit=activeBlockEditor;
-    if(edit?.type!=="script")return;
-    const type=MOBILE_SCRIPT_TYPES[blockEditorScriptAddType.value]?blockEditorScriptAddType.value:"narration";
-    const line=mobileScriptLine(type);
-    edit.scriptBlocks.push(line);
-    renumberMobileScriptLines();
-    edit.preview=false;
-    renderMobileScriptRows(line.id);
-    scheduleMobileGeneralBlockSave()
-  };
+  blockEditorScriptAdd.onclick=()=>addMobileScriptLine();
+  blockEditorScriptAddType.addEventListener("change",()=>{
+    const type=blockEditorScriptAddType.value;
+    blockEditorScriptAddType.value="";
+    if(MOBILE_SCRIPT_TYPES[type])addMobileScriptLine(type)
+  });
   blockEditorScriptPreview.onclick=()=>{
     if(activeBlockEditor?.type!=="script")return;
     activeBlockEditor.preview=!activeBlockEditor.preview;
@@ -3711,7 +3768,11 @@
     if(!line)return;
     if(event.target.dataset.scriptField==="text"){
       line.text=event.target.value;
-      if(line.type==="page"||line.type==="cut")line.autoLabel=false
+      resizeMobileScriptText(event.target)
+    }else if(event.target.dataset.scriptField==="divider-text"){
+      line.text=event.target.value;
+      line.autoLabel=false;
+      row.querySelector(".project-script-divider-label").textContent=line.text||line.type.toUpperCase()
     }else if(event.target.dataset.scriptField==="speaker"){
       line.speaker=event.target.value;
       line.characterId=String(matchMobileScriptCharacter(line.speaker)?.id||"");
@@ -3719,6 +3780,10 @@
       if(chooser)chooser.value=line.characterId
     }else return;
     scheduleMobileGeneralBlockSave()
+  });
+  blockEditorScriptRows.addEventListener("focusin",event=>{
+    const row=event.target.closest("[data-line-id]");
+    if(row)selectMobileScriptRow(row.dataset.lineId)
   });
   blockEditorScriptRows.addEventListener("change",event=>{
     const row=event.target.closest("[data-line-id]"),edit=activeBlockEditor;
@@ -3750,14 +3815,39 @@
     scheduleMobileGeneralBlockSave()
   });
   blockEditorScriptRows.addEventListener("click",event=>{
-    const button=event.target.closest("[data-script-action]"),edit=activeBlockEditor;
-    if(edit?.type!=="script"||!button)return;
-    const row=button.closest("[data-line-id]"),index=edit.scriptBlocks.findIndex(item=>String(item.id)===row?.dataset.lineId);
+    const edit=activeBlockEditor,row=event.target.closest("[data-line-id]");
+    if(edit?.type!=="script"||!row)return;
+    selectMobileScriptRow(row.dataset.lineId);
+    const button=event.target.closest("[data-script-action]");
+    if(!button)return;
+    const index=edit.scriptBlocks.findIndex(item=>String(item.id)===row.dataset.lineId);
     if(index<0)return;
-    const action=button.dataset.scriptAction;
+    const action=button.dataset.scriptAction,line=edit.scriptBlocks[index];
+    if(action==="insert"){addMobileScriptLine("narration",line.id);return}
+    if(action==="divider"){
+      row.classList.toggle("editing");
+      if(row.classList.contains("editing"))row.querySelector('[data-script-field="divider-text"]')?.focus();
+      return
+    }
+    if(action==="auto"){
+      line.autoLabel=true;
+      renumberMobileScriptLines();
+      row.querySelector(".project-script-divider-label").textContent=line.text;
+      row.querySelector('[data-script-field="divider-text"]').value=line.text;
+      row.classList.remove("editing");
+      scheduleMobileGeneralBlockSave();
+      return
+    }
+    if(action==="menu"){
+      const menu=row.querySelector(".project-script-row-menu"),open=menu.hidden;
+      menu.hidden=!open;
+      button.setAttribute("aria-expanded",String(open));
+      return
+    }
     if(action==="delete"){
       edit.scriptBlocks.splice(index,1);
       if(!edit.scriptBlocks.length)edit.scriptBlocks.push(mobileScriptLine())
+      edit.activeLineId=String(edit.scriptBlocks[Math.min(index,edit.scriptBlocks.length-1)].id)
     }else if(action==="up"&&index>0){
       edit.scriptBlocks.splice(index-1,0,edit.scriptBlocks.splice(index,1)[0])
     }else if(action==="down"&&index<edit.scriptBlocks.length-1){

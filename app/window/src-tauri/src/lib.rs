@@ -1,4 +1,5 @@
 mod google_drive;
+mod backup_archive;
 mod work_tracker;
 
 use serde_json::{json, Value};
@@ -8,14 +9,13 @@ use std::{
     io::Write,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
     menu::{Menu, MenuItem},
-    path::BaseDirectory,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
@@ -23,12 +23,320 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_sql::{DbInstances, DbPool, Migration, MigrationKind};
 
 #[cfg(target_os = "windows")]
-use std::process::Command;
+mod native_monitor_api {
+    use serde_json::{json, Value};
+    use std::{ffi::c_void, mem::size_of, ptr};
+
+    type Hmonitor = *mut c_void;
+    type Hdc = *mut c_void;
+    type Lparam = isize;
+    type Bool = i32;
+
+    const MONITORINFOF_PRIMARY: u32 = 0x0000_0001;
+    const MDT_EFFECTIVE_DPI: i32 = 0;
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    #[repr(C)]
+    struct MonitorInfoExW {
+        cb_size: u32,
+        rc_monitor: Rect,
+        rc_work: Rect,
+        dw_flags: u32,
+        sz_device: [u16; 32],
+    }
+
+    impl Default for MonitorInfoExW {
+        fn default() -> Self {
+            Self {
+                cb_size: size_of::<Self>() as u32,
+                rc_monitor: Rect::default(),
+                rc_work: Rect::default(),
+                dw_flags: 0,
+                sz_device: [0; 32],
+            }
+        }
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn EnumDisplayMonitors(
+            hdc: Hdc,
+            clip_rect: *const Rect,
+            callback: Option<unsafe extern "system" fn(Hmonitor, Hdc, *mut Rect, Lparam) -> Bool>,
+            data: Lparam,
+        ) -> Bool;
+        fn GetMonitorInfoW(monitor: Hmonitor, info: *mut MonitorInfoExW) -> Bool;
+    }
+
+    #[link(name = "shcore")]
+    extern "system" {
+        fn GetDpiForMonitor(
+            monitor: Hmonitor,
+            dpi_type: i32,
+            dpi_x: *mut u32,
+            dpi_y: *mut u32,
+        ) -> i32;
+    }
+
+    #[derive(Clone)]
+    struct NativeMonitor {
+        value: Value,
+        primary: bool,
+    }
+
+    fn device_name(raw: &[u16]) -> String {
+        let len = raw.iter().position(|value| *value == 0).unwrap_or(raw.len());
+        String::from_utf16_lossy(&raw[..len])
+    }
+
+    fn rect_json(rect: Rect) -> Value {
+        json!({
+            "position": {"x": rect.left, "y": rect.top},
+            "size": {
+                "width": (rect.right - rect.left).max(0),
+                "height": (rect.bottom - rect.top).max(0)
+            }
+        })
+    }
+
+    unsafe extern "system" fn enum_monitor_callback(
+        monitor: Hmonitor,
+        _hdc: Hdc,
+        _rect: *mut Rect,
+        data: Lparam,
+    ) -> Bool {
+        let monitors = &mut *(data as *mut Vec<NativeMonitor>);
+        let mut info = MonitorInfoExW::default();
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return 1;
+        }
+
+        let mut dpi_x = 96u32;
+        let mut dpi_y = 96u32;
+        let dpi_result = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+        if dpi_result < 0 || dpi_x == 0 {
+            dpi_x = 96;
+        }
+        if dpi_y == 0 {
+            dpi_y = dpi_x;
+        }
+
+        let monitor_rect = rect_json(info.rc_monitor);
+        let work_rect = rect_json(info.rc_work);
+        let primary = info.dw_flags & MONITORINFOF_PRIMARY != 0;
+        let value = json!({
+            "name": device_name(&info.sz_device),
+            "position": monitor_rect["position"].clone(),
+            "size": monitor_rect["size"].clone(),
+            "workArea": work_rect,
+            "scaleFactor": dpi_x as f64 / 96.0,
+            "dpi": {"x": dpi_x, "y": dpi_y},
+            "primary": primary,
+            "source": "win32-enum-display-monitors"
+        });
+        monitors.push(NativeMonitor { value, primary });
+        1
+    }
+
+    pub fn enumerate() -> Result<Value, String> {
+        let mut monitors: Vec<NativeMonitor> = Vec::new();
+        let success = unsafe {
+            EnumDisplayMonitors(
+                ptr::null_mut(),
+                ptr::null(),
+                Some(enum_monitor_callback),
+                &mut monitors as *mut Vec<NativeMonitor> as Lparam,
+            )
+        };
+        if success == 0 {
+            return Err("EnumDisplayMonitors failed".to_string());
+        }
+        if monitors.is_empty() {
+            return Err("EnumDisplayMonitors returned no monitors".to_string());
+        }
+
+        monitors.sort_by(|a, b| {
+            let ax = a.value["position"]["x"].as_i64().unwrap_or(0);
+            let bx = b.value["position"]["x"].as_i64().unwrap_or(0);
+            let ay = a.value["position"]["y"].as_i64().unwrap_or(0);
+            let by = b.value["position"]["y"].as_i64().unwrap_or(0);
+            ax.cmp(&bx).then(ay.cmp(&by))
+        });
+        let primary = monitors
+            .iter()
+            .find(|monitor| monitor.primary)
+            .map(|monitor| monitor.value.clone())
+            .or_else(|| monitors.first().map(|monitor| monitor.value.clone()));
+
+        Ok(json!({
+            "monitors": monitors.into_iter().map(|monitor| monitor.value).collect::<Vec<_>>(),
+            "primary": primary,
+            "source": "win32-enum-display-monitors"
+        }))
+    }
+}
+
+#[tauri::command]
+fn list_mascot_monitors(app: tauri::AppHandle) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return native_monitor_api::enumerate();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let monitors = app.available_monitors().map_err(|error| error.to_string())?;
+        let primary = app.primary_monitor().map_err(|error| error.to_string())?;
+        let to_json = |monitor: &tauri::window::Monitor| {
+            let position = monitor.position();
+            let size = monitor.size();
+            let work_area = monitor.work_area();
+            json!({
+                "name": monitor.name(),
+                "position": {"x": position.x, "y": position.y},
+                "size": {"width": size.width, "height": size.height},
+                "workArea": {
+                    "position": {"x": work_area.position.x, "y": work_area.position.y},
+                    "size": {"width": work_area.size.width, "height": work_area.size.height}
+                },
+                "scaleFactor": monitor.scale_factor(),
+                "source": "tauri-app-handle"
+            })
+        };
+        Ok(json!({
+            "monitors": monitors.iter().map(&to_json).collect::<Vec<_>>(),
+            "primary": primary.as_ref().map(&to_json),
+            "source": "tauri-app-handle"
+        }))
+    }
+}
 
 #[cfg(target_os = "windows")]
-#[link(name = "winmm")]
-extern "system" {
-    fn PlaySoundW(psz_sound: *const u16, hmod: *mut std::ffi::c_void, flags: u32) -> i32;
+use std::{fs::File, io::BufReader, path::PathBuf, process::Command};
+
+#[cfg(target_os = "windows")]
+use rodio::{Decoder, OutputStream, Sink};
+
+#[cfg(target_os = "windows")]
+struct NotificationAudioRequest {
+    path: PathBuf,
+    volume: f32,
+    response: mpsc::Sender<Result<(), String>>,
+}
+
+#[derive(Clone)]
+struct NotificationAudioHandle {
+    #[cfg(target_os = "windows")]
+    sender: mpsc::Sender<Option<NotificationAudioRequest>>,
+}
+
+impl NotificationAudioHandle {
+    fn play(&self, path: std::path::PathBuf, volume: u8) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        {
+            let (response_tx, response_rx) = mpsc::channel();
+            self.sender
+                .send(Some(NotificationAudioRequest {
+                    path,
+                    volume: (volume as f32 / 100.0).clamp(0.0, 1.0),
+                    response: response_tx,
+                }))
+                .map_err(|_| "notification-audio-worker-unavailable".to_string())?;
+            return response_rx
+                .recv_timeout(Duration::from_secs(3))
+                .map_err(|_| "notification-audio-worker-timeout".to_string())?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (path, volume);
+            Ok(())
+        }
+    }
+}
+
+struct NotificationAudioService {
+    handle: NotificationAudioHandle,
+    worker: Mutex<Option<thread::JoinHandle<()>>>,
+}
+
+impl NotificationAudioService {
+    fn start() -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            let (sender, receiver) = mpsc::channel::<Option<NotificationAudioRequest>>();
+            let worker = thread::spawn(move || {
+                let output = OutputStream::try_default()
+                    .map_err(|error| format!("notification-audio-output-unavailable: {error}"));
+                let mut current_sink: Option<Sink> = None;
+                while let Ok(request) = receiver.recv() {
+                    let Some(request) = request else {
+                        break;
+                    };
+                    let result = (|| -> Result<(), String> {
+                        if let Some(sink) = current_sink.take() {
+                            sink.stop();
+                        }
+                        if request.volume <= 0.0 {
+                            return Ok(());
+                        }
+                        let (_, stream_handle) = output
+                            .as_ref()
+                            .map_err(|error| error.to_string())?;
+                        let file = File::open(&request.path).map_err(|error| {
+                            format!("notification-audio-file-open-failed: {error}")
+                        })?;
+                        let source = Decoder::new(BufReader::new(file)).map_err(|error| {
+                            format!("notification-audio-decode-failed: {error}")
+                        })?;
+                        let sink = Sink::try_new(stream_handle).map_err(|error| {
+                            format!("notification-audio-sink-failed: {error}")
+                        })?;
+                        sink.set_volume(request.volume);
+                        sink.append(source);
+                        current_sink = Some(sink);
+                        Ok(())
+                    })();
+                    let _ = request.response.send(result);
+                }
+            });
+            return Self {
+                handle: NotificationAudioHandle { sender },
+                worker: Mutex::new(Some(worker)),
+            };
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Self {
+                handle: NotificationAudioHandle {},
+                worker: Mutex::new(None),
+            }
+        }
+    }
+
+    fn handle(&self) -> NotificationAudioHandle {
+        self.handle.clone()
+    }
+
+    fn shutdown(&self) {
+        #[cfg(target_os = "windows")]
+        {
+            let _ = self.handle.sender.send(None);
+        }
+        if let Ok(mut worker) = self.worker.lock() {
+            if let Some(handle) = worker.take() {
+                let _ = handle.join();
+            }
+        }
+    }
 }
 
 struct UtilityTimerService {
@@ -38,18 +346,19 @@ struct UtilityTimerService {
 }
 
 impl UtilityTimerService {
-    fn start(app: tauri::AppHandle) -> Self {
+    fn start(app: tauri::AppHandle, notification_audio: NotificationAudioHandle) -> Self {
         let state = Arc::new(Mutex::new(json!({})));
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_state = Arc::clone(&state);
         let worker_stopping = Arc::clone(&stopping);
+        let worker_audio = notification_audio.clone();
         let worker = thread::spawn(move || {
             while !worker_stopping.load(Ordering::Relaxed) {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64;
-                let mut fired: Vec<(Value, String, String, Option<String>)> = Vec::new();
+                let mut fired: Vec<(Value, String, String, Option<String>, u8)> = Vec::new();
 
                 if let Ok(mut utilities) = worker_state.lock() {
                     let countdown_sound = utilities
@@ -67,6 +376,16 @@ impl UtilityTimerService {
                         .and_then(Value::as_str)
                         .unwrap_or("new-stage")
                         .to_string();
+                    let notification_volume = utilities
+                        .get("notificationVolume")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(100)
+                        .min(100) as u8;
+                    let pomodoro_volume = utilities
+                        .get("pomodoroVolume")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(100)
+                        .min(100) as u8;
                     if let Some(pomodoro) =
                         utilities.get_mut("pomodoro").and_then(Value::as_object_mut)
                     {
@@ -156,6 +475,7 @@ impl UtilityTimerService {
                                 title.to_string(),
                                 body.to_string(),
                                 Some(pomodoro_sound.clone()),
+                                pomodoro_volume,
                             ));
                         }
                     }
@@ -186,6 +506,7 @@ impl UtilityTimerService {
                                     "알림".to_string(),
                                     title,
                                     Some(countdown_sound.clone()),
+                                    notification_volume,
                                 ));
                                 false
                             } else {
@@ -242,6 +563,7 @@ impl UtilityTimerService {
                                 "반복 알림".to_string(),
                                 title,
                                 Some(reminder_sound.clone()),
+                                notification_volume,
                             ));
                         }
                     }
@@ -299,15 +621,21 @@ impl UtilityTimerService {
                                 "햄보드 일정".to_string(),
                                 body,
                                 None,
+                                0,
                             ));
                             false
                         });
                     }
                 }
 
-                for (payload, title, body, sound) in fired {
+                for (payload, title, body, sound, volume) in fired {
                     if let Some(sound) = sound {
-                        if let Err(error) = play_notification_sound_key(app.clone(), &sound) {
+                        if let Err(error) = play_notification_sound_with_fallback(
+                            app.clone(),
+                            &worker_audio,
+                            &sound,
+                            volume,
+                        ) {
                             eprintln!("알림음 재생 실패: {error}");
                             let _ = app.emit(
                                 "hamboard-utility-timer-diagnostic",
@@ -752,51 +1080,121 @@ fn notification_sound_file(sound: &str) -> Option<&'static str> {
     }
 }
 
-fn play_notification_sound_key(app: tauri::AppHandle, sound: &str) -> Result<(), String> {
-    let Some(file_name) = notification_sound_file(sound) else {
+fn custom_notification_sound_id(sound: &str) -> Option<&str> {
+    let id = sound.strip_prefix("custom:")?;
+    if id.is_empty()
+        || id.len() > 120
+        || !id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return None;
+    }
+    Some(id)
+}
+
+fn custom_notification_sound_path(app: &tauri::AppHandle, asset_id: &str) -> Result<std::path::PathBuf, String> {
+    if asset_id.is_empty()
+        || asset_id.len() > 120
+        || !asset_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err("notification-sound-asset-id-invalid".to_string());
+    }
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("notification-sound-app-data-unavailable: {error}"))?;
+    Ok(root.join("assets").join(format!("asset-{asset_id}.bin")))
+}
+
+fn notification_sound_path(app: &tauri::AppHandle, sound: &str) -> Result<Option<std::path::PathBuf>, String> {
+    if sound == "silent" {
+        return Ok(None);
+    }
+    if sound.starts_with("custom:") {
+        let id = custom_notification_sound_id(sound)
+            .ok_or_else(|| "notification-sound-custom-id-invalid".to_string())?;
+        let path = custom_notification_sound_path(app, id)?;
+        if !path.is_file() {
+            return Err(format!("notification-sound-custom-file-missing: {}", path.display()));
+        }
+        return Ok(Some(path));
+    }
+    let file_name = notification_sound_file(sound).unwrap_or("notification-new-stage.wav");
+    let path = app
+        .path()
+        .resolve(file_name, tauri::path::BaseDirectory::Resource)
+        .map_err(|error| format!("notification-sound-resource-path-failed: {error}"))?;
+    Ok(Some(path))
+}
+
+fn play_notification_sound_key(
+    app: tauri::AppHandle,
+    audio: &NotificationAudioHandle,
+    sound: &str,
+    volume: u8,
+) -> Result<(), String> {
+    let volume = volume.min(100);
+    if volume == 0 {
+        return Ok(());
+    }
+    let Some(path) = notification_sound_path(&app, sound)? else {
         return Ok(());
     };
+    audio.play(path, volume)
+}
 
+fn play_notification_sound_with_fallback(
+    app: tauri::AppHandle,
+    audio: &NotificationAudioHandle,
+    sound: &str,
+    volume: u8,
+) -> Result<(), String> {
+    match play_notification_sound_key(app.clone(), audio, sound, volume) {
+        Ok(()) => Ok(()),
+        Err(error) if sound.starts_with("custom:") => {
+            play_notification_sound_key(app, audio, "new-stage", volume).map_err(|fallback_error| {
+                format!("{error}; notification-sound-fallback-failed: {fallback_error}")
+            })?;
+            Err(format!("{error}; 기본 알림음으로 대체 재생했습니다."))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[tauri::command]
+fn validate_notification_sound(
+    app: tauri::AppHandle,
+    asset_id: String,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::ffi::OsStrExt;
-
-        const SND_ASYNC: u32 = 0x0001;
-        const SND_NODEFAULT: u32 = 0x0002;
-        const SND_FILENAME: u32 = 0x0002_0000;
-
-        let path = app
-            .path()
-            .resolve(file_name, BaseDirectory::Resource)
-            .map_err(|error| format!("알림음 리소스 경로 확인 실패: {error}"))?;
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let played = unsafe {
-            PlaySoundW(
-                wide.as_ptr(),
-                std::ptr::null_mut(),
-                SND_FILENAME | SND_ASYNC | SND_NODEFAULT,
-            )
-        };
-        if played == 0 {
-            return Err(format!(
-                "Windows가 알림음을 재생하지 못했습니다: {}",
-                path.display()
-            ));
-        }
+        let path = custom_notification_sound_path(&app, asset_id.trim())?;
+        let file = File::open(&path)
+            .map_err(|error| format!("notification-sound-file-open-failed: {error}"))?;
+        Decoder::new(BufReader::new(file))
+            .map_err(|error| format!("notification-sound-decode-failed: {error}"))?;
     }
-
     #[cfg(not(target_os = "windows"))]
-    let _ = (app, file_name);
-
+    let _ = (app, asset_id);
     Ok(())
 }
 
 #[tauri::command]
 fn play_notification_sound(
     app: tauri::AppHandle,
+    audio: tauri::State<'_, NotificationAudioService>,
     sound: Option<String>,
+    volume: Option<u8>,
 ) -> Result<(), String> {
-    play_notification_sound_key(app, sound.as_deref().unwrap_or("new-stage"))
+    play_notification_sound_key(
+        app,
+        &audio.handle(),
+        sound.as_deref().unwrap_or("new-stage"),
+        volume.unwrap_or(100).min(100),
+    )
 }
 
 #[tauri::command]
@@ -804,9 +1202,11 @@ fn app_exit_after_flush(
     app: tauri::AppHandle,
     tracker: tauri::State<'_, work_tracker::WorkTracker>,
     utility_timers: tauri::State<'_, UtilityTimerService>,
+    notification_audio: tauri::State<'_, NotificationAudioService>,
 ) -> Result<(), String> {
     tracker.flush()?;
     utility_timers.shutdown();
+    notification_audio.shutdown();
     app.exit(0);
     Ok(())
 }
@@ -970,7 +1370,6 @@ async fn sync_accept_baseline(
 ) -> Result<Value, String> {
     if expected_state_sequence < 0
         || !valid_sync_text(&revision, 200)
-        || base_state_json.len() > 64 * 1024 * 1024
     {
         return Err("[sync-baseline-request-invalid] 동기화 기준점 요청이 올바르지 않습니다.".into());
     }
@@ -1028,8 +1427,6 @@ async fn sync_apply_remote_state(
 ) -> Result<Value, String> {
     if expected_state_sequence < 0
         || !valid_sync_text(&revision, 200)
-        || state_json.len() > 64 * 1024 * 1024
-        || base_state_json.len() > 64 * 1024 * 1024
     {
         return Err("[sync-remote-state-request-invalid] 원격 동기화 상태 요청이 올바르지 않습니다.".into());
     }
@@ -1133,7 +1530,11 @@ fn cleanup_restore_staging_files(
         let name = name.to_string_lossy();
         let matches = staging_prefix
             .map(|prefix| name.starts_with(prefix))
-            .unwrap_or_else(|| name.starts_with("restore-staging-"));
+            .unwrap_or_else(|| name.starts_with("restore-staging-")
+                || (name.starts_with("cloud-upload-stage-") && name.ends_with(".bin"))
+                || (name.starts_with("cloud-download-") && (name.ends_with(".bin") || name.ends_with(".bin.part")))
+                || (name.starts_with("archive-import-") && name.ends_with(".bin"))
+                || (name.starts_with("cloud-manifest-scan-") && name.ends_with(".tmp")));
         if matches
             && entry
                 .file_type()
@@ -1265,13 +1666,32 @@ async fn restore_backup_atomic(
     staging_prefix: String,
     state_json: String,
     versions: Vec<Value>,
+    version_pages: Option<Vec<Value>>,
     assets: Vec<Value>,
     work_programs: Vec<Value>,
     work_daily: Vec<Value>,
+    sync_base_revision: Option<String>,
+    sync_base_state_json: Option<String>,
 ) -> Result<Value, String> {
     if !valid_restore_staging_prefix(&staging_prefix) {
         return Err("복원용 임시 파일 접두사가 올바르지 않습니다.".into());
     }
+    let restore_sync_base_revision = sync_base_revision.unwrap_or_default();
+    if restore_sync_base_revision.len() > 200 || restore_sync_base_revision.chars().any(char::is_control) {
+        return Err("복원 동기화 기준 revision이 올바르지 않습니다.".into());
+    }
+    let restore_sync_base_state_json = match sync_base_state_json {
+        Some(value) if !value.trim().is_empty() => {
+            let parsed: Value = serde_json::from_str(&value)
+                .map_err(|_| "복원 동기화 기준 상태가 올바른 JSON이 아닙니다.".to_string())?;
+            if !parsed.is_object() {
+                return Err("복원 동기화 기준 상태가 올바르지 않습니다.".into());
+            }
+            Some(value)
+        }
+        _ => None,
+    };
+    let restore_requires_rebaseline = if restore_sync_base_state_json.is_some() && !restore_sync_base_revision.is_empty() { 0_i64 } else { 1_i64 };
 
     let app_data = app
         .path()
@@ -1285,6 +1705,17 @@ async fn restore_backup_atomic(
         }
     };
 
+    let mut restore_space = (state_json.len() as u64).checked_mul(3).ok_or("backup-resource-size-overflow")?;
+    restore_space = restore_space.checked_add((restore_sync_base_state_json.as_ref().map_or(0, |value| value.len()) as u64).checked_mul(3).ok_or("backup-resource-size-overflow")?).ok_or("backup-resource-size-overflow")?;
+    for page in version_pages.as_deref().unwrap_or(&[]) {
+        let size = page.get("byteSize").and_then(Value::as_u64).ok_or("backup-version-page-size-invalid")?;
+        restore_space = restore_space.checked_add(size.checked_mul(3).ok_or("backup-resource-size-overflow")?).ok_or("backup-resource-size-overflow")?;
+    }
+    for record in &versions {
+        let size = serde_json::to_string(record).map_err(|error| error.to_string())?.len() as u64;
+        restore_space = restore_space.checked_add(size.checked_mul(3).ok_or("backup-resource-size-overflow")?).ok_or("backup-resource-size-overflow")?;
+    }
+    backup_archive::ensure_disk(&app_data, restore_space)?;
     recover_interrupted_backup_restore(&app_data, &database).await?;
     let assets_path = app_data.join("assets");
     let rollback_path = app_data.join(RESTORE_ROLLBACK_DIRECTORY);
@@ -1373,12 +1804,20 @@ async fn restore_backup_atomic(
             .bind(restore_marker)
             .execute(&mut *transaction).await.map_err(|error| format!("복원 확정 표지를 저장하지 못했습니다: {error}"))?;
         sqlx::query("DELETE FROM version_records").execute(&mut *transaction).await.map_err(|error| format!("버전 기록 초기화에 실패했습니다: {error}"))?;
-        for record in &versions {
+        // Version pages stay in the rollback directory until the transaction commits.
+        // Only one page crosses the parser at a time; no all-history IPC payload.
+        let mut initial_records = Some(versions);
+        let page_descriptors = version_pages.unwrap_or_default();
+        for page_index in 0..=page_descriptors.len() {
+            let records = if page_index == 0 { initial_records.take().unwrap_or_default() }
+                else { backup_archive::read_version_page(&rollback_path, &page_descriptors[page_index - 1])? };
+            for record in &records {
             let id = restore_text(record, "id")?;
             let owner_key = restore_text(record, "ownerKey")?;
             let at_ms = record.get("atMs").and_then(Value::as_i64).unwrap_or(0);
             let record_json = serde_json::to_string(record).map_err(|error| format!("버전 기록 직렬화에 실패했습니다: {error}"))?;
             sqlx::query("INSERT INTO version_records (id, owner_key, at_ms, record_json) VALUES (?1, ?2, ?3, ?4)").bind(id).bind(owner_key).bind(at_ms).bind(record_json).execute(&mut *transaction).await.map_err(|error| format!("버전 기록 복원에 실패했습니다: {error}"))?;
+        }
         }
         sqlx::query("DELETE FROM asset_content_metadata").execute(&mut *transaction).await.map_err(|error| format!("이미지 내용 메타데이터 초기화에 실패했습니다: {error}"))?;
         sqlx::query("DELETE FROM asset_records").execute(&mut *transaction).await.map_err(|error| format!("이미지 메타데이터 초기화에 실패했습니다: {error}"))?;
@@ -1392,11 +1831,17 @@ async fn restore_backup_atomic(
                 .bind(restore_text(record, "id")?).bind(restore_text(record, "ownerId")?).bind(restore_text(record, "mimeType")?).bind(restore_i64(record, "byteSize")?).bind(relative_path).execute(&mut *transaction).await.map_err(|error| format!("이미지 메타데이터 복원에 실패했습니다: {error}"))?;
         }
         sqlx::query("DELETE FROM cloud_backup_items").execute(&mut *transaction).await.map_err(|error| format!("클라우드 백업 작업 초기화에 실패했습니다: {error}"))?;
+        sqlx::query("DELETE FROM cloud_json_pins").execute(&mut *transaction).await.map_err(|error| format!("백업 전송 참조 초기화에 실패했습니다: {error}"))?;
         sqlx::query("DELETE FROM cloud_backup_runs").execute(&mut *transaction).await.map_err(|error| format!("클라우드 백업 실행 기록 초기화에 실패했습니다: {error}"))?;
         sqlx::query("DELETE FROM sync_outbox").execute(&mut *transaction).await.map_err(|error| format!("동기화 대기 목록 초기화에 실패했습니다: {error}"))?;
         sqlx::query("DELETE FROM sync_asset_transfers").execute(&mut *transaction).await.map_err(|error| format!("Asset 동기화 대기 목록 초기화에 실패했습니다: {error}"))?;
         sqlx::query("UPDATE sync_conflicts SET status = 'archived', resolution = 'backup-restore', resolved_at_ms = ?1 WHERE status = 'unresolved'").bind(restore_marker).execute(&mut *transaction).await.map_err(|error| format!("동기화 충돌 기록 보존 처리에 실패했습니다: {error}"))?;
-        sqlx::query("INSERT INTO sync_runtime_state (singleton, base_revision, base_state_json, state_change_sequence, prepared_state_sequence, dirty_state_updated_at_ms, requires_rebaseline, last_sync_at_ms, updated_at_ms) VALUES (1, '', NULL, 1, 0, ?1, 1, NULL, ?1) ON CONFLICT(singleton) DO UPDATE SET base_revision = '', base_state_json = NULL, prepared_state_sequence = 0, dirty_state_updated_at_ms = excluded.dirty_state_updated_at_ms, requires_rebaseline = 1, last_sync_at_ms = NULL, updated_at_ms = excluded.updated_at_ms").bind(restore_marker).execute(&mut *transaction).await.map_err(|error| format!("복원 후 동기화 기준 초기화에 실패했습니다: {error}"))?;
+        sqlx::query("INSERT INTO sync_runtime_state (singleton, base_revision, base_state_json, state_change_sequence, prepared_state_sequence, dirty_state_updated_at_ms, requires_rebaseline, last_sync_at_ms, updated_at_ms) VALUES (1, ?1, ?2, 1, 0, ?3, ?4, NULL, ?3) ON CONFLICT(singleton) DO UPDATE SET base_revision = excluded.base_revision, base_state_json = excluded.base_state_json, prepared_state_sequence = 0, dirty_state_updated_at_ms = excluded.dirty_state_updated_at_ms, requires_rebaseline = excluded.requires_rebaseline, last_sync_at_ms = NULL, updated_at_ms = excluded.updated_at_ms")
+            .bind(&restore_sync_base_revision)
+            .bind(restore_sync_base_state_json.as_deref())
+            .bind(restore_marker)
+            .bind(restore_requires_rebaseline)
+            .execute(&mut *transaction).await.map_err(|error| format!("복원 후 동기화 기준 복원에 실패했습니다: {error}"))?;
         sqlx::query("DELETE FROM work_tracker_daily").execute(&mut *transaction).await.map_err(|error| format!("작업 기록 초기화에 실패했습니다: {error}"))?;
         sqlx::query("DELETE FROM work_tracker_programs").execute(&mut *transaction).await.map_err(|error| format!("프로그램 기록 초기화에 실패했습니다: {error}"))?;
         for record in &work_programs {
@@ -1465,6 +1910,12 @@ pub fn run() {
             sql: "CREATE TABLE IF NOT EXISTS sync_asset_transfers (asset_id TEXT NOT NULL, quality TEXT NOT NULL CHECK(quality IN ('storage-saver', 'balanced', 'original')), source_sha256 TEXT NOT NULL CHECK(length(source_sha256) = 64 AND source_sha256 NOT GLOB '*[^0-9a-f]*'), descriptor_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'uploading', 'uploaded', 'failed')), attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0), next_attempt_at_ms INTEGER NOT NULL DEFAULT 0, remote_descriptor_id TEXT, last_error TEXT NOT NULL DEFAULT '', updated_at_ms INTEGER NOT NULL, PRIMARY KEY (asset_id, quality)); CREATE INDEX IF NOT EXISTS idx_sync_asset_transfers_retry ON sync_asset_transfers (status, next_attempt_at_ms);",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "create_cloud_json_pins",
+            sql: "CREATE TABLE IF NOT EXISTS cloud_json_pins (owner_key TEXT NOT NULL, object_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (owner_key, object_key));",
+            kind: MigrationKind::Up,
+        },
     ];
 
     let app = tauri::Builder::default()
@@ -1496,6 +1947,11 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            list_mascot_monitors,
+            backup_archive::backup_resource_guard,
+            backup_archive::backup_stage_asset,
+            backup_archive::backup_archive_write,
+            backup_archive::backup_archive_read,
             google_drive::google_drive_status,
             google_drive::google_drive_connect,
             google_drive::google_drive_disconnect,
@@ -1503,6 +1959,8 @@ pub fn run() {
             google_drive::google_drive_list_backups,
             google_drive::google_drive_get_object,
             google_drive::google_drive_delete_backup_manifest,
+            google_drive::google_drive_cleanup_backup_assets,
+            google_drive::google_drive_cleanup_shared_content,
             google_drive::google_drive_list_sync_objects,
             google_drive::google_drive_get_sync_object,
             google_drive::google_drive_delete_sync_object,
@@ -1515,6 +1973,7 @@ pub fn run() {
             work_tracker::work_tracker_flush,
             utility_timer_sync,
             play_notification_sound,
+            validate_notification_sound,
             app_exit_after_flush,
             sync_replace_outbox,
             sync_accept_baseline,
@@ -1552,7 +2011,13 @@ pub fn run() {
             cleanup_restore_staging_files(&app_data.join("assets"), None)?;
             let tracker = tauri::async_runtime::block_on(work_tracker::WorkTracker::start(pool))?;
             app.manage(tracker);
-            app.manage(UtilityTimerService::start(app.handle().clone()));
+            let notification_audio = NotificationAudioService::start();
+            let notification_audio_handle = notification_audio.handle();
+            app.manage(notification_audio);
+            app.manage(UtilityTimerService::start(
+                app.handle().clone(),
+                notification_audio_handle,
+            ));
             app.manage(google_drive::GoogleDriveAuthState::default());
 
             let open_item = MenuItem::with_id(app, "open", "햄보드 열기", true, None::<&str>)?;
@@ -1613,6 +2078,9 @@ pub fn run() {
             }
             if let Some(utility_timers) = app_handle.try_state::<UtilityTimerService>() {
                 utility_timers.shutdown();
+            }
+            if let Some(notification_audio) = app_handle.try_state::<NotificationAudioService>() {
+                notification_audio.shutdown();
             }
         }
         _ => {}

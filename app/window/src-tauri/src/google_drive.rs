@@ -27,16 +27,17 @@ pub async fn google_drive_put_object(
 
 #[tauri::command]
 pub async fn google_drive_list_backups(
+    app: tauri::AppHandle,
     state: tauri::State<'_, GoogleDriveAuthState>,
 ) -> Result<Value, String> {
     #[cfg(target_os = "windows")]
     {
-        drive_upload::list_backups(state.inner()).await
+        drive_upload::list_backups(app, state.inner()).await
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = state;
+        let _ = (app, state);
         Err("[google-drive-platform-unsupported] Google Drive 백업 조회는 Windows 풀 버전에서 지원합니다.".into())
     }
 }
@@ -77,17 +78,53 @@ pub async fn google_drive_delete_backup_manifest(
 }
 
 #[tauri::command]
-pub async fn google_drive_list_sync_objects(
+pub async fn google_drive_cleanup_backup_assets(
     state: tauri::State<'_, GoogleDriveAuthState>,
+    keep_object_keys: Vec<String>,
 ) -> Result<Value, String> {
     #[cfg(target_os = "windows")]
     {
-        drive_upload::list_sync_objects(state.inner()).await
+        drive_upload::cleanup_backup_assets(state.inner(), keep_object_keys).await
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = state;
+        let _ = (state, keep_object_keys);
+        Err("[google-drive-platform-unsupported] Google Drive 백업 이미지 정리는 Windows 풀 버전에서 지원합니다.".into())
+    }
+}
+
+#[tauri::command]
+pub async fn google_drive_cleanup_shared_content(
+    state: tauri::State<'_, GoogleDriveAuthState>,
+    keep_object_keys: Vec<String>,
+    max_delete: Option<u64>,
+) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        drive_upload::cleanup_shared_content(state.inner(), keep_object_keys, max_delete.unwrap_or(200)).await
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (state, keep_object_keys, max_delete);
+        Err("[google-drive-platform-unsupported] Google Drive 공용 이미지 정리는 Windows 풀 버전에서 지원합니다.".into())
+    }
+}
+
+#[tauri::command]
+pub async fn google_drive_list_sync_objects(
+    state: tauri::State<'_, GoogleDriveAuthState>,
+    scope: Option<String>,
+) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        drive_upload::list_sync_objects(state.inner(), scope.as_deref().unwrap_or("all")).await
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (state, scope);
         Err("[google-drive-platform-unsupported] Google Drive 동기화 조회는 Windows 풀 버전에서 지원합니다.".into())
     }
 }
@@ -153,6 +190,7 @@ struct RemoteDriveObject {
     object_key: String,
     content_sha256: String,
     byte_size: u64,
+    created_at_ms: u64,
 }
 
 struct CachedObjectIndex {
@@ -711,12 +749,18 @@ mod drive_upload {
     const CHUNK_SIZE: usize = 8 * 1024 * 1024;
     const STAGING_FILE: &str = "cloud-upload-stage.bin";
     const OBJECT_INDEX_TTL_MS: u64 = 15 * 60 * 1_000;
-    const MAX_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
+    const SHARED_CONTENT_GC_GRACE_MS: u64 = 6 * 60 * 60 * 1_000;
     const MAX_BACKUP_LIST: usize = 100;
     // Commits, leases, and one descriptor per Asset/quality share this index.
     // Keep the safety bound high enough for libraries containing thousands of images.
     const MAX_SYNC_OBJECTS: usize = 50_000;
-    const MAX_SYNC_OBJECT_BYTES: u64 = 16 * 1024 * 1024;
+
+    fn is_upload_staging_name(value: &str) -> bool {
+        value == STAGING_FILE || value
+            .strip_prefix("cloud-upload-stage-")
+            .and_then(|value| value.strip_suffix(".bin"))
+            .is_some_and(|id| id.len() == 36 && id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
+    }
 
     enum UploadSource {
         File(PathBuf),
@@ -817,17 +861,16 @@ mod drive_upload {
                 )?;
                 UploadSource::File(resolve_upload_path(&app, &relative_path)?)
             }
-            "text" if kind == "manifest" || kind == "sync" => UploadSource::Text(
-                request
+            "text" if kind == "manifest" || kind == "sync" => {
+                let content = request
                     .get("content")
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
                         "[google-drive-text-content-missing] 업로드할 manifest 내용이 없습니다."
                             .to_string()
-                    })?
-                    .as_bytes()
-                    .to_vec(),
-            ),
+                    })?;
+                UploadSource::Text(content.as_bytes().to_vec())
+            },
             _ => {
                 return Err(
                     "[google-drive-source-invalid] 업로드 원본 종류가 올바르지 않습니다.".into(),
@@ -865,6 +908,8 @@ mod drive_upload {
             &object_key,
             &expected_sha,
             byte_size,
+            &kind,
+            request.get("freshPayloadChunk").and_then(Value::as_bool) == Some(true),
         )
         .await?
         {
@@ -888,6 +933,7 @@ mod drive_upload {
             ("hamboardByteSize".to_string(), Value::String(byte_size.to_string())),
             ("hamboardFormatVersion".to_string(), Value::String("1".to_string())),
             ("hamboardKind".to_string(), Value::String(kind.clone())),
+            ("hamboardCreatedAtMs".to_string(), Value::String(now_ms().to_string())),
         ]);
         if kind == "sync" {
             let sync_metadata = request.get("syncMetadata").and_then(Value::as_object).ok_or_else(|| {
@@ -969,99 +1015,89 @@ mod drive_upload {
         }))
     }
 
-    pub async fn list_backups(state: &GoogleDriveAuthState) -> Result<Value, String> {
+    fn backup_summary(manifest: &Value) -> Result<Value, String> {
+        if manifest.get("format").and_then(Value::as_str) != Some("hamboard-cloud-backup")
+            || !matches!(manifest.get("formatVersion").and_then(Value::as_u64), Some(1) | Some(2) | Some(3))
+            || manifest.get("complete").and_then(Value::as_bool) != Some(true)
+            || manifest.get("backupId").and_then(Value::as_str).unwrap_or("").is_empty()
+        {
+            return Err("[google-drive-manifest-header-invalid] 백업 정보 형식이 올바르지 않습니다.".into());
+        }
+        let objects: Vec<Value> = manifest.get("objects").and_then(Value::as_array)
+            .into_iter().flatten().map(|value| json!({"objectKey": value.get("objectKey")})).collect();
+        let missing = manifest.get("missingAssetCount").and_then(Value::as_u64)
+            .unwrap_or_else(|| manifest.get("missingAssets").and_then(Value::as_array).map_or(0, |v| v.len() as u64));
+        Ok(json!({
+            "format": "hamboard-cloud-backup", "formatVersion": manifest.get("formatVersion"),
+            "backupId": manifest.get("backupId"), "complete": true,
+            "createdAt": manifest.get("createdAt"), "stateSchemaVersion": manifest.get("stateSchemaVersion"),
+            "imagePolicy": manifest.get("imagePolicy"), "missingAssetCount": missing,
+            "assetCount": manifest.get("assetCount").and_then(Value::as_u64)
+                .unwrap_or_else(|| manifest.get("assets").and_then(Value::as_array).map_or(0, |v| v.len() as u64)),
+            "objects": if manifest.get("formatVersion").and_then(Value::as_u64) == Some(3) { Vec::<Value>::new() } else { objects }
+        }))
+    }
+
+    async fn read_manifest_root(
+        app: &tauri::AppHandle, client: &reqwest::Client, state: &GoogleDriveAuthState,
+        token: &str, remote: &RemoteDriveObject,
+    ) -> Result<Value, String> {
+        let directory = app.path().app_local_data_dir().map_err(|error| error.to_string())?.join("assets");
+        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        let path = directory.join(format!("cloud-manifest-scan-{:016x}.tmp", rand::random::<u64>()));
+        let result = async {
+            download_to_file(client, state, token, remote, &path).await?;
+            let (size, sha) = inspect_file(&path)?;
+            if size != remote.byte_size || sha != remote.content_sha256 {
+                return Err("[google-drive-download-integrity-mismatch] 백업 목록 정보가 손상되었습니다.".to_string());
+            }
+            let file = File::open(&path).map_err(|error| error.to_string())?;
+            serde_json::from_reader(std::io::BufReader::new(file))
+                .map_err(|_| "[google-drive-manifest-json-invalid] 백업 목록 JSON을 읽지 못했습니다.".to_string())
+        }.await;
+        let _ = std::fs::remove_file(&path);
+        result
+    }
+
+    pub async fn list_backups(app: tauri::AppHandle, state: &GoogleDriveAuthState) -> Result<Value, String> {
         let client = drive_client()?;
         let token = access_token(state).await?;
         let manifests = list_manifest_objects(&client, state, &token).await?;
         let manifest_object_count = manifests.len();
+        // Count scanned roots, including invalid roots, before taking the result limit.
+        // Incomplete inventories must never authorize orphan collection.
+        let truncated = manifest_object_count >= MAX_BACKUP_LIST;
         let mut backups = Vec::new();
         let mut invalid_count = 0_u64;
         let mut invalid_reasons = Vec::new();
         for remote in manifests.into_iter().take(MAX_BACKUP_LIST) {
-            if remote.byte_size == 0 || remote.byte_size > MAX_MANIFEST_BYTES {
-                invalid_count += 1;
-                if invalid_reasons.len() < 20 {
-                    invalid_reasons.push(json!({
-                        "objectKey": remote.object_key,
-                        "reason": "manifest-size-invalid",
-                        "byteSize": remote.byte_size
-                    }));
-                }
-                continue;
-            }
-            let bytes = match download_bytes(&client, state, &token, &remote).await {
-                Ok(value) => value,
-                Err(error) => {
-                    invalid_count += 1;
-                    if invalid_reasons.len() < 20 {
-                        invalid_reasons.push(json!({
-                            "objectKey": remote.object_key,
-                            "reason": "manifest-download-failed",
-                            "error": error
-                        }));
+            let parsed = async {
+                if remote.byte_size == 0 { return Err("manifest-size-invalid".to_string()); }
+                let root = read_manifest_root(&app, &client, state, &token, &remote).await?;
+                let (manifest, payload) = if root.get("format").and_then(Value::as_str) == Some("hamboard-json-envelope") {
+                    if root.get("formatVersion").and_then(Value::as_u64) != Some(1)
+                        || root.get("objectKind").and_then(Value::as_str) != Some("manifest") {
+                        return Err("manifest-envelope-invalid".to_string());
                     }
-                    continue;
-                }
-            };
-            let manifest: Value = match serde_json::from_slice(&bytes) {
-                Ok(value) => value,
-                Err(_) => {
-                    invalid_count += 1;
-                    if invalid_reasons.len() < 20 {
-                        invalid_reasons.push(json!({
-                            "objectKey": remote.object_key,
-                            "reason": "manifest-json-invalid"
-                        }));
-                    }
-                    continue;
-                }
-            };
-            let valid = manifest.get("format").and_then(Value::as_str)
-                == Some("hamboard-cloud-backup")
-                && manifest.get("formatVersion").and_then(Value::as_u64) == Some(1)
-                && manifest.get("complete").and_then(Value::as_bool) == Some(true)
-                && manifest
-                    .get("backupId")
-                    .and_then(Value::as_str)
-                    .map(|value| !value.is_empty())
-                    .unwrap_or(false);
-            if !valid {
-                invalid_count += 1;
-                if invalid_reasons.len() < 20 {
-                    invalid_reasons.push(json!({
-                        "objectKey": remote.object_key,
-                        "reason": "manifest-header-invalid",
-                        "format": manifest.get("format").and_then(Value::as_str),
-                        "formatVersion": manifest.get("formatVersion").and_then(Value::as_u64),
-                        "complete": manifest.get("complete").and_then(Value::as_bool)
-                    }));
-                }
-                continue;
+                    {let payload = root.get("payload").filter(|value| value.is_object())
+                        .ok_or_else(|| "manifest-payload-missing".to_string())?;
+                    (backup_summary(&root["summary"] )?, payload.clone())}
+                } else { (backup_summary(&root)?, Value::Null) };
+                Ok::<Value, String>(json!({"summaryOnly": true, "manifest": manifest, "payload": payload,
+                    "manifestObject": {"objectKey": remote.object_key, "contentSha256": remote.content_sha256,
+                        "byteSize": remote.byte_size, "remoteObjectId": remote.id}}))
+            }.await;
+            match parsed {
+                Ok(value) => backups.push(value),
+                Err(error) => { invalid_count += 1; if invalid_reasons.len() < 20 {
+                    invalid_reasons.push(json!({"objectKey": remote.object_key, "reason": error}));
+                } }
             }
-            backups.push(json!({
-                "manifest": manifest,
-                "manifestObject": {
-                    "objectKey": remote.object_key,
-                    "contentSha256": remote.content_sha256,
-                    "byteSize": remote.byte_size,
-                    "remoteObjectId": remote.id
-                }
-            }));
         }
-        backups.sort_by(|left, right| {
-            let left_date = left.pointer("/manifest/createdAt").and_then(Value::as_str).unwrap_or("");
-            let right_date = right.pointer("/manifest/createdAt").and_then(Value::as_str).unwrap_or("");
-            right_date.cmp(left_date)
-        });
-        let truncated = backups.len() >= MAX_BACKUP_LIST;
-        Ok(json!({
-            "provider": "google-drive",
-            "backups": backups,
-            "manifestObjectCount": manifest_object_count,
-            "invalidCount": invalid_count,
-            "invalidReasons": invalid_reasons,
-            "truncated": truncated
-        }))
+        backups.sort_by(|left,right| right.pointer("/manifest/createdAt").and_then(Value::as_str).unwrap_or("")
+            .cmp(left.pointer("/manifest/createdAt").and_then(Value::as_str).unwrap_or("")));
+        Ok(json!({"provider":"google-drive", "backups":backups, "manifestObjectCount":manifest_object_count,
+            "invalidCount":invalid_count, "invalidReasons":invalid_reasons, "truncated":truncated}))
     }
 
     pub async fn get_object(
@@ -1124,11 +1160,20 @@ mod drive_upload {
         Ok(json!({"relativePath": relative_path, "contentSha256": sha, "byteSize": size, "reused": false}))
     }
 
-    pub async fn list_sync_objects(state: &GoogleDriveAuthState) -> Result<Value, String> {
+    pub async fn list_sync_objects(state: &GoogleDriveAuthState, scope: &str) -> Result<Value, String> {
+        let scope = match scope {
+            "all" | "topology" | "assets" => scope,
+            _ => return Err("[google-drive-sync-list-scope-invalid] 동기화 조회 범위가 올바르지 않습니다.".into()),
+        };
         let client = drive_client()?;
         let token = access_token(state).await?;
         let mut objects = Vec::new();
         let mut page_token = String::new();
+        let query = match scope {
+            "topology" => "trashed=false and appProperties has { key='hamboardKind' and value='sync' } and (appProperties has { key='hamboardSyncType' and value='commit' } or appProperties has { key='hamboardSyncType' and value='checkpoint' } or appProperties has { key='hamboardSyncType' and value='lease' })",
+            "assets" => "trashed=false and appProperties has { key='hamboardKind' and value='sync' } and appProperties has { key='hamboardSyncType' and value='asset' }",
+            _ => "trashed=false and appProperties has { key='hamboardKind' and value='sync' }",
+        };
         for _ in 0..10_000 {
             let mut url = Url::parse(DRIVE_LIST_URL).map_err(|_| {
                 "[google-drive-list-url-invalid] Google Drive 동기화 조회 주소를 만들지 못했습니다.".to_string()
@@ -1137,7 +1182,7 @@ mod drive_upload {
                 .append_pair("spaces", "appDataFolder")
                 .append_pair("pageSize", "1000")
                 .append_pair("orderBy", "createdTime asc")
-                .append_pair("q", "trashed=false")
+                .append_pair("q", query)
                 .append_pair("fields", "nextPageToken,files(id,size,appProperties)");
             if !page_token.is_empty() {
                 url.query_pairs_mut().append_pair("pageToken", &page_token);
@@ -1168,8 +1213,15 @@ mod drive_upload {
                 {
                     continue;
                 }
+                let sync_type = properties.get("hamboardSyncType").and_then(Value::as_str).unwrap_or("");
+                if scope == "topology" && !matches!(sync_type, "commit" | "checkpoint" | "lease") {
+                    continue;
+                }
+                if scope == "assets" && sync_type != "asset" {
+                    continue;
+                }
                 let remote = match remote_from_file(file) {
-                    Some(value) if value.byte_size > 0 && value.byte_size <= MAX_SYNC_OBJECT_BYTES => value,
+                    Some(value) if value.byte_size > 0 => value,
                     _ => continue,
                 };
                 objects.push(json!({
@@ -1177,7 +1229,7 @@ mod drive_upload {
                     "objectKey": remote.object_key,
                     "contentSha256": remote.content_sha256,
                     "byteSize": remote.byte_size,
-                    "syncType": properties.get("hamboardSyncType").and_then(Value::as_str).unwrap_or(""),
+                    "syncType": sync_type,
                     "revision": properties.get("hamboardRevision").and_then(Value::as_str).unwrap_or(""),
                     "baseRevision": properties.get("hamboardBaseRevision").and_then(Value::as_str).unwrap_or(""),
                     "deviceId": properties.get("hamboardDeviceId").and_then(Value::as_str).unwrap_or(""),
@@ -1216,7 +1268,7 @@ mod drive_upload {
         let expected_size = request
             .get("byteSize")
             .and_then(Value::as_u64)
-            .filter(|value| *value > 0 && *value <= MAX_SYNC_OBJECT_BYTES)
+            .filter(|value| *value > 0)
             .ok_or_else(|| "[google-drive-sync-size-invalid] 동기화 객체 크기가 올바르지 않습니다.".to_string())?;
         if !is_sha256(&expected_sha) {
             return Err("[google-drive-content-hash-invalid] 동기화 객체 해시가 올바르지 않습니다.".into());
@@ -1226,6 +1278,7 @@ mod drive_upload {
             object_key,
             content_sha256: expected_sha.clone(),
             byte_size: expected_size,
+            created_at_ms: 0,
         };
         let client = drive_client()?;
         let token = access_token(state).await?;
@@ -1242,7 +1295,13 @@ mod drive_upload {
     pub async fn delete_sync_object(state: &GoogleDriveAuthState, request: Value) -> Result<Value, String> {
         let object_key = required_string(&request, "objectKey", "google-drive-object-key-missing")?;
         validate_object_key(&object_key)?;
-        if !object_key.starts_with("sync/leases/") && !object_key.starts_with("sync/checkpoints/") {
+        if !object_key.starts_with("sync/leases/")
+            && !object_key.starts_with("sync/checkpoints/")
+            && !object_key.starts_with("sync/commits/")
+            && !object_key.starts_with("sync/assets/")
+            && !object_key.starts_with("sync/blobs/")
+            && !object_key.starts_with("sync/thumbs/")
+        {
             return Err("[google-drive-sync-delete-target-invalid] 정리할 수 없는 동기화 객체입니다.".into());
         }
         let expected_sha = required_string(&request, "contentSha256", "google-drive-content-hash-missing")?.to_ascii_lowercase();
@@ -1250,7 +1309,7 @@ mod drive_upload {
             .get("byteSize")
             .and_then(Value::as_u64)
             .filter(|value| *value > 0)
-            .ok_or_else(|| "[google-drive-content-size-missing] 동기화 lease 크기가 없습니다.".to_string())?;
+            .ok_or_else(|| "[google-drive-content-size-missing] 동기화 정리 대상 크기가 없습니다.".to_string())?;
         let client = drive_client()?;
         let token = access_token(state).await?;
         let remote = find_remote_object(&client, state, &token, &object_key, &expected_sha, expected_size).await?;
@@ -1259,7 +1318,7 @@ mod drive_upload {
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|_| "[google-drive-sync-delete-network-failed] 만료된 동기화 lease를 정리하지 못했습니다.".to_string())?;
+            .map_err(|_| "[google-drive-sync-delete-network-failed] 동기화 원격 데이터를 정리하지 못했습니다.".to_string())?;
         if !response.status().is_success() {
             return Err(drive_error(state, response.status(), "sync-delete"));
         }
@@ -1269,6 +1328,105 @@ mod drive_upload {
             }
         }
         Ok(json!({"objectKey": object_key, "deleted": true}))
+    }
+
+    pub async fn cleanup_backup_assets(
+        state: &GoogleDriveAuthState,
+        keep_object_keys: Vec<String>,
+    ) -> Result<Value, String> {
+        use std::collections::HashSet;
+        let mut keep = HashSet::with_capacity(keep_object_keys.len());
+        for key in keep_object_keys {
+            validate_object_key(&key)?;
+            if !key.starts_with("assets/original/") && !key.starts_with("assets/resize-v1/") {
+                return Err("[google-drive-backup-cleanup-key-invalid] 백업 이미지 정리 기준 키가 올바르지 않습니다.".into());
+            }
+            keep.insert(key);
+        }
+        let client = drive_client()?;
+        let token = access_token(state).await?;
+        let entries = load_object_index(&client, state, &token).await?;
+        let stale: Vec<RemoteDriveObject> = entries
+            .values()
+            .filter(|remote| {
+                (remote.object_key.starts_with("assets/original/") || remote.object_key.starts_with("assets/resize-v1/"))
+                    && !keep.contains(&remote.object_key)
+            })
+            .cloned()
+            .collect();
+        let mut deleted = 0_u64;
+        for remote in &stale {
+            let response = client
+                .delete(file_url(&remote.id)?)
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .send()
+                .await
+                .map_err(|_| "[google-drive-backup-cleanup-network-failed] 사용하지 않는 백업 이미지를 정리하지 못했습니다.".to_string())?;
+            if !response.status().is_success() {
+                return Err(drive_error(state, response.status(), "backup-asset-cleanup"));
+            }
+            deleted = deleted.saturating_add(1);
+        }
+        if deleted > 0 {
+            if let Ok(mut index) = state.object_index.lock() {
+                *index = None;
+            }
+        }
+        Ok(json!({"deleted": deleted, "kept": keep.len()}))
+    }
+
+    pub async fn cleanup_shared_content(
+        state: &GoogleDriveAuthState,
+        keep_object_keys: Vec<String>,
+        max_delete: u64,
+    ) -> Result<Value, String> {
+        use std::collections::HashSet;
+        let mut keep = HashSet::with_capacity(keep_object_keys.len());
+        for key in keep_object_keys {
+            validate_object_key(&key)?;
+            if !key.starts_with("objects/content-v1/") || key.len() != "objects/content-v1/".len() + 64 {
+                return Err("[google-drive-shared-cleanup-key-invalid] 공용 이미지 정리 기준 키가 올바르지 않습니다.".into());
+            }
+            keep.insert(key);
+        }
+        let client = drive_client()?;
+        let token = access_token(state).await?;
+        let entries = list_asset_objects(&client, state, &token).await?;
+        let mut by_key: std::collections::HashMap<String, Vec<RemoteDriveObject>> = std::collections::HashMap::new();
+        for remote in entries.into_iter().filter(|remote| remote.object_key.starts_with("objects/content-v1/")) {
+            by_key.entry(remote.object_key.clone()).or_default().push(remote);
+        }
+        let cutoff = now_ms().saturating_sub(SHARED_CONTENT_GC_GRACE_MS);
+        let mut stale = Vec::new();
+        for (object_key, mut candidates) in by_key {
+            candidates.sort_by(|a,b| b.created_at_ms.cmp(&a.created_at_ms).then(a.id.cmp(&b.id)));
+            let removable = if keep.contains(&object_key) {
+                candidates.into_iter().skip(1).collect::<Vec<_>>()
+            } else {
+                candidates
+            };
+            stale.extend(removable.into_iter().filter(|remote| remote.created_at_ms == 0 || remote.created_at_ms <= cutoff));
+        }
+        stale.sort_by(|a,b| a.object_key.cmp(&b.object_key).then(a.id.cmp(&b.id)));
+        let limit = max_delete.clamp(1, 1000) as usize;
+        let backlog = stale.len() > limit;
+        let mut deleted = 0_u64;
+        for remote in stale.iter().take(limit) {
+            let response = client
+                .delete(file_url(&remote.id)?)
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .send()
+                .await
+                .map_err(|_| "[google-drive-shared-cleanup-network-failed] 사용하지 않는 공용 이미지를 정리하지 못했습니다.".to_string())?;
+            if !response.status().is_success() {
+                return Err(drive_error(state, response.status(), "shared-content-cleanup"));
+            }
+            deleted = deleted.saturating_add(1);
+        }
+        if deleted > 0 {
+            if let Ok(mut index) = state.object_index.lock() { *index = None; }
+        }
+        Ok(json!({"deleted": deleted, "kept": keep.len(), "backlog": backlog}))
     }
 
     pub async fn delete_backup_manifest(
@@ -1344,7 +1502,24 @@ mod drive_upload {
         object_key: &str,
         expected_sha: &str,
         byte_size: u64,
+        kind: &str,
+        fresh_payload_chunk: bool,
     ) -> Result<Option<String>, String> {
+        if kind != "asset" || fresh_payload_chunk {
+            let candidates = list_remote_objects_by_key(client, state, token, object_key).await?;
+            if let Some(existing) = candidates.iter().filter(|remote| {
+                remote.content_sha256 == expected_sha && remote.byte_size == byte_size
+            }).max_by_key(|remote| remote.created_at_ms) {
+                // Refresh old chunks with a new immutable copy. A concurrent GC
+                // using an older reference snapshot can delete only the old copy.
+                if fresh_payload_chunk && existing.created_at_ms <= now_ms().saturating_sub(SHARED_CONTENT_GC_GRACE_MS) { return Ok(None); }
+                return Ok(Some(existing.id.clone()));
+            }
+            if !candidates.is_empty() {
+                return Err("[google-drive-object-key-collision] 같은 원격 키에 다른 내용이 있어 덮어쓰지 않았습니다.".into());
+            }
+            return Ok(None);
+        }
         let needs_reload = {
             let index = state.object_index.lock().map_err(|_| {
                 "[google-drive-index-lock-failed] Google Drive 파일 목록을 읽지 못했습니다."
@@ -1361,10 +1536,7 @@ mod drive_upload {
                 "[google-drive-index-lock-failed] Google Drive 파일 목록을 저장하지 못했습니다."
                     .to_string()
             })?;
-            *index = Some(CachedObjectIndex {
-                loaded_at_ms: now_ms(),
-                entries,
-            });
+            *index = Some(CachedObjectIndex { loaded_at_ms: now_ms(), entries });
         }
         let index = state.object_index.lock().map_err(|_| {
             "[google-drive-index-lock-failed] Google Drive 파일 목록을 읽지 못했습니다."
@@ -1375,7 +1547,7 @@ mod drive_upload {
             if existing.content_sha256 == expected_sha && existing.byte_size == byte_size {
                 return Ok(Some(existing.id.clone()));
             }
-            return Err("[google-drive-object-key-collision] 같은 백업 키에 다른 내용이 있어 덮어쓰지 않았습니다.".into());
+            return Err("[google-drive-object-key-collision] 같은 콘텐츠 키에 다른 내용이 있어 덮어쓰지 않았습니다.".into());
         }
         Ok(None)
     }
@@ -1402,8 +1574,8 @@ mod drive_upload {
                 .append_pair("spaces", "appDataFolder")
                 .append_pair("pageSize", "1000")
                 .append_pair("orderBy", "modifiedTime desc")
-                .append_pair("q", "trashed=false")
-                .append_pair("fields", "nextPageToken,files(id,size,appProperties)");
+                .append_pair("q", "trashed=false and (appProperties has { key='hamboardKind' and value='manifest' } or name contains 'hamboard-backup-')")
+                .append_pair("fields", "nextPageToken,files(id,name,size,appProperties)");
             if !page_token.is_empty() {
                 url.query_pairs_mut().append_pair("pageToken", &page_token);
             }
@@ -1484,6 +1656,11 @@ mod drive_upload {
         let object_key = properties.get("hamboardObjectKey")?.as_str()?;
         let content_sha256 = properties.get("hamboardContentSha256")?.as_str()?.to_ascii_lowercase();
         let byte_size = properties.get("hamboardByteSize")?.as_str()?.parse::<u64>().ok()?;
+        let created_at_ms = properties
+            .get("hamboardCreatedAtMs")
+            .and_then(Value::as_str)
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
         let id = file.get("id")?.as_str()?;
         if object_key.is_empty() || id.is_empty() || !is_sha256(&content_sha256) {
             return None;
@@ -1493,7 +1670,16 @@ mod drive_upload {
             object_key: object_key.to_string(),
             content_sha256,
             byte_size,
+            created_at_ms,
         })
+    }
+
+    fn is_asset_object_key(object_key: &str) -> bool {
+        object_key.starts_with("assets/original/")
+            || object_key.starts_with("assets/resize-v1/")
+            || object_key.starts_with("sync/blobs/")
+            || object_key.starts_with("sync/thumbs/")
+            || object_key.starts_with("objects/content-v1/")
     }
 
     async fn find_remote_object(
@@ -1504,28 +1690,106 @@ mod drive_upload {
         expected_sha: &str,
         expected_size: u64,
     ) -> Result<RemoteDriveObject, String> {
-        let needs_reload = {
-            let index = state.object_index.lock().map_err(|_| {
-                "[google-drive-index-lock-failed] Google Drive 파일 목록을 읽지 못했습니다.".to_string()
-            })?;
-            index.as_ref().map(|value| value.loaded_at_ms.saturating_add(OBJECT_INDEX_TTL_MS) <= now_ms()).unwrap_or(true)
-        };
-        if needs_reload {
-            let entries = load_object_index(client, state, token).await?;
-            let mut index = state.object_index.lock().map_err(|_| {
-                "[google-drive-index-lock-failed] Google Drive 파일 목록을 저장하지 못했습니다.".to_string()
-            })?;
-            *index = Some(CachedObjectIndex { loaded_at_ms: now_ms(), entries });
-        }
-        let remote = state.object_index.lock().map_err(|_| {
+        let cached = state.object_index.lock().map_err(|_| {
             "[google-drive-index-lock-failed] Google Drive 파일 목록을 읽지 못했습니다.".to_string()
-        })?.as_ref().and_then(|value| value.entries.get(object_key)).cloned().ok_or_else(|| {
-            "[google-drive-object-not-found] manifest가 가리키는 Drive 파일을 찾지 못했습니다.".to_string()
-        })?;
-        if remote.content_sha256 != expected_sha || remote.byte_size != expected_size {
-            return Err("[google-drive-object-metadata-mismatch] Drive 파일 정보가 manifest와 다릅니다.".into());
+        })?.as_ref().and_then(|value| value.entries.get(object_key)).cloned();
+        if let Some(remote) = cached.as_ref() {
+            if remote.content_sha256 == expected_sha && remote.byte_size == expected_size {
+                return Ok(remote.clone());
+            }
         }
-        Ok(remote)
+        if is_asset_object_key(object_key) {
+            let needs_reload = {
+                let index = state.object_index.lock().map_err(|_| {
+                    "[google-drive-index-lock-failed] Google Drive 파일 목록을 읽지 못했습니다.".to_string()
+                })?;
+                index.as_ref().map(|value| value.loaded_at_ms.saturating_add(OBJECT_INDEX_TTL_MS) <= now_ms()).unwrap_or(true)
+            };
+            if needs_reload {
+                let entries = load_object_index(client, state, token).await?;
+                let mut index = state.object_index.lock().map_err(|_| {
+                    "[google-drive-index-lock-failed] Google Drive 파일 목록을 저장하지 못했습니다.".to_string()
+                })?;
+                *index = Some(CachedObjectIndex { loaded_at_ms: now_ms(), entries });
+            }
+            let remote = state.object_index.lock().map_err(|_| {
+                "[google-drive-index-lock-failed] Google Drive 파일 목록을 읽지 못했습니다.".to_string()
+            })?.as_ref().and_then(|value| value.entries.get(object_key)).cloned();
+            if let Some(remote) = remote.as_ref() {
+                if remote.content_sha256 == expected_sha && remote.byte_size == expected_size {
+                    return Ok(remote.clone());
+                }
+            }
+        }
+        if let Some(remote) = find_remote_object_exact(client, state, token, object_key, expected_sha, expected_size).await? {
+            return Ok(remote);
+        }
+        if cached.is_some() {
+            Err("[google-drive-object-metadata-mismatch] Drive 파일 정보가 manifest와 다릅니다.".into())
+        } else {
+            Err("[google-drive-object-not-found] manifest가 가리키는 Drive 파일을 찾지 못했습니다.".into())
+        }
+    }
+
+    async fn list_remote_objects_by_key(
+        client: &reqwest::Client,
+        state: &GoogleDriveAuthState,
+        token: &str,
+        object_key: &str,
+    ) -> Result<Vec<RemoteDriveObject>, String> {
+        let mut url = Url::parse(DRIVE_LIST_URL).map_err(|_| {
+            "[google-drive-list-url-invalid] Google Drive 조회 주소를 만들지 못했습니다.".to_string()
+        })?;
+        let query = format!(
+            "trashed=false and appProperties has {{ key='hamboardObjectKey' and value='{object_key}' }}"
+        );
+        url.query_pairs_mut()
+            .append_pair("spaces", "appDataFolder")
+            .append_pair("pageSize", "100")
+            .append_pair("q", &query)
+            .append_pair("fields", "files(id,size,appProperties)");
+        let response = client
+            .get(url)
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|_| {
+                "[google-drive-exact-list-network-failed] Google Drive 정리 대상을 확인하지 못했습니다."
+                    .to_string()
+            })?;
+        if !response.status().is_success() {
+            return Err(drive_error(state, response.status(), "exact-list"));
+        }
+        let bytes = response.bytes().await.map_err(|_| {
+            "[google-drive-exact-list-read-failed] Google Drive 정리 대상 정보를 읽지 못했습니다."
+                .to_string()
+        })?;
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+            "[google-drive-exact-list-invalid] Google Drive 정리 대상 응답이 올바르지 않습니다."
+                .to_string()
+        })?;
+        Ok(value
+            .get("files")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(remote_from_file)
+            .filter(|remote| remote.object_key == object_key)
+            .collect())
+    }
+
+    async fn find_remote_object_exact(
+        client: &reqwest::Client,
+        state: &GoogleDriveAuthState,
+        token: &str,
+        object_key: &str,
+        expected_sha: &str,
+        expected_size: u64,
+    ) -> Result<Option<RemoteDriveObject>, String> {
+        Ok(list_remote_objects_by_key(client, state, token, object_key)
+            .await?
+            .into_iter()
+            .find(|remote| remote.content_sha256 == expected_sha && remote.byte_size == expected_size))
     }
 
     fn file_url(id: &str) -> Result<Url, String> {
@@ -1558,15 +1822,19 @@ mod drive_upload {
         token: &str,
         remote: &RemoteDriveObject,
     ) -> Result<Vec<u8>, String> {
-        let response = client.get(media_url(&remote.id)?).header(AUTHORIZATION, format!("Bearer {token}")).send().await.map_err(|_| {
+        let mut response = client.get(media_url(&remote.id)?).header(AUTHORIZATION, format!("Bearer {token}")).send().await.map_err(|_| {
             "[google-drive-download-network-failed] Google Drive 파일 다운로드가 중단되었습니다.".to_string()
         })?;
-        if !response.status().is_success() {
-            return Err(drive_error(state, response.status(), "download"));
+        if !response.status().is_success() { return Err(drive_error(state, response.status(), "download")); }
+        crate::backup_archive::ensure_memory(remote.byte_size.checked_mul(3).ok_or("download-size-overflow")?)?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| "[google-drive-download-read-failed] 파일을 읽지 못했습니다.".to_string())? {
+            let received = (bytes.len() as u64).checked_add(chunk.len() as u64)
+                .ok_or_else(|| "google-drive-download-size-overflow".to_string())?;
+            if received > remote.byte_size { return Err("[google-drive-download-size-exceeded] 선언된 파일 크기를 초과했습니다.".into()); }
+            bytes.try_reserve(chunk.len()).map_err(|_| "[google-drive-download-memory-unavailable] 파일을 읽을 메모리가 부족합니다.".to_string())?;
+            bytes.extend_from_slice(&chunk);
         }
-        let bytes = response.bytes().await.map_err(|_| {
-            "[google-drive-download-read-failed] Google Drive 파일을 읽지 못했습니다.".to_string()
-        })?.to_vec();
         if bytes.len() as u64 != remote.byte_size || sha256_hex(&bytes) != remote.content_sha256 {
             return Err("[google-drive-download-integrity-mismatch] 다운로드 파일의 크기 또는 해시가 Drive 정보와 다릅니다.".into());
         }
@@ -1586,6 +1854,7 @@ mod drive_upload {
         if !response.status().is_success() {
             return Err(drive_error(state, response.status(), "download"));
         }
+        crate::backup_archive::ensure_disk(path, remote.byte_size.checked_mul(2).ok_or("download-size-overflow")?)?;
         let mut file = File::create(path).map_err(|_| {
             "[google-drive-download-stage-create-failed] 다운로드 임시 파일을 만들지 못했습니다.".to_string()
         })?;
@@ -1598,6 +1867,7 @@ mod drive_upload {
                 let _ = std::fs::remove_file(path);
                 return Err("[google-drive-download-size-exceeded] 다운로드 파일이 manifest 크기를 넘었습니다.".into());
             }
+            crate::backup_archive::ensure_disk(path, chunk.len() as u64)?;
             file.write_all(&chunk).map_err(|_| {
                 "[google-drive-download-stage-write-failed] 다운로드 임시 파일에 저장하지 못했습니다.".to_string()
             })?;
@@ -1609,18 +1879,21 @@ mod drive_upload {
     }
 
     fn validate_download_file_name(value: &str, expected_sha: &str) -> Result<(), String> {
-        if value != format!("cloud-download-{expected_sha}.bin") {
+        let prefix = format!("cloud-download-{expected_sha}-");
+        let unique = value.strip_prefix(prefix.as_str()).and_then(|value| value.strip_suffix(".bin"))
+            .is_some_and(|id| id.len() == 36 && id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'));
+        if value != format!("cloud-download-{expected_sha}.bin") && !unique {
             return Err("[google-drive-target-invalid] 다운로드 임시 파일 이름이 허용되지 않습니다.".into());
         }
         Ok(())
     }
 
-    async fn load_object_index(
+    async fn list_asset_objects(
         client: &reqwest::Client,
         state: &GoogleDriveAuthState,
         token: &str,
-    ) -> Result<std::collections::HashMap<String, RemoteDriveObject>, String> {
-        let mut entries = std::collections::HashMap::new();
+    ) -> Result<Vec<RemoteDriveObject>, String> {
+        let mut entries = Vec::new();
         let mut page_token = String::new();
         for _ in 0..10_000 {
             let mut url = Url::parse(DRIVE_LIST_URL).map_err(|_| {
@@ -1630,6 +1903,7 @@ mod drive_upload {
             url.query_pairs_mut()
                 .append_pair("spaces", "appDataFolder")
                 .append_pair("pageSize", "1000")
+                .append_pair("q", "trashed=false and appProperties has { key='hamboardKind' and value='asset' }")
                 .append_pair(
                     "fields",
                     "nextPageToken,files(id,size,appProperties)",
@@ -1663,35 +1937,8 @@ mod drive_upload {
                 .into_iter()
                 .flatten()
             {
-                let properties = file.get("appProperties").and_then(Value::as_object);
-                let object_key = properties
-                    .and_then(|value| value.get("hamboardObjectKey"))
-                    .and_then(Value::as_str);
-                let content_sha256 = properties
-                    .and_then(|value| value.get("hamboardContentSha256"))
-                    .and_then(Value::as_str);
-                let byte_size = properties
-                    .and_then(|value| value.get("hamboardByteSize"))
-                    .and_then(Value::as_str)
-                    .and_then(|value| value.parse::<u64>().ok());
-                let id = file.get("id").and_then(Value::as_str);
-                if let (Some(object_key), Some(content_sha256), Some(byte_size), Some(id)) =
-                    (object_key, content_sha256, byte_size, id)
-                {
-                    if !object_key.is_empty()
-                        && !id.is_empty()
-                        && is_sha256(content_sha256)
-                    {
-                        entries.insert(
-                            object_key.to_string(),
-                            RemoteDriveObject {
-                                id: id.to_string(),
-                                object_key: object_key.to_string(),
-                                content_sha256: content_sha256.to_string(),
-                                byte_size,
-                            },
-                        );
-                    }
+                if let Some(remote) = remote_from_file(file) {
+                    entries.push(remote);
                 }
             }
             page_token = value
@@ -1704,6 +1951,18 @@ mod drive_upload {
             }
         }
         Err("[google-drive-list-page-limit] Google Drive 파일 목록이 허용 페이지 수를 넘었습니다.".into())
+    }
+
+    async fn load_object_index(
+        client: &reqwest::Client,
+        state: &GoogleDriveAuthState,
+        token: &str,
+    ) -> Result<std::collections::HashMap<String, RemoteDriveObject>, String> {
+        let mut entries = std::collections::HashMap::new();
+        for remote in list_asset_objects(client, state, token).await? {
+            entries.insert(remote.object_key.clone(), remote);
+        }
+        Ok(entries)
     }
 
     fn remember_uploaded(
@@ -1725,6 +1984,7 @@ mod drive_upload {
                     object_key: object_key.to_string(),
                     content_sha256: content_sha256.to_string(),
                     byte_size,
+                    created_at_ms: now_ms(),
                 },
             );
         }
@@ -1805,7 +2065,8 @@ mod drive_upload {
         }
         let file_name = components[1].as_os_str().to_string_lossy();
         if !((file_name.starts_with("asset-") && file_name.ends_with(".bin"))
-            || file_name == STAGING_FILE)
+            || is_upload_staging_name(&file_name)
+            || (file_name.starts_with("backup-page-") && file_name.ends_with(".json") && file_name.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '.')))
         {
             return Err("[google-drive-source-path-invalid] 업로드 파일 이름이 허용되지 않습니다.".into());
         }
@@ -1929,7 +2190,25 @@ mod drive_upload {
 
     #[cfg(test)]
     mod tests {
-        use super::{file_url, media_url};
+        use super::{file_url, media_url, is_upload_staging_name, backup_summary};
+
+        #[test]
+        fn backup_listing_does_not_return_document_bodies() {
+            let value = serde_json::json!({"format":"hamboard-cloud-backup","formatVersion":2,
+                "complete":true,"backupId":"b", "state":{"notes":[{"content":"private body"}]},
+                "objects":[{"objectKey":"objects/content-v1/hash", "extra":"omit"}]});
+            let summary = backup_summary(&value).expect("summary");
+            assert!(summary.get("state").is_none());
+            assert!(summary["objects"][0].get("extra").is_none());
+        }
+
+        #[test]
+        fn staging_names_are_unique_and_bounded() {
+            assert!(is_upload_staging_name("cloud-upload-stage-12345678-1234-1234-1234-123456789abc.bin"));
+            assert!(is_upload_staging_name("cloud-upload-stage.bin"));
+            assert!(!is_upload_staging_name("cloud-upload-stage-../other.bin"));
+            assert!(!is_upload_staging_name("cloud-upload-stage-.bin"));
+        }
 
         #[test]
         fn file_url_has_single_files_separator() {

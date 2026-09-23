@@ -1,6 +1,6 @@
 [package]
 name = "hamboard"
-version = "1.0.10"
+version = "1.0.13"
 description = "Hamboard desktop application"
 authors = ["Hamboard"]
 edition = "2021"
@@ -35,5 +35,6 @@ tauri-plugin-autostart = "2"
 base64 = "0.22.1"
 rand = "0.8.7"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls"] }
+rodio = "0.20.1"
 sha2 = "0.10.9"
 url = "2.5.8"

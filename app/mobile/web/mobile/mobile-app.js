@@ -17,6 +17,13 @@
   const libraryScreen=$("#libraryScreen");
   const projectReaderScreen=$("#projectReaderScreen");
   const blockEditorScreen=$("#projectBlockEditorScreen");
+  const blockEditorKind=$("#blockEditorKind");
+  const blockEditorMainSection=$("#blockEditorMainSection");
+  const blockEditorScriptSection=$("#blockEditorScriptSection");
+  const blockEditorScriptRows=$("#blockEditorScriptRows");
+  const blockEditorScriptPreview=$("#blockEditorScriptPreview");
+  const blockEditorScriptAddType=$("#blockEditorScriptAddType");
+  const blockEditorScriptAdd=$("#blockEditorScriptAdd");
   const blockEditorContext=$("#blockEditorContext");
   const blockEditorTitle=$("#blockEditorTitle");
   const blockEditorSummary=$("#blockEditorSummary");
@@ -152,6 +159,8 @@
   const diagnostics=[];
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
   const DEFAULT_STAGE_COLORS=Object.freeze([CARD_COLORS[11],CARD_COLORS[7],CARD_COLORS[4],CARD_COLORS[0]]);
+  const MOBILE_SCRIPT_TYPES=Object.freeze({narration:"지문",dialogue:"대사",background:"배경",direction:"연출",page:"페이지",cut:"컷"});
+  const MOBILE_SHOT_PRESETS=Object.freeze(["클로즈업","흉상","반신","풀샷","익스트림 클로즈업","오버더숄더","버드아이뷰","하이앵글","로우앵글","임팩트"]);
   const CREATE_TYPES=Object.freeze({
     folder:{label:"폴더",icon:"folder-plus",hint:"문서를 묶어 정리할 폴더를 만듭니다.",defaultTitle:"새 폴더"},
     project:{label:"작품",icon:"scroll-text",hint:"단편 또는 장편 작품을 만듭니다.",defaultTitle:"새 작품"},
@@ -215,7 +224,7 @@
   const folderName=(id,state)=>state?.folders?.find(folder=>String(folder?.id||"")===String(id||""))?.name||"";
   const allBlocks=unit=>{const result=[],walk=nodes=>(nodes||[]).forEach(node=>{result.push(node);walk(node.children)});for(const stage of unit?.stageDefs||[])walk(unit?.stages?.[stage.id]);return result};
   const projectStats=project=>{const units=project.kind==="long"?(project.episodes||[]):[project],blocks=units.flatMap(allBlocks);return {units:units.length,blocks:blocks.length,completed:blocks.filter(block=>block.completed).length}};
-  const scriptLabels={dialogue:"대사",narration:"지문",background:"배경",shot:"구도",page:"페이지",cut:"컷"};
+  const scriptLabels={...MOBILE_SCRIPT_TYPES,shot:"구도"};
 
   const uid=()=>globalThis.crypto?.randomUUID?.()||`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
   const randomCardColor=()=>CARD_COLORS[Math.floor(Math.random()*CARD_COLORS.length)]||CARD_COLORS[0];
@@ -1104,14 +1113,14 @@
   }
 
   function blockElement(block,{compact=false,stageId="",blockIndex=-1}={}){
-    const editable=Boolean(stageId)&&block?.type!=="script";
+    const editable=Boolean(stageId);
     const card=element("article","block-card"+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
     const titleText=String(block.title||"").trim();
     if(editable){
       card.setAttribute("role","button");
       card.tabIndex=0;
       card.setAttribute("aria-label",(titleText||"제목 없는 블록")+" 편집");
-      const openEditor=()=>openMobileGeneralBlockEditor(stageId,blockIndex);
+      const openEditor=()=>openMobileBlockEditor(stageId,blockIndex);
       card.onclick=openEditor;
       card.onkeydown=event=>{
         if(event.key!=="Enter"&&event.key!==" ")return;
@@ -1700,11 +1709,141 @@
     refreshLucideIcons()
   }
 
-  function blockEditorHasContent(){
-    return Boolean(blockEditorTitle.value.trim()||mobileBlockPlainText(blockEditorSummary).trim()||mobileBlockPlainText(blockEditorNotes).trim()||activeBlockEditor?.completed)
+  function mobileScriptLine(type="narration",text=""){
+    const divider=type==="page"||type==="cut";
+    return {id:uid(),type,text,speaker:"",characterId:"",background:"",shot:"",...(divider?{autoLabel:true}:{})}
   }
 
-  async function persistMobileGeneralBlock(){
+  function renumberMobileScriptLines(){
+    const counts={page:0,cut:0};
+    for(const line of activeBlockEditor?.scriptBlocks||[]){
+      if(line.type!=="page"&&line.type!=="cut")continue;
+      counts[line.type]++;
+      if(line.autoLabel===undefined&&new RegExp("^\\s*"+line.type.toUpperCase()+"\\s+\\d+\\s*$","i").test(String(line.text||"")))line.autoLabel=true;
+      if(line.autoLabel===true)line.text=line.type.toUpperCase()+" "+String(counts[line.type]).padStart(2,"0")
+    }
+  }
+
+  function mobileScriptCharacters(){
+    return activeBlockEditor?.characters||[]
+  }
+
+  function matchMobileScriptCharacter(name,characters=mobileScriptCharacters()){
+    const query=String(name||"").trim().toLocaleLowerCase("ko-KR");
+    return query?characters.find(character=>
+      [character.name,...(Array.isArray(character.aliases)?character.aliases:[])].some(value=>String(value||"").toLocaleLowerCase("ko-KR")===query)
+    ):null
+  }
+
+  function mobileScriptPreviewHtml(value){
+    const escape=value=>{const node=document.createElement("span");node.textContent=value;return node.innerHTML};
+    return String(value||"").split("\n").map(raw=>{
+      let line=escape(raw),tag="div";
+      if(/^###\s+/.test(line)){tag="h3";line=line.replace(/^###\s+/,"")}
+      else if(/^##\s+/.test(line)){tag="h2";line=line.replace(/^##\s+/,"")}
+      else if(/^#\s+/.test(line)){tag="h1";line=line.replace(/^#\s+/,"")}
+      else if(/^>\s?/.test(line)){tag="blockquote";line=line.replace(/^>\s?/,"")}
+      else if(/^[-*]\s+/.test(line))line="• "+line.replace(/^[-*]\s+/,"");
+      line=line.replace(/`([^`]+)`/g,"<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+        .replace(/__([^_]+)__/g,"<strong>$1</strong>")
+        .replace(/~~([^~]+)~~/g,"<s>$1</s>")
+        .replace(/\*([^*]+)\*/g,"<em>$1</em>");
+      return "<"+tag+">"+(line||"<br>")+"</"+tag+">"
+    }).join("")
+  }
+
+  function renderMobileScriptRows(focusId=""){
+    const edit=activeBlockEditor;
+    if(edit?.type!=="script")return;
+    const preview=Boolean(edit.preview),characters=mobileScriptCharacters();
+    blockEditorScriptRows.replaceChildren();
+    blockEditorScriptSection.classList.toggle("preview",preview);
+    blockEditorScriptPreview.textContent=preview?"편집으로 돌아가기":"미리보기";
+    blockEditorScriptPreview.setAttribute("aria-pressed",String(preview));
+    edit.scriptBlocks.forEach((line,index)=>{
+      const row=element("div","project-script-row"+(preview?" project-script-preview-row":""));
+      row.dataset.lineId=String(line.id);
+      row.dataset.lineType=String(line.type||"narration");
+      const character=line.type==="dialogue"?characters.find(item=>String(item.id)===String(line.characterId||""))||matchMobileScriptCharacter(line.speaker,characters):null;
+      if(character?.color)row.style.setProperty("--dialogue-color",safeColor(character.color,"#6A6E78"));
+      if(preview){
+        const label=element("span","project-script-row-label",scriptLabels[line.type]||"지문");
+        const body=element("div","project-script-preview-body");
+        if(line.type==="dialogue"&&line.speaker)body.append(element("strong","project-script-speaker",line.speaker));
+        const content=element("div","project-script-preview-content");
+        content.innerHTML=mobileScriptPreviewHtml(line.text);
+        body.append(content);
+        row.append(label,body)
+      }else{
+        const header=element("div","project-script-row-head");
+        const number=element("span","project-script-row-number",String(index+1));
+        const type=element("select","project-script-type");
+        type.dataset.scriptField="type";
+        type.setAttribute("aria-label",(index+1)+"번째 줄 유형");
+        Object.entries(MOBILE_SCRIPT_TYPES).forEach(([key,label])=>{
+          const option=element("option","",label);option.value=key;type.append(option)
+        });
+        type.value=MOBILE_SCRIPT_TYPES[line.type]?line.type:"narration";
+        const up=element("button","project-script-row-action","");
+        up.type="button";up.dataset.scriptAction="up";up.disabled=index===0;
+        up.setAttribute("aria-label",(index+1)+"번째 줄 위로 이동");
+        up.innerHTML='<i data-lucide="arrow-up" aria-hidden="true"></i>';
+        const down=element("button","project-script-row-action","");
+        down.type="button";down.dataset.scriptAction="down";down.disabled=index===edit.scriptBlocks.length-1;
+        down.setAttribute("aria-label",(index+1)+"번째 줄 아래로 이동");
+        down.innerHTML='<i data-lucide="arrow-down" aria-hidden="true"></i>';
+        const remove=element("button","project-script-row-action project-script-row-delete","");
+        remove.type="button";remove.dataset.scriptAction="delete";
+        remove.setAttribute("aria-label",(index+1)+"번째 줄 삭제");
+        remove.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';
+        header.append(number,type,up,down,remove);
+        row.append(header);
+        if(line.type==="dialogue"){
+          const speaker=element("input","project-script-speaker-input");
+          speaker.type="text";speaker.placeholder="캐릭터 선택 또는 이름 입력";
+          speaker.value=String(line.speaker||"");speaker.dataset.scriptField="speaker";
+          speaker.setAttribute("aria-label",(index+1)+"번째 줄 화자");
+          row.append(speaker);
+          if(characters.length){
+            const chooser=element("select","project-script-character-select");
+            chooser.dataset.scriptField="character";chooser.setAttribute("aria-label","작품 캐릭터 선택");
+            const placeholder=element("option","","작품 캐릭터 선택");placeholder.value="";chooser.append(placeholder);
+            characters.forEach(character=>{
+              const option=element("option","",String(character.name||"이름 없음"));option.value=String(character.id||"");chooser.append(option)
+            });
+            chooser.value=String(line.characterId||"");
+            row.append(chooser)
+          }
+        }
+        if(line.type==="direction"){
+          const chooser=element("select","project-script-shot-select");
+          chooser.dataset.scriptField="shot";chooser.setAttribute("aria-label","연출 프리셋");
+          const placeholder=element("option","","연출 / 구도 선택");placeholder.value="";chooser.append(placeholder);
+          MOBILE_SHOT_PRESETS.forEach(preset=>{const option=element("option","",preset);option.value=preset;chooser.append(option)});
+          chooser.value=MOBILE_SHOT_PRESETS.includes(line.text)?line.text:"";
+          row.append(chooser)
+        }
+        const field=element("textarea","project-script-text");
+        field.dataset.scriptField="text";field.value=String(line.text||"");
+        field.setAttribute("aria-label",(index+1)+"번째 "+(scriptLabels[line.type]||"지문")+" 내용");
+        field.placeholder=line.type==="dialogue"?"대사를 입력하세요":line.type==="direction"?"연출 / 구도를 입력하세요":line.type==="background"?"장소·시간·분위기를 입력하세요":line.type==="page"||line.type==="cut"?"구분선 이름": "행동, 서술, 메모 등을 입력하세요";
+        row.append(field)
+      }
+      blockEditorScriptRows.append(row)
+    });
+    refreshLucideIcons();
+    if(focusId)blockEditorScriptRows.querySelectorAll(".project-script-row").forEach(row=>{
+      if(row.dataset.lineId===focusId)row.querySelector("textarea")?.focus()
+    })
+  }
+
+  function blockEditorHasContent(){
+    const scriptContent=activeBlockEditor?.type==="script"&&activeBlockEditor.scriptBlocks.some(line=>String(line.text||"").trim()||String(line.speaker||"").trim());
+    return Boolean(blockEditorTitle.value.trim()||scriptContent||activeBlockEditor?.type!=="script"&&mobileBlockPlainText(blockEditorSummary).trim()||mobileBlockPlainText(blockEditorNotes).trim()||activeBlockEditor?.completed)
+  }
+
+  async function persistMobileBlock(){
     const edit=activeBlockEditor;
     if(!edit)return true;
     const current=mobileProjectContext(edit.projectId,edit.episodeId);
@@ -1723,15 +1862,16 @@
       const summary=mobileBlockEditorData(blockEditorSummary),notes=mobileBlockEditorData(blockEditorNotes);
       const block={
         id:uid(),
-        type:"detail",
+        type:edit.type,
         title:blockEditorTitle.value.trim(),
-        summary:summary.plain,
+        summary:edit.type==="script"?"":summary.plain,
         notes:notes.plain,
-        summaryHtml:summary.html,
+        summaryHtml:edit.type==="script"?"":summary.html,
         notesHtml:notes.html,
         tags:[],
         completed:Boolean(edit.completed),
-        children:[]
+        children:[],
+        ...(edit.type==="script"?{scriptBlocks:clone(edit.scriptBlocks)}:{})
       };
       list.push(block);
       edit.blockIndex=list.length-1;
@@ -1740,17 +1880,19 @@
     }else{
       let target=edit.blockId?list.find(item=>String(item?.id||"")===edit.blockId):null;
       if(!target&&edit.blockIndex>=0&&edit.blockIndex<list.length)target=list[edit.blockIndex];
-      if(!target||target.type==="script"){
-        setMobileBlockEditorStatus("편집할 일반 블록을 찾지 못했습니다.");
+      if(!target||target.type!==edit.type){
+        setMobileBlockEditorStatus("편집할 블록을 찾지 못했습니다.");
         return false
       }
       const summary=mobileBlockEditorData(blockEditorSummary),notes=mobileBlockEditorData(blockEditorNotes);
-      target.type="detail";
       target.title=blockEditorTitle.value.trim();
-      target.summary=summary.plain;
       target.notes=notes.plain;
-      target.summaryHtml=summary.html;
       target.notesHtml=notes.html;
+      if(edit.type==="script")target.scriptBlocks=clone(edit.scriptBlocks);
+      else{
+        target.summary=summary.plain;
+        target.summaryHtml=summary.html
+      }
       target.completed=Boolean(edit.completed);
       edit.blockId=String(target.id||edit.blockId||"")
     }
@@ -1764,8 +1906,8 @@
       }
       return true
     }catch(error){
-      console.error("모바일 일반 블록 자동 저장 실패",error);
-      logDiagnostic("error","REPOSITORY","일반 블록 자동 저장에 실패했습니다.",error);
+      console.error("모바일 블록 자동 저장 실패",error);
+      logDiagnostic("error","REPOSITORY","블록 자동 저장에 실패했습니다.",error);
       if(activeBlockEditor===edit)setMobileBlockEditorStatus("자동 저장하지 못했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.");
       return false
     }
@@ -1774,7 +1916,7 @@
   function queueMobileGeneralBlockSave(){
     const edit=activeBlockEditor;
     if(!edit)return Promise.resolve(true);
-    blockSaveChain=blockSaveChain.then(()=>activeBlockEditor===edit?persistMobileGeneralBlock():true);
+    blockSaveChain=blockSaveChain.then(()=>activeBlockEditor===edit?persistMobileBlock():true);
     return blockSaveChain
   }
 
@@ -1804,33 +1946,43 @@
     renderProject(project)
   }
 
-  function openMobileGeneralBlockEditor(stageId,blockIndex=-1){
+  function openMobileBlockEditor(stageId,blockIndex=-1,type="detail"){
     const projectId=String(activeDocumentId||""),episodeId=String(activeEpisodeId||"");
     const initial=mobileProjectContext(projectId,episodeId);
     const blocks=Array.isArray(initial.unit?.stages?.[stageId])?initial.unit.stages[stageId]:null;
     const index=Number(blockIndex),existing=blocks&&Number.isInteger(index)&&index>=0&&index<blocks.length?blocks[index]:null;
-    if(!initial.project||!initial.unit||!blocks||existing?.type==="script")return;
+    if(!initial.project||!initial.unit||!blocks)return;
+    type=existing?.type==="script"?"script":existing?"detail":type==="script"?"script":"detail";
     const stage=(initial.unit.stageDefs||[]).find(item=>String(item?.id||"")===String(stageId||""));
     clearTimeout(blockSaveTimer);
     blockSaveTimer=0;
     activeBlockEditor={
       projectId,episodeId,stageId:String(stageId||""),blockIndex:existing?index:-1,
-      blockId:existing?String(existing.id||""):"",creating:!existing,completed:Boolean(existing?.completed)
+      blockId:existing?String(existing.id||""):"",creating:!existing,completed:Boolean(existing?.completed),type,
+      scriptBlocks:type==="script"&&Array.isArray(existing?.scriptBlocks)?clone(existing.scriptBlocks):type==="script"?[mobileScriptLine()]:[],
+      characters:type==="script"&&Array.isArray(initial.project.characters)?initial.project.characters:[],
+      preview:false
     };
+    if(type==="script"&&!activeBlockEditor.scriptBlocks.length)activeBlockEditor.scriptBlocks=[mobileScriptLine()];
+    if(type==="script")renumberMobileScriptLines();
+    blockEditorKind.textContent=type==="script"?"스크립트 블록":"일반 블록";
+    blockEditorMainSection.hidden=type==="script";
+    blockEditorScriptSection.hidden=type!=="script";
     blockEditorTitle.value=String(existing?.title||"");
     blockEditorSummary.innerHTML=mobileBlockRichHtml(existing?.summary,existing?.summaryHtml);
     blockEditorNotes.innerHTML=mobileBlockRichHtml(existing?.notes,existing?.notesHtml);
+    if(type==="script")renderMobileScriptRows();
     blockEditorContext.textContent=(stage?.name||"파트")+(initial.project.kind==="long"&&initial.unit?.title?" · "+initial.unit.title:"");
     blockEditorDelete.hidden=!existing;
     blockEditorDelete.disabled=false;
     setMobileBlockEditorStatus("");
     hideMobileBlockFormatBar();
     syncMobileBlockCompletion();
-    showScreen(blockEditorScreen,{heading:existing?"블록 편집":"새 블록",back:true,account:false,nav:"library"});
+    showScreen(blockEditorScreen,{heading:existing?(type==="script"?"스크립트 편집":"블록 편집"):(type==="script"?"새 스크립트":"새 블록"),back:true,account:false,nav:"library"});
     releaseMobileInputFocus()
   }
 
-  async function deleteMobileGeneralBlock(){
+  async function deleteMobileBlock(){
     const edit=activeBlockEditor;
     if(!edit||edit.creating)return;
     clearTimeout(blockSaveTimer);
@@ -1839,8 +1991,8 @@
     if(activeBlockEditor!==edit)return;
     const current=mobileProjectContext(edit.projectId,edit.episodeId),list=Array.isArray(current.unit?.stages?.[edit.stageId])?current.unit.stages[edit.stageId]:null;
     const target=(list||[]).find(item=>String(item?.id||"")===String(edit.blockId||""))||(list&&edit.blockIndex>=0&&edit.blockIndex<list.length?list[edit.blockIndex]:null);
-    if(!current.project||!current.unit||!target||target.type==="script"){
-      setMobileBlockEditorStatus("삭제할 일반 블록을 찾지 못했습니다.");
+    if(!current.project||!current.unit||!target||target.type!==edit.type){
+      setMobileBlockEditorStatus("삭제할 블록을 찾지 못했습니다.");
       return
     }
     const confirmed=await openMobileConfirm({
@@ -1861,8 +2013,8 @@
       await repository.replaceState(current.state);
       closeMobileGeneralBlockEditor()
     }catch(error){
-      console.error("모바일 일반 블록 삭제 실패",error);
-      logDiagnostic("error","REPOSITORY","일반 블록 삭제에 실패했습니다.",error);
+      console.error("모바일 블록 삭제 실패",error);
+      logDiagnostic("error","REPOSITORY","블록 삭제에 실패했습니다.",error);
       blockEditorDelete.disabled=false;
       setMobileBlockEditorStatus("삭제하지 못했습니다. 다시 시도해 주세요.")
     }
@@ -1927,8 +2079,14 @@
       const addBlock=element("button","stage-add-block","");
       addBlock.type="button";
       addBlock.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>일반 블록 추가</span>';
-      addBlock.onclick=()=>openMobileGeneralBlockEditor(stage.id);
-      section.append(stageHead,blocks,addBlock);
+      addBlock.onclick=()=>openMobileBlockEditor(stage.id);
+      const addScript=element("button","stage-add-block","");
+      addScript.type="button";
+      addScript.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>스크립트 블록 추가</span>';
+      addScript.onclick=()=>openMobileBlockEditor(stage.id,-1,"script");
+      const addActions=element("div","stage-add-actions");
+      addActions.append(addBlock,addScript);
+      section.append(stageHead,blocks,addActions);
       carousel.append(section);
       sections.push(section)
     }
@@ -3530,6 +3688,85 @@
   };
   blockEditorTitle.addEventListener("input",scheduleMobileGeneralBlockSave);
   [blockEditorSummary,blockEditorNotes].forEach(bindMobileBlockRichEditor);
+  blockEditorScriptAdd.onclick=()=>{
+    const edit=activeBlockEditor;
+    if(edit?.type!=="script")return;
+    const type=MOBILE_SCRIPT_TYPES[blockEditorScriptAddType.value]?blockEditorScriptAddType.value:"narration";
+    const line=mobileScriptLine(type);
+    edit.scriptBlocks.push(line);
+    renumberMobileScriptLines();
+    edit.preview=false;
+    renderMobileScriptRows(line.id);
+    scheduleMobileGeneralBlockSave()
+  };
+  blockEditorScriptPreview.onclick=()=>{
+    if(activeBlockEditor?.type!=="script")return;
+    activeBlockEditor.preview=!activeBlockEditor.preview;
+    renderMobileScriptRows()
+  };
+  blockEditorScriptRows.addEventListener("input",event=>{
+    const row=event.target.closest("[data-line-id]"),edit=activeBlockEditor;
+    if(edit?.type!=="script"||!row)return;
+    const line=edit.scriptBlocks.find(item=>String(item.id)===row.dataset.lineId);
+    if(!line)return;
+    if(event.target.dataset.scriptField==="text"){
+      line.text=event.target.value;
+      if(line.type==="page"||line.type==="cut")line.autoLabel=false
+    }else if(event.target.dataset.scriptField==="speaker"){
+      line.speaker=event.target.value;
+      line.characterId=String(matchMobileScriptCharacter(line.speaker)?.id||"");
+      const chooser=row.querySelector('[data-script-field="character"]');
+      if(chooser)chooser.value=line.characterId
+    }else return;
+    scheduleMobileGeneralBlockSave()
+  });
+  blockEditorScriptRows.addEventListener("change",event=>{
+    const row=event.target.closest("[data-line-id]"),edit=activeBlockEditor;
+    if(edit?.type!=="script"||!row)return;
+    const line=edit.scriptBlocks.find(item=>String(item.id)===row.dataset.lineId),field=event.target.dataset.scriptField;
+    if(!line)return;
+    if(field==="type"){
+      const next=MOBILE_SCRIPT_TYPES[event.target.value]?event.target.value:"narration";
+      if(next===line.type)return;
+      if((line.type==="page"||line.type==="cut")&&line.autoLabel===true)line.text="";
+      line.type=next;
+      if(next!=="dialogue"){line.speaker="";line.characterId=""}
+      line.background="";line.shot="";
+      if(next==="page"||next==="cut"){line.autoLabel=true;line.text=""}
+      else delete line.autoLabel;
+      renumberMobileScriptLines();
+      renderMobileScriptRows(line.id)
+    }else if(field==="character"){
+      const character=mobileScriptCharacters().find(item=>String(item.id)===event.target.value);
+      if(!character)return;
+      line.characterId=String(character.id);
+      line.speaker=String(character.name||"");
+      row.querySelector('[data-script-field="speaker"]').value=line.speaker
+    }else if(field==="shot"){
+      if(!MOBILE_SHOT_PRESETS.includes(event.target.value))return;
+      line.text=event.target.value;
+      row.querySelector('[data-script-field="text"]').value=line.text
+    }else return;
+    scheduleMobileGeneralBlockSave()
+  });
+  blockEditorScriptRows.addEventListener("click",event=>{
+    const button=event.target.closest("[data-script-action]"),edit=activeBlockEditor;
+    if(edit?.type!=="script"||!button)return;
+    const row=button.closest("[data-line-id]"),index=edit.scriptBlocks.findIndex(item=>String(item.id)===row?.dataset.lineId);
+    if(index<0)return;
+    const action=button.dataset.scriptAction;
+    if(action==="delete"){
+      edit.scriptBlocks.splice(index,1);
+      if(!edit.scriptBlocks.length)edit.scriptBlocks.push(mobileScriptLine())
+    }else if(action==="up"&&index>0){
+      edit.scriptBlocks.splice(index-1,0,edit.scriptBlocks.splice(index,1)[0])
+    }else if(action==="down"&&index<edit.scriptBlocks.length-1){
+      edit.scriptBlocks.splice(index+1,0,edit.scriptBlocks.splice(index,1)[0])
+    }else return;
+    renumberMobileScriptLines();
+    renderMobileScriptRows();
+    scheduleMobileGeneralBlockSave()
+  });
   blockEditorFormatBar.addEventListener("pointerdown",event=>{
     const button=event.target.closest("[data-block-format-command]");
     if(button)event.preventDefault()
@@ -3548,7 +3785,7 @@
     syncMobileBlockCompletion();
     scheduleMobileGeneralBlockSave()
   };
-  blockEditorDelete.onclick=deleteMobileGeneralBlock;
+  blockEditorDelete.onclick=deleteMobileBlock;
   libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};

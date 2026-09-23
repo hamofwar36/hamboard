@@ -59,7 +59,7 @@
           <header class="project-block-editor-head">
             <div class="project-block-editor-meta-row">
               <div>
-                <span class="project-block-editor-kind">일반 블록</span>
+                <span id="blockEditorKind" class="project-block-editor-kind">일반 블록</span>
                 <p id="blockEditorContext" class="project-block-editor-context"></p>
               </div>
               <button id="blockEditorCompletion" class="project-block-completion" type="button" aria-pressed="false"><i data-lucide="circle" aria-hidden="true"></i><span>미완료</span></button>
@@ -67,10 +67,26 @@
             <input id="blockEditorTitle" class="project-block-title-input" type="text" maxlength="120" autocomplete="off" placeholder="블록 제목" aria-label="블록 제목">
           </header>
 
-          <label class="project-block-editor-section project-block-main-section">
+          <label id="blockEditorMainSection" class="project-block-editor-section project-block-main-section">
             <span class="project-block-editor-label">본문</span>
             <div id="blockEditorSummary" class="project-block-main-input project-block-rich-input" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="내용을 입력하세요." aria-label="블록 본문"></div>
           </label>
+
+          <section id="blockEditorScriptSection" class="project-block-script-section" hidden>
+            <div class="project-block-script-heading">
+              <span class="project-block-editor-label">스크립트</span>
+              <button id="blockEditorScriptPreview" type="button" aria-pressed="false">미리보기</button>
+            </div>
+            <div id="blockEditorScriptRows" class="project-block-script-rows"></div>
+            <div class="project-block-script-add">
+              <select id="blockEditorScriptAddType" aria-label="추가할 줄 유형">
+                <option value="narration">지문</option><option value="dialogue">대사</option>
+                <option value="background">배경</option><option value="direction">연출</option>
+                <option value="page">페이지</option><option value="cut">컷</option>
+              </select>
+              <button id="blockEditorScriptAdd" type="button"><i data-lucide="plus" aria-hidden="true"></i> 줄 추가</button>
+            </div>
+          </section>
 
           <section class="project-block-editor-secondary">
             <label class="project-block-editor-section">

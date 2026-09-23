@@ -1613,11 +1613,12 @@
     blockFormatFrame=requestAnimationFrame(()=>{
       blockFormatFrame=0;
       if(blockEditorFormatBar.hidden)return;
-      const bar=blockEditorFormatBar.getBoundingClientRect(),pad=8,width=Math.max(document.documentElement.clientWidth||0,window.innerWidth||0),height=Math.max(document.documentElement.clientHeight||0,window.innerHeight||0);
-      const left=Math.max(pad,Math.min(rect.left+rect.width/2-bar.width/2,width-bar.width-pad));
-      let top=rect.top-bar.height-8;
-      if(top<pad)top=rect.bottom+8;
-      top=Math.max(pad,Math.min(top,height-bar.height-pad));
+      const bar=blockEditorFormatBar.getBoundingClientRect(),viewport=window.visualViewport,pad=8,gap=12;
+      const viewportLeft=viewport?.offsetLeft||0,viewportTop=viewport?.offsetTop||0;
+      const width=viewport?.width||document.documentElement.clientWidth||window.innerWidth;
+      const height=viewport?.height||document.documentElement.clientHeight||window.innerHeight;
+      const left=Math.max(viewportLeft+pad,Math.min(rect.left+rect.width/2-bar.width/2,viewportLeft+width-bar.width-pad));
+      const top=Math.max(viewportTop+pad,Math.min(rect.bottom+gap,viewportTop+height-bar.height-pad));
       blockEditorFormatBar.style.left=Math.round(left)+"px";
       blockEditorFormatBar.style.top=Math.round(top)+"px"
     })

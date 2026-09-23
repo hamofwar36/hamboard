@@ -830,6 +830,10 @@ body.block-editor-open .mobile-bottom-nav{display:none}
 .project-script-row[data-line-type="dialogue"]{border-left:3px solid var(--dialogue-color,var(--ui-border-strong))}
 .project-script-row[data-line-type="background"]{background:var(--ui-surface-subtle);color:var(--ui-content-muted)}
 .project-script-row[data-line-type="direction"]{border-left:2px solid var(--ui-border-strong)}
+.project-script-row[data-line-type="background"] .project-script-text,
+.project-script-row[data-line-type="direction"] .project-script-text,
+.project-script-preview-row[data-line-type="background"] .project-script-preview-content,
+.project-script-preview-row[data-line-type="direction"] .project-script-preview-content{color:var(--ui-content-muted)}
 .project-script-line-meta{display:flex;align-items:center;gap:7px;margin-bottom:4px}
 .project-script-row-number{font-size:var(--fs-xs);color:var(--ui-content-muted)}
 .project-script-row-label{color:var(--ui-content-muted);font-size:var(--fs-xs);font-weight:400}
@@ -849,14 +853,20 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   background:var(--ui-field-bg);color:var(--ui-field-fg);font:inherit;font-size:var(--fs-xs)
 }
 .project-script-type{grid-column:1;width:100%}
-.project-script-picker{
-  position:relative;grid-column:2;display:block;min-width:0;min-height:34px;padding:7px 20px 7px 8px;
-  border:1px solid var(--ui-field-border);border-radius:8px;background:var(--ui-field-bg);
-  color:var(--ui-field-fg);font-size:var(--fs-xs)
+.project-script-picker{position:relative;grid-column:2;min-width:0}
+.project-script-row-tools .project-script-picker .project-script-picker-toggle{
+  position:relative;display:block;width:100%;min-width:0;text-align:left;
+  padding:0 20px 0 8px;background:var(--ui-field-bg);color:var(--ui-field-fg)
 }
-.project-script-picker::after{content:"⌄";position:absolute;right:7px;top:5px;pointer-events:none}
+.project-script-picker-toggle::after{content:"⌄";position:absolute;right:7px;top:5px;pointer-events:none}
 .project-script-picker-label{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.project-script-picker select{position:absolute;inset:0;width:100%;height:100%;opacity:.01;cursor:pointer}
+.project-script-picker-menu{
+  position:absolute;z-index:8;top:calc(100% + 4px);left:0;display:grid;gap:2px;
+  width:min(220px,calc(100vw - 80px));max-height:220px;overflow-y:auto;padding:5px;
+  border:1px solid var(--ui-chrome-border);border-radius:9px;background:var(--ui-chrome-bg);box-shadow:var(--popup-shadow)
+}
+.project-script-picker-menu[hidden]{display:none}
+.project-script-row-tools .project-script-picker-menu button{display:block;width:100%;text-align:left;white-space:normal;border:0;background:transparent}
 .project-script-row-tools button,.project-script-divider-edit button{
   min-height:34px;padding:0 9px;border:1px solid var(--ui-control-neutral-border);border-radius:8px;
   background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font:inherit;font-size:var(--fs-xs)
@@ -877,11 +887,14 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   padding:13px 12px;border-bottom:1px solid var(--ui-border-default);text-align:center
 }
 .project-script-divider-rule{height:2px;background:var(--ui-border-strong)}
-.project-script-divider[data-line-type="cut"] .project-script-divider-rule{height:0;border-top:1px dashed var(--ui-border-strong);background:transparent}
+.project-script-divider[data-line-type="cut"]{padding-block:3px}
+.project-script-divider[data-line-type="cut"] .project-script-divider-rule{height:0;border-top:1px dashed var(--ui-border-default);background:transparent}
 .project-script-divider-label{
   max-width:60vw;padding:4px 7px;border:0;border-radius:6px;background:transparent;color:var(--ui-content-default);
   font:inherit;font-size:var(--fs-xs);font-weight:700;overflow-wrap:anywhere
 }
+.project-script-divider[data-line-type="page"] .project-script-divider-label{color:var(--ui-content-default)}
+.project-script-divider[data-line-type="cut"] .project-script-divider-label{padding-block:2px;color:var(--ui-content-muted);font-weight:400}
 .project-script-divider[data-line-type="page"]{background:var(--ui-surface-subtle)}
 .project-script-divider-edit{grid-column:1/-1;display:none;grid-template-columns:minmax(0,1fr) auto;gap:7px}
 .project-script-divider.editing .project-script-divider-edit{display:grid}
@@ -893,15 +906,20 @@ body.block-editor-open .mobile-bottom-nav{display:none}
   background:var(--ui-chrome-bg);box-shadow:var(--popup-shadow)
 }
 .project-block-script-add button{
-  flex:1;min-height:40px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 13px;
+  flex:1;min-width:0;min-height:40px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 8px;
   border:1px solid var(--ui-control-neutral-border);border-radius:9px;
-  background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font:inherit;font-size:var(--fs-sm);font-weight:700
+  background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font:inherit;font-size:var(--fs-xs);font-weight:700;white-space:nowrap
 }
 .project-block-script-add button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
 .project-block-script-add button svg{width:16px;height:16px}
-.project-block-script-add select{
-  min-width:108px;max-width:44%;padding:0 6px;border:1px solid var(--ui-field-border);border-radius:9px;
-  background:var(--ui-field-bg);color:var(--ui-field-fg);font:inherit;font-size:var(--fs-xs)
+.project-block-script-type-menu{
+  position:absolute;z-index:6;right:0;bottom:calc(100% + 6px);display:grid;gap:2px;
+  min-width:160px;max-height:240px;overflow-y:auto;padding:5px;
+  border:1px solid var(--ui-chrome-border);border-radius:10px;background:var(--ui-chrome-bg);box-shadow:var(--popup-shadow)
+}
+.project-block-script-type-menu[hidden]{display:none}
+.project-block-script-type-menu button{
+  width:100%;min-height:38px;justify-content:flex-start;padding:0 10px;border:0;background:transparent;text-align:left
 }
 .project-block-script-section.preview .project-block-script-add{display:none}
 .project-script-preview-row:not(.project-script-divider){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:10px}

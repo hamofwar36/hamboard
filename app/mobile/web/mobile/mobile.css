@@ -838,16 +838,16 @@ body.block-editor-open .mobile-bottom-nav{display:none}
 .project-script-speaker-input{min-height:28px;color:var(--dialogue-color,var(--ui-content-default));font-weight:700}
 .project-script-text{min-height:34px;resize:none;line-height:1.6;overflow:hidden}
 .project-script-row-tools{
-  display:none;position:relative;grid-template-columns:58px minmax(0,1fr) max-content 34px;
+  display:none;position:relative;grid-template-columns:70px minmax(0,1fr) max-content 34px;
   align-items:center;gap:5px;min-width:0;margin-top:8px;padding-top:8px;border-top:1px dashed var(--ui-border-default)
 }
 .project-script-row.active .project-script-row-tools{display:grid}
-.project-script-row-tools select,.project-script-divider-edit input{
+.project-script-divider-edit input{
   min-width:0;min-height:34px;padding:5px 8px;border:1px solid var(--ui-field-border);border-radius:8px;
   background:var(--ui-field-bg);color:var(--ui-field-fg);font:inherit;font-size:var(--fs-xs)
 }
-.project-script-type{grid-column:1;width:100%}
 .project-script-picker{position:relative;grid-column:2;min-width:0}
+.project-script-type-picker{grid-column:1}
 .project-script-row-tools .project-script-picker .project-script-picker-toggle{
   position:relative;display:block;width:100%;min-width:0;text-align:left;
   padding:0 20px 0 8px;background:var(--ui-field-bg);color:var(--ui-field-fg)

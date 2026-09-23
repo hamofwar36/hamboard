@@ -1772,9 +1772,11 @@
 
   function mobileScriptPicker(kind,label,options){
     const picker=element("div","project-script-picker");
+    picker.dataset.scriptPicker=kind;
+    if(kind==="type")picker.classList.add("project-script-type-picker");
     const toggle=element("button","project-script-picker-toggle");
     toggle.type="button";toggle.dataset.scriptAction="picker";
-    toggle.setAttribute("aria-label",kind==="character"?"작품 캐릭터 선택":"연출 프리셋 선택");
+    toggle.setAttribute("aria-label",kind==="type"?"줄 유형 변경":kind==="character"?"작품 캐릭터 선택":"연출 프리셋 선택");
     toggle.setAttribute("aria-expanded","false");
     toggle.append(element("span","project-script-picker-label",label));
     const menu=element("div","project-script-picker-menu");
@@ -1851,14 +1853,7 @@
       }
       if(!preview){
         const tools=element("div","project-script-row-tools");
-        const type=element("select","project-script-type");
-        type.dataset.scriptField="type";
-        type.setAttribute("aria-label",(index+1)+"번째 줄 유형 변경");
-        Object.entries(MOBILE_SCRIPT_TYPES).forEach(([key,label])=>{
-          const option=element("option","",label);option.value=key;type.append(option)
-        });
-        type.value=MOBILE_SCRIPT_TYPES[line.type]?line.type:"narration";
-        tools.append(type);
+        tools.append(mobileScriptPicker("type",MOBILE_SCRIPT_TYPES[line.type]||"지문",Object.entries(MOBILE_SCRIPT_TYPES)));
         if(line.type==="dialogue"&&characters.length){
           const selected=characters.find(item=>String(item.id)===String(line.characterId||""))||matchMobileScriptCharacter(line.speaker,characters);
           tools.append(mobileScriptPicker("character",selected?.name||"캐릭터 선택",characters.map(item=>[item.id,String(item.name||"이름 없음")])))
@@ -3781,7 +3776,7 @@
       line.text=event.target.value;
       resizeMobileScriptText(event.target);
       if(line.type==="direction"){
-        const label=row.querySelector(".project-script-picker-label");
+        const label=row.querySelector('[data-script-picker="shot"] .project-script-picker-label');
         if(label)label.textContent=MOBILE_SHOT_PRESETS.includes(line.text)?line.text:"연출 선택"
       }
     }else if(event.target.dataset.scriptField==="divider-text"){
@@ -3794,7 +3789,7 @@
       line.characterId=String(character?.id||"");
       if(character?.color)row.style.setProperty("--dialogue-color",safeColor(character.color,"#6A6E78"));
       else row.style.removeProperty("--dialogue-color");
-      const label=row.querySelector(".project-script-picker-label");
+      const label=row.querySelector('[data-script-picker="character"] .project-script-picker-label');
       if(label)label.textContent=character?.name||"캐릭터 선택"
     }else return;
     scheduleMobileGeneralBlockSave()
@@ -3802,25 +3797,6 @@
   blockEditorScriptRows.addEventListener("focusin",event=>{
     const row=event.target.closest("[data-line-id]");
     if(row)selectMobileScriptRow(row.dataset.lineId)
-  });
-  blockEditorScriptRows.addEventListener("change",event=>{
-    const row=event.target.closest("[data-line-id]"),edit=activeBlockEditor;
-    if(edit?.type!=="script"||!row)return;
-    const line=edit.scriptBlocks.find(item=>String(item.id)===row.dataset.lineId),field=event.target.dataset.scriptField;
-    if(!line)return;
-    if(field==="type"){
-      const next=MOBILE_SCRIPT_TYPES[event.target.value]?event.target.value:"narration";
-      if(next===line.type)return;
-      if((line.type==="page"||line.type==="cut")&&line.autoLabel===true)line.text="";
-      line.type=next;
-      if(next!=="dialogue"){line.speaker="";line.characterId=""}
-      line.background="";line.shot="";
-      if(next==="page"||next==="cut"){line.autoLabel=true;line.text=""}
-      else delete line.autoLabel;
-      renumberMobileScriptLines();
-      renderMobileScriptRows(line.id)
-    }else return;
-    scheduleMobileGeneralBlockSave()
   });
   blockEditorScriptRows.addEventListener("click",event=>{
     const edit=activeBlockEditor,row=event.target.closest("[data-line-id]");
@@ -3830,7 +3806,25 @@
     if(choice){
       const line=edit.scriptBlocks.find(item=>String(item.id)===row.dataset.lineId);
       if(!line)return;
-      if(choice.dataset.scriptChoice==="character"){
+      if(choice.dataset.scriptChoice==="type"){
+        const next=choice.dataset.scriptValue;
+        if(!MOBILE_SCRIPT_TYPES[next])return;
+        if(next!==line.type){
+          if((line.type==="page"||line.type==="cut")&&line.autoLabel===true)line.text="";
+          line.type=next;
+          if(next!=="dialogue"){line.speaker="";line.characterId=""}
+          line.background="";line.shot="";
+          if(next==="page"||next==="cut"){line.autoLabel=true;line.text=""}
+          else delete line.autoLabel;
+          renumberMobileScriptLines();
+          renderMobileScriptRows(line.id);
+          scheduleMobileGeneralBlockSave()
+        }else{
+          choice.parentElement.hidden=true;
+          choice.closest(".project-script-picker").querySelector('[data-script-action="picker"]').setAttribute("aria-expanded","false")
+        }
+        return
+      }else if(choice.dataset.scriptChoice==="character"){
         const character=mobileScriptCharacters().find(item=>String(item.id)===choice.dataset.scriptValue);
         if(!character)return;
         line.characterId=String(character.id);

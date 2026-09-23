@@ -11,13 +11,13 @@
 <body>
   <header class="site-header">
     <div class="wrap header-inner">
-      <a class="brand" href="./"><img src="./hamboard.svg" alt="햄보드" width="30" height="30">
-
+      <a class="brand" href="./">
+        <img src="./hamboard.svg" alt="" width="30" height="30">
         햄보드
       </a>
-      <nav class="nav">
-          <a href="./">홈</a>
-        <a class="active" href="./privacy.html">개인정보처리방침</a>
+      <nav class="nav" aria-label="사이트 안내">
+        <a href="./">홈</a>
+        <a class="active" aria-current="page" href="./privacy.html">개인정보처리방침</a>
         <a href="./terms.html">이용약관</a>
       </nav>
     </div>
@@ -25,31 +25,29 @@
 
   <main class="wrap legal">
     <h1>개인정보처리방침</h1>
-    <p class="date">최종 수정일: 2026년 9월 11일</p>
+    <p class="date">최종 수정일: 2026년 9월 23일</p>
 
+    <div class="postit sky">
+      <p>햄보드는 별도의 서버를 운영하지 않으며, 사용자의 개인정보나 작성한 데이터를 수집하지 않습니다. 모든 데이터는 사용자의 기기에 저장됩니다.</p>
+    </div>
+
+    <h2>Google Drive 백업과 동기화</h2>
+    <ul>
+      <li>사용자가 Google 계정을 직접 연결한 경우에만 사용됩니다.</li>
+      <li>Google Drive의 햄보드 전용 공간(drive.appdata)만 사용하며, 다른 Drive 파일에는 접근하지 않습니다.</li>
+      <li>이 공간에는 백업과 기기 간 동기화를 위한 햄보드 데이터만 저장됩니다. 전송은 사용자의 기기와 Google 사이에서 직접 이루어집니다.</li>
+      <li>설정에서 언제든 연결을 해제할 수 있고, 저장된 데이터는 앱의 백업 삭제 또는 Google Drive 설정의 앱 관리에서 지울 수 있습니다.</li>
+    </ul>
     <p>
-      햄보드의 데이터는 기본적으로 사용자의 기기에 저장됩니다.
-      햄보드는 별도의 자체 서버에 사용자의 문서나 백업 데이터를 수집하지 않습니다.
+      Google 사용자 데이터는 백업과 동기화에만 사용하며, 다른 목적으로 사용하거나 제3자에게 제공하지 않습니다.
+      햄보드의 Google API 사용은 <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener noreferrer">Google API Services User Data Policy</a>의 제한적 사용(Limited Use) 요구사항을 따릅니다.
     </p>
 
-    <p>
-      Google Drive 백업은 사용자가 직접 Google 계정을 연결한 경우에만 사용됩니다.
-      햄보드는 Google Drive의 앱 전용 저장 공간에 백업을 저장하고,
-      백업 목록을 확인하고, 사용자가 선택한 백업을 복원합니다.
-      사용자의 일반 Google Drive 파일에는 접근하지 않습니다.
-    </p>
+    <h2>외부 서비스 접속</h2>
+    <p>업데이트 확인, 공지, BGM 팩, 공휴일 표시, 사전 검색 기능은 GitHub, 네이버 사전 등 외부 서비스에 접속합니다. 이때 작성한 문서 내용은 전송되지 않으며, 사전 검색은 사용자가 선택한 단어만 전달됩니다.</p>
 
-    <p>
-      Google 계정 연결과 백업 처리는 사용자의 기기에서 Google과 직접 통신하여 이루어집니다.
-      햄보드는 Google 계정 정보나 백업 데이터를 전혀 수집하지 않습니다.
-    </p>
-
-    <p>
-      Google API를 통한 데이터 처리는
-      <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener noreferrer">
-        Google API Services User Data Policy
-      </a>를 따릅니다.
-    </p>
+    <h2>변경</h2>
+    <p>이 방침이 바뀌면 이 페이지에 수정일과 함께 알립니다.</p>
 
     <p class="contact">문의: verysoftbd@gmail.com</p>
   </main>

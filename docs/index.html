@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="햄보드 — 만화·글 원고 작업을 위한 개인 제작 창작 보조 데스크톱 앱">
-  <title>햄보드 · Hamboard</title>
+  <meta name="description" content="햄보드 — 만화·글 원고 작업을 위한 창작 보조 데스크톱 앱">
+  <meta property="og:title" content="햄보드">
+  <meta property="og:description" content="만화·글 원고 작업을 위한 창작 보조 데스크톱 앱">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://hamboard.net/">
+  <title>햄보드</title>
   <link rel="icon" type="image/x-icon" href="./hamboard.ico">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -12,120 +16,154 @@
   <header class="site-header">
     <div class="wrap header-inner">
       <a class="brand" href="./">
-<img src="./hamboard.svg" alt="햄보드" width="30" height="30">
+        <img src="./hamboard.svg" alt="" width="30" height="30">
         햄보드
       </a>
-      <nav class="nav">
-        <a href="./">홈</a>
+      <nav class="nav" aria-label="사이트 안내">
+        <a class="active" aria-current="page" href="./">홈</a>
         <a href="./privacy.html">개인정보처리방침</a>
         <a href="./terms.html">이용약관</a>
       </nav>
     </div>
   </header>
 
-  <main>
+  <main id="main">
+
+    <!--
+      스크린샷: docs 폴더에 있는 이미지 파일을 그대로 사용합니다.
+      main.png(첫 화면) · jakpum.png(작품) · mindmap.png(마인드맵) · note.png(노트) · widget.png(캘린더·퀵메모·캐릭터) · utilty.png(유틸리티)
+      같은 이름으로 파일만 바꿔 올리면 페이지에도 바로 반영됩니다.
+    -->
+
+    <!-- ============ 첫 화면 ============ -->
     <section class="hero wrap">
       <div class="hero-copy">
-          <p class="badge">개인 제작 · 무료 배포</p>
-          <h1>햄보드</h1>
-          <div class="lead">만화 · 글 원고 작업을 위한 창작 보조 데스크톱 앱</div>
-          <div class="actions">
-            <a class="button primary" href="https://github.com/hamofwar36/hamboard/releases/latest/download/hamboard_setup.exe">
-             다운로드
-            </a>
-          </div>
+        <p class="badge">개인 제작 · 무료 배포</p>
+        <h1>햄보드</h1>
+        <p class="lead">만화 · 글 원고 작업을 위한<br>창작 보조 데스크톱 앱</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/hamofwar36/hamboard/releases/latest/download/hamboard_setup.exe">Windows용 다운로드</a>
+          <p class="download-meta">
+            자동 업데이트 지원
+            <span class="release-version" data-release-version hidden></span>
+          </p>
+        </div>
+      </div>
+
+      <figure class="shot shot-hero" data-shot="home">
+          <img src="./main.png" alt="햄보드 홈 화면: 작품 카드와 캘린더·작업 기록·D-day·퀵메모 위젯" width="1400" height="915" fetchpriority="high" decoding="async">
+        </figure>
+    </section>
+
+    <!-- ============ 세 가지 문서 ============ -->
+    <section class="wrap section" id="documents">
+      <h2 class="section-title">세 가지 문서</h2>
+
+      <article class="doc-row">
+        <div class="postit sky">
+          <h3>작품</h3>
+          <p>파트로 큰 흐름을 나누고, 블록에 장면을 정리하여 쌓아 갑니다. 줄거리가 한 눈에 보입니다.</p>
+          <p class="tags"><span>#글 콘티</span><span>#계층형 구조</span><span>#단편/장편 지원</span></p>
+        </div>
+        <figure class="shot" data-shot="board">
+          <img src="./jakpum.png" alt="작품 보드: 기승전결 파트에 블록을 정리한 화면" width="1400" height="915" loading="lazy" decoding="async">
+        </figure>
+      </article>
+
+      <article class="doc-row reverse">
+        <div class="postit pink">
+          <h3>마인드맵</h3>
+          <p>인물 관계와 사건 흐름을 자유롭게 펼쳐놓거나, 레퍼런스 보드로 쓸 수 있습니다.</p>
+          <p class="tags"><span>#브레인 스토밍</span><span>#레퍼런스 창</span><span>#무궁무진한 활용성</span></p>
+        </div>
+        <figure class="shot" data-shot="mindmap">
+          <img src="./mindmap.png" alt="마인드맵: 인물과 장소를 그룹으로 묶고 관계선으로 연결한 화면" width="1400" height="915" loading="lazy" decoding="async">
+        </figure>
+      </article>
+
+      <article class="doc-row">
+        <div class="postit sky">
+          <h3>노트</h3>
+          <p>소설 원고나 설정 같은 줄글을 씁니다. 글을 쓸 때 필요한 서식을 모두 갖췄습니다.</p>
+          <p class="tags"><span>#맞춤법 교정 도우미</span><span>#사전 기능</span><span>#다양한 내보내기 지원</span></p>
+        </div>
+        <figure class="shot" data-shot="note">
+          <img src="./note.png" alt="노트: 서식과 접기를 사용한 세계관 문서 편집 화면" width="1400" height="915" loading="lazy" decoding="async">
+        </figure>
+      </article>
+    </section>
+
+    <!-- ============ 캘린더 · 퀵메모 · 캐릭터 (앱 사이드바 항목) ============ -->
+    <section class="wrap section" id="sidebar-tools">
+      <h2 class="section-title">캘린더 · 퀵메모 · 캐릭터</h2>
+
+      <article class="doc-row reverse">
+        <div class="stack">
+          <div class="postit sky"><h3>캘린더</h3><p>일정을 자유롭게 편집해보세요. 작품과 연결도 가능하고, 바탕화면 위젯으로 사용할 수도 있습니다.</p></div>
+          <div class="postit pink"><h3>퀵메모</h3><p>빈 곳을 우클릭해 바로 메모하고, 화면에 붙여 둡니다. 바탕화면 위젯으로 사용할 수도 있습니다.</p></div>
+          <div class="postit sky"><h3>캐릭터 저장소</h3><p>여러 작품에 나오는 캐릭터를 한곳에서 관리합니다.</p></div>
+        </div>
+        <figure class="shot" data-shot="calendar">
+          <img src="./widget.png" alt="바탕화면에 띄운 캘린더 위젯과 퀵메모 위젯, 캐릭터 저장소" width="1400" height="915" loading="lazy" decoding="async">
+        </figure>
+      </article>
+    </section>
+
+    <!-- ============ 작업 도구 (앱의 '유틸리티' 메뉴) ============ -->
+    <section class="wrap section" id="tools">
+      <h2 class="section-title">유틸리티</h2>
+
+      <article class="doc-row reverse">
+        <div class="postit pink">
+          <h3>미니 창</h3>
+          <p>타이머, BGM, 작업 기록, 오늘 일정 등 필요한 유틸리티만 모아 띄워둘 수 있습니다.</p>
+        </div>
+        <figure class="shot" data-shot="mini">
+          <img src="./utility.png" alt="유틸리티: 뽀모도로 타이머와 미니 창, 바탕화면 펫" width="1400" height="915" loading="lazy" decoding="async">
+        </figure>
+      </article>
+
+      <div class="board board-after">
+        <div class="postit sky"><h3>타이머</h3><p>뽀모도로, 스톱워치, 반복 알림</p></div>
+        <div class="postit pink"><h3>BGM</h3><p>작업용 음악과 사운드</p></div>
+        <div class="postit sky"><h3>작업 기록</h3><p>그림·글 프로그램 사용 시간 자동 기록</p></div>
+        <div class="postit pink"><h3>펫</h3><p>바탕화면을 돌아다니는 캐릭터</p></div>
       </div>
     </section>
 
-    <section class="wrap section" id="features">
-      <h2>주요 기능</h2>
+    <!-- ============ 그 밖의 기능 ============ -->
+    <section class="wrap section" id="more">
+      <h2 class="section-title">그 밖의 기능</h2>
 
-      <div class="feature-list">
-        <div>
-          <strong>작품</strong>
-          <p>플롯부터 세부 장면까지 파트와 블록을 이용해 계층형으로 정리합니다.</p>
-        </div>
-        <div>
-          <strong>마인드맵</strong>
-          <p>인물 관계, 사건 흐름, 세계관과 이미지를 자유롭게 배치하고 연결합니다.</p>
-        </div>
-        <div>
-          <strong>노트</strong>
-          <p>소설이나 설정, 각종 줄글을 작성합니다.</p>
-        </div>
-        <div>
-          <strong>참고 자료 · 캐릭터</strong>
-          <p>이미지와 메모, 캐릭터 프로필과 이미지를 작품과 함께 관리합니다.</p>
-        </div>
-        <div>
-          <strong>내부 링크</strong>
-          <p><code>[[ ]]</code> 내부 링크와 태그 등을 이용해 자료끼리 연결하고 바로 열어볼 수 있습니다.</p>
-        </div>
-        <div>
-          <strong>작업 도구</strong>
-          <p>캘린더, 타이머, 스톱워치, 뽀모도로, 작업 기록과 퀵메모 등 각종 작업 도구들도 사용할 수 있습니다.</p>
-        </div>
+      <div class="board cols-3">
+        <div class="postit sky"><h3><code>[[ ]]</code> 링크</h3><p>문서끼리 자유롭게 연결할 수 있습니다.</p></div>
+        <div class="postit pink"><h3>태그 · 전체 검색</h3><p>태그를 사용해 같은 태그끼리 모아 봅니다.</p></div>
+        <div class="postit sky"><h3>분할 화면</h3><p>두 문서를 나란히 열어 동시에 편집합니다.</p></div>
+        <div class="postit pink"><h3>홈 위젯</h3><p>최근 문서와 위젯을 홈 화면에서 한번에 확인합니다.</p></div>
+        <div class="postit sky"><h3>내보내기</h3><p>각종 문서를 다양한 방식으로 내보낼 수 있습니다.</p></div>
+        <div class="postit pink"><h3>테마</h3><p>열 가지 색 조합과 다크 모드, 접근성 고대비 모드까지.</p></div>
       </div>
     </section>
 
-    <section class="wrap section compact">
-      <h2>문서 사용</h2>
+    <!-- ============ 데이터 ============ -->
+    <section class="wrap section" id="data">
+      <h2 class="section-title">데이터와 백업</h2>
 
-      <div class="text-block">
-        <h3>작품</h3>
-        <p>
-          <b>파트</b>로 큰 흐름을 나누고, <b>일반 블록</b>으로 사건과 장면을 계층형으로 정리할 수 있습니다.
-          <b>스크립트 블록</b>에서는 지문, 대사, 연출, 페이지, 컷을 구분해 작성합니다.
-        </p>
-      </div>
+      <div class="board cols-2">
+        <div class="postit sky"><h3>내 PC에 저장</h3><p>작성한 데이터는 기본적으로 자신의 PC에 저장됩니다.</p></div>
+        <div class="postit pink"><h3>Google Drive</h3><p>구글로 연결해 백업하고 여러 PC와 모바일 환경에서 동기화합니다.</p></div>
+       </div>
 
-      <div class="text-block">
-        <h3>마인드맵</h3>
-        <p>
-          노드와 이미지를 자유롭게 배치하고 연결하며 브레인 스토밍을 할 수 있습니다.
-          또는 레퍼런스 보드로서 사용할 수도 있습니다.
-        </p>
-      </div>
-
-      <div class="text-block">
-        <h3>노트</h3>
-        <p>
-          자유롭게 글을 작성하고 HTML / Markdown으로 내보낼 수 있습니다.
-          기본적인 줄글 작성 기능과 함께 각종 서식, 맞춤법 교정 도우미, 글자 수 세기 등이 가능합니다.
-        </p>
-      </div>
+      <p class="section-foot"><a href="./privacy.html">개인정보처리방침 보기</a></p>
     </section>
 
-    <section class="wrap section compact">
-      <h2>그 밖의 기능</h2>
-      <ul class="plain-list">
-        <li><b>캘린더</b> — 일정, 반복 일정, D-day, 작품 연결, 일정 미리 알림</li>
-        <li><b>캐릭터 저장소</b> — 여러 작품에서 공통으로 쓰는 캐릭터 관리</li>
-        <li><b>참고 자료</b> — 이미지와 메모를 카드 형태로 관리하고 작업 중 따로 띄워 보기</li>
-        <li><b>퀵메모</b> — 어디서나 빠르게 메모하고 고정</li>
-        <li><b>타이머</b> — 일반 / 반복 타이머, 스톱워치, 뽀모도로</li>
-        <li><b>작업 기록</b> — 등록한 프로그램의 작업 시간 측정 및 PIP</li>
-        <li><b>펫</b> — 화면 위를 돌아다니거나 고정할 수 있는 데스크톱 펫</li>
-        <li><b>사전</b> — 문서에서 단어를 선택한 뒤 우클릭해 바로 검색</li>
-        <li><b>홈</b> — 자주 쓰는 문서와 유틸리티를 위젯으로 배치</li>
-        <li><b>기타</b> — 태그 기능, 분할 화면 기능 등 다양한 편의 기능이 있습니다.</li>
-      </ul>
-    </section>
-
-    <section class="wrap note">
-      <h2>데이터와 백업</h2>
-      <p>
-        작성한 데이터는 기본적으로 내 PC에 저장됩니다.
-        로컬 백업을 만들 수 있고, 원하는 경우 Google 계정을 연결해 Google Drive에 클라우드 백업할 수 있습니다.
-      </p>
-      <a href="./privacy.html">Google Drive 데이터 처리 방식 보기</a>
-    </section>
-
-    <section class="wrap closing">
-      <p>🐹 햄보드는 혼자 조금씩 만들어가고 있는 앱입니다.</p>
+    <!-- ============ 마무리 ============ -->
+    <section class="wrap closing" id="download">
+      <img class="closing-mark" src="./hamboard.svg" alt="" width="56" height="56">
+      <p>햄보드는 혼자 조금씩 만들어가고 있는 앱입니다.</p>
       <p>불편한 점이나 원하는 기능이 있다면 의견을 남겨주세요.</p>
-      <p class="small">이 프로그램은 바이브코딩으로 만들어졌습니다.</p>
       <div class="actions">
+        <a class="button primary" href="https://github.com/hamofwar36/hamboard/releases/latest/download/hamboard_setup.exe">Windows용 다운로드</a>
         <a class="button" href="https://naver.me/GQGfA3U0">의견 내기</a>
       </div>
     </section>
@@ -138,5 +176,21 @@
       <a href="./terms.html">이용약관</a>
     </div>
   </footer>
+
+  <script>
+    // 최신 버전 표시: 불러오지 못하면 아무것도 표시하지 않습니다.
+    (function () {
+      var targets = document.querySelectorAll("[data-release-version]");
+      if (!targets.length || !window.fetch) return;
+      fetch("https://api.github.com/repos/hamofwar36/hamboard/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var tag = data && data.tag_name ? String(data.tag_name).replace(/^v/i, "") : "";
+          if (!/^\d+(\.\d+)*$/.test(tag)) return;
+          targets.forEach(function (el) { el.textContent = "최신 버전 " + tag; el.hidden = false; });
+        })
+        .catch(function () {});
+    })();
+  </script>
 </body>
 </html>

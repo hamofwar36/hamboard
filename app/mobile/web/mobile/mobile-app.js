@@ -244,6 +244,43 @@
     return {stageDefs,stages}
   }
 
+  function moveMobileStoryItem(state,move){
+    const project=(state.projects||[]).find(item=>String(item?.id||"")===move.projectId);
+    if(!project)return false;
+    const unit=project.kind==="long"?(project.episodes||[]).find(item=>String(item?.id||"")===move.episodeId):project;
+    const insert=(source,destination,from,to)=>{
+      if(from<0||from>=source.length||to<0||to>destination.length)return false;
+      const index=source===destination&&from<to?to-1:to;
+      if(source===destination&&from===index)return false;
+      destination.splice(index,0,source.splice(from,1)[0]);
+      return true
+    };
+    let changed=false;
+    if(move.kind==="episode"){
+      if(project.kind!=="long")return false;
+      const list=project.episodes||[],from=list.findIndex(item=>String(item?.id||"")===move.sourceId),target=list.findIndex(item=>String(item?.id||"")===move.targetId);
+      if(target<0)return false;
+      const defaultTitles=new Set(list.filter((item,index)=>String(item?.title||"")===`${index+1}화`).map(item=>String(item.id)));
+      changed=insert(list,list,from,target+(move.after?1:0));
+      if(changed)list.forEach((item,index)=>{if(defaultTitles.has(String(item.id)))item.title=`${index+1}화`})
+    }else if(move.kind==="stage"){
+      if(!unit)return false;
+      const list=unit.stageDefs||[],from=list.findIndex(item=>String(item?.id||"")===move.sourceId),target=list.findIndex(item=>String(item?.id||"")===move.targetId);
+      if(target<0)return false;
+      changed=insert(list,list,from,target+(move.after?1:0))
+    }else if(move.kind==="block"){
+      if(!unit||!unit.stages||typeof unit.stages!=="object")return false;
+      const source=unit.stages[move.sourceStageId],destination=unit.stages[move.targetStageId];
+      if(!Array.isArray(source)||!Array.isArray(destination))return false;
+      const from=move.sourceId?source.findIndex(item=>String(item?.id||"")===move.sourceId):move.sourceIndex;
+      const target=move.targetId?destination.findIndex(item=>String(item?.id||"")===move.targetId):move.targetIndex;
+      if(target<0)return false;
+      changed=insert(source,destination,from,target+(move.after?1:0))
+    }
+    if(changed)project.updatedAt=new Date().toISOString();
+    return changed
+  }
+
   function orderedFolders(state=snapshot()){
     const folders=Array.isArray(state?.folders)?state.folders:[],children=new Map(),roots=[],seen=new Set();
     for(const folder of folders){
@@ -1127,6 +1164,7 @@
   function blockElement(block,{compact=false,stageId="",blockIndex=-1}={}){
     const editable=Boolean(stageId);
     const card=element("article","block-card"+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
+    if(editable){card.dataset.stageId=String(stageId);card.dataset.blockId=String(block.id||"");card.dataset.blockIndex=String(blockIndex)}
     const titleText=String(block.title||"").trim();
     if(editable){
       card.setAttribute("role","button");
@@ -2137,6 +2175,8 @@
     const carousel=element("div","stage-carousel"),sections=[];
     for(const stage of stageDefs){
       const section=element("section","stage-section"),stageHead=element("header","stage-heading"),stripe=element("span","stage-color"),copy=element("div",""),stageColor=safeColor(stage.color,"#A9D6FF");
+      section.dataset.stageId=String(stage.id);
+      stageHead.dataset.stageId=String(stage.id);
       section.style.setProperty("--stage-color",stageColor);
       stripe.style.setProperty("--stage-color",stageColor);
       copy.append(element("h4","",stage.name||"파트"));
@@ -2395,6 +2435,7 @@
         const showCompletion=snapshot().settings?.completionEnabled!==false;
         list.forEach((episode,index)=>{
           const card=element("article","episode-button");
+          card.dataset.episodeId=String(episode.id);
           const episodeColor=safeColor(episode.color,"#A9D6FF"),cardInk=cardForeground(episodeColor);
           card.style.setProperty("--card-color",episodeColor);
           card.style.setProperty("--custom-on",cardInk);
@@ -2448,6 +2489,185 @@
     activeEpisodeId="";
     renderUnit(project,0,{showHeading:false,compactBlocks:true})
   }
+
+  // Long-press sorting keeps scrolling and ordinary taps available until the hold completes.
+  let mobileSort=null,mobileSortBusy=false,suppressSortClickUntil=0;
+  function mobileSortSource(target){
+    if(!(target instanceof Element)||target.closest(".episode-card-menu,.stage-edit-button,input,textarea,[contenteditable]"))return null;
+    const episode=target.closest(".episode-button");
+    if(episode&&projectReaderScreen.contains(episode))return {kind:"episode",element:episode,sourceId:episode.dataset.episodeId};
+    if(target.closest("button"))return null;
+    const heading=target.closest(".stage-heading");
+    if(heading&&projectReaderScreen.contains(heading))return {kind:"stage",element:heading.closest(".stage-section"),sourceId:heading.dataset.stageId};
+    const block=target.closest(".editable-block-card");
+    if(block&&projectReaderScreen.contains(block))return {kind:"block",element:block,sourceId:block.dataset.blockId,sourceIndex:Number(block.dataset.blockIndex),sourceStageId:block.dataset.stageId};
+    return null
+  }
+  function clearMobileSortMarker(sort){
+    sort.markerElement?.classList.remove("mobile-sort-before","mobile-sort-after","mobile-sort-target");
+    sort.markerList?.classList.remove("mobile-sort-before","mobile-sort-after","mobile-sort-empty");
+    sort.markerElement=null;sort.markerList=null;sort.target=null
+  }
+  function closestMobileSortItem(items,x,y){
+    return items.reduce((best,item)=>{
+      const rect=item.getBoundingClientRect(),dx=Math.max(rect.left-x,0,x-rect.right),dy=Math.max(rect.top-y,0,y-rect.bottom),distance=dx*dx+dy*dy;
+      return !best||distance<best.distance?{item,distance}:best
+    },null)?.item||null
+  }
+  function updateMobileSortTarget(sort){
+    clearMobileSortMarker(sort);
+    const {x,y}=sort;
+    if(sort.kind==="episode"){
+      const list=$("#episodeList"),rect=list.getBoundingClientRect();
+      if(x<rect.left-24||x>rect.right+24||y<rect.top-24||y>rect.bottom+24)return;
+      const cards=[...list.querySelectorAll(".episode-button")],card=closestMobileSortItem(cards,x,y);
+      if(!card)return;
+      const bounds=card.getBoundingClientRect(),after=y>bounds.top+bounds.height/2;
+      card.classList.add(after?"mobile-sort-after":"mobile-sort-before");
+      sort.markerElement=card;sort.target={targetId:card.dataset.episodeId,after};
+      return
+    }
+    const carousel=$("#projectContent .stage-carousel");
+    if(!carousel)return;
+    const rect=carousel.getBoundingClientRect();
+    if(x<rect.left-24||x>rect.right+24||y<rect.top-32||y>rect.bottom+32)return;
+    const sections=[...carousel.querySelectorAll(".stage-section")];
+    const under=document.elementFromPoint(x,y)?.closest(".stage-section");
+    const section=under&&carousel.contains(under)?under:closestMobileSortItem(sections,x,y);
+    if(!section)return;
+    const bounds=section.getBoundingClientRect();
+    if(sort.kind==="stage"){
+      const after=x>bounds.left+bounds.width/2;
+      section.classList.add(after?"mobile-sort-after":"mobile-sort-before");
+      sort.markerElement=section;sort.target={targetId:section.dataset.stageId,after};
+      return
+    }
+    const list=section.querySelector(".block-list"),blocks=[...list.querySelectorAll(":scope > .editable-block-card")];
+    const card=closestMobileSortItem(blocks,x,y);
+    section.classList.add("mobile-sort-target");sort.markerElement=section;
+    if(card){
+      const cardRect=card.getBoundingClientRect(),after=y>cardRect.top+cardRect.height/2;
+      card.classList.add(after?"mobile-sort-after":"mobile-sort-before");
+      sort.markerList=card;
+      sort.target={targetStageId:section.dataset.stageId,targetId:card.dataset.blockId,targetIndex:Number(card.dataset.blockIndex),after}
+    }else{
+      list.classList.add("mobile-sort-empty");sort.markerList=list;
+      sort.target={targetStageId:section.dataset.stageId,targetId:"",targetIndex:0,after:false}
+    }
+  }
+  function moveMobileSortPreview(sort){
+    sort.preview.style.left=`${Math.max(8,Math.min(sort.x+12,window.innerWidth-220))}px`;
+    sort.preview.style.top=`${Math.max(8,Math.min(sort.y+12,window.innerHeight-65))}px`;
+    updateMobileSortTarget(sort)
+  }
+  function scrollMobileSort(sort){
+    if(mobileSort!==sort||!sort.active)return;
+    let moved=false;
+    const carousel=$("#projectContent .stage-carousel");
+    if(sort.kind!=="episode"&&carousel){
+      const rect=carousel.getBoundingClientRect();
+      if(sort.y>=rect.top-35&&sort.y<=rect.bottom+35){
+        const speed=sort.x<rect.left+58?-14:sort.x>rect.right-58?14:0;
+        if(speed){const before=carousel.scrollLeft;carousel.scrollLeft+=speed;moved=carousel.scrollLeft!==before}
+      }
+    }
+    const viewport=mobileScroll.getBoundingClientRect(),vertical=sort.y<viewport.top+70?-12:sort.y>viewport.bottom-70?12:0;
+    if(vertical){const before=mobileScroll.scrollTop;mobileScroll.scrollTop+=vertical;moved=mobileScroll.scrollTop!==before||moved}
+    if(moved)updateMobileSortTarget(sort);
+    sort.scrollFrame=requestAnimationFrame(()=>scrollMobileSort(sort))
+  }
+  function activateMobileSort(sort){
+    if(mobileSort!==sort||!sort.element.isConnected)return;
+    sort.active=true;
+    sort.element.classList.add("mobile-sort-source");
+    const preview=element("div","mobile-sort-preview",sort.element.querySelector(".episode-title,.stage-heading h4,.block-head h5")?.textContent?.trim()||sort.element.textContent.trim().slice(0,60)||"블록");
+    preview.setAttribute("aria-hidden","true");sort.preview=preview;
+    document.body.append(preview);
+    document.body.classList.add("mobile-sorting");
+    const carousel=$("#projectContent .stage-carousel");
+    if(carousel&&sort.kind!=="episode"){sort.carousel=carousel;carousel.style.scrollSnapType="none"}
+    moveMobileSortPreview(sort);
+    sort.scrollFrame=requestAnimationFrame(()=>scrollMobileSort(sort))
+  }
+  function cancelMobileSort(){
+    const sort=mobileSort;
+    if(!sort)return;
+    clearTimeout(sort.holdTimer);
+    if(sort.scrollFrame)cancelAnimationFrame(sort.scrollFrame);
+    clearMobileSortMarker(sort);
+    sort.element.classList.remove("mobile-sort-source");
+    sort.preview?.remove();sort.carousel?.style.removeProperty("scroll-snap-type");
+    document.body.classList.remove("mobile-sorting");
+    mobileSort=null
+  }
+  async function finishMobileSort(){
+    const sort=mobileSort;if(!sort)return;
+    const move=sort.active&&sort.target?{
+      ...sort.target,kind:sort.kind,projectId:sort.projectId,episodeId:sort.episodeId,
+      sourceId:sort.sourceId,sourceIndex:sort.sourceIndex,sourceStageId:sort.sourceStageId
+    }:null;
+    if(sort.active)suppressSortClickUntil=Date.now()+250;
+    cancelMobileSort();
+    if(!move||mobileSortBusy||activeDocumentId!==move.projectId||activeEpisodeId!==move.episodeId)return;
+    const state=snapshot();
+    if(!moveMobileStoryItem(state,move))return;
+    mobileSortBusy=true;
+    try{
+      await repository.replaceState(state);
+      const project=(snapshot().projects||[]).find(item=>String(item?.id||"")===move.projectId);
+      if(project&&activeDocumentId===move.projectId)renderProject(project)
+    }catch(error){
+      logDiagnostic("error","REPOSITORY","드래그로 변경한 순서를 저장하지 못했습니다.",error);
+      showSyncToast("순서를 저장하지 못했습니다. 다시 시도해 주세요.")
+    }finally{mobileSortBusy=false}
+  }
+  function beginMobileSort(target,x,y,input,id){
+    if(mobileSortBusy||mobileSort||projectReaderScreen.hidden)return;
+    const source=mobileSortSource(target);
+    if(!source)return;
+    const sort={...source,projectId:String(activeDocumentId||""),episodeId:String(activeEpisodeId||""),input,id,x,y,startX:x,startY:y,active:false};
+    mobileSort=sort;
+    sort.holdTimer=setTimeout(()=>activateMobileSort(sort),380)
+  }
+  function trackMobileSort(x,y,event){
+    const sort=mobileSort;if(!sort)return;
+    sort.x=x;sort.y=y;
+    if(!sort.active){if(Math.hypot(x-sort.startX,y-sort.startY)>9)cancelMobileSort();return}
+    event?.preventDefault();
+    moveMobileSortPreview(sort)
+  }
+  projectReaderScreen.addEventListener("touchstart",event=>{
+    if(event.touches.length!==1)return;
+    const touch=event.changedTouches[0];beginMobileSort(event.target,touch.clientX,touch.clientY,"touch",touch.identifier)
+  },{passive:true});
+  document.addEventListener("touchmove",event=>{
+    const sort=mobileSort;if(!sort||sort.input!=="touch")return;
+    if(event.touches.length!==1){cancelMobileSort();return}
+    const touch=[...event.touches].find(item=>item.identifier===sort.id);
+    if(touch)trackMobileSort(touch.clientX,touch.clientY,event)
+  },{passive:false});
+  document.addEventListener("touchend",event=>{
+    const sort=mobileSort;
+    if(sort?.input==="touch"&&[...event.changedTouches].some(item=>item.identifier===sort.id))finishMobileSort()
+  });
+  document.addEventListener("touchcancel",()=>{if(mobileSort?.input==="touch")cancelMobileSort()});
+  projectReaderScreen.addEventListener("pointerdown",event=>{
+    if(event.pointerType==="touch"||event.button!==0)return;
+    beginMobileSort(event.target,event.clientX,event.clientY,"pointer",event.pointerId)
+  });
+  document.addEventListener("pointermove",event=>{
+    if(mobileSort?.input==="pointer"&&mobileSort.id===event.pointerId)trackMobileSort(event.clientX,event.clientY,event)
+  });
+  document.addEventListener("pointerup",event=>{
+    if(mobileSort?.input==="pointer"&&mobileSort.id===event.pointerId)finishMobileSort()
+  });
+  document.addEventListener("pointercancel",event=>{if(mobileSort?.input==="pointer"&&mobileSort.id===event.pointerId)cancelMobileSort()});
+  projectReaderScreen.addEventListener("click",event=>{
+    if(Date.now()>suppressSortClickUntil)return;
+    event.preventDefault();event.stopImmediatePropagation()
+  },true);
+  projectReaderScreen.addEventListener("contextmenu",event=>{if(mobileSort){event.preventDefault();event.stopPropagation()}});
+  window.addEventListener("blur",cancelMobileSort);
 
   function sanitizedNoteHtml(value){
     const template=document.createElement("template");

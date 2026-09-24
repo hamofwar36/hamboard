@@ -511,6 +511,21 @@ svg.lucide{stroke:currentColor}
 .editable-block-card{cursor:pointer;touch-action:manipulation}
 .editable-block-card:active{background:var(--ui-control-hover-bg)}
 .editable-block-card:focus-visible{outline:0;border-color:var(--ui-field-focus-border)}
+.episode-button,.stage-heading,.editable-block-card{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.mobile-sort-source{opacity:.42}
+body.mobile-sorting{-webkit-user-select:none;user-select:none}
+.mobile-sort-preview{
+  position:fixed;z-index:200;width:max-content;max-width:min(220px,calc(100vw - 32px));
+  padding:10px 14px;border:1px solid var(--ui-control-selected-border);border-radius:12px;
+  background:var(--ui-surface-default);color:var(--ui-content-default);box-shadow:var(--ui-node-shadow);
+  font-size:var(--fs-sm);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none
+}
+.episode-button.mobile-sort-before,.block-card.mobile-sort-before{box-shadow:inset 0 4px var(--primary-base),var(--ui-card-shadow)}
+.episode-button.mobile-sort-after,.block-card.mobile-sort-after{box-shadow:inset 0 -4px var(--primary-base),var(--ui-card-shadow)}
+.stage-section.mobile-sort-before{box-shadow:inset 4px 0 var(--primary-base)}
+.stage-section.mobile-sort-after{box-shadow:inset -4px 0 var(--primary-base)}
+.stage-section.mobile-sort-target{outline:2px solid var(--ui-control-selected-border);outline-offset:-2px}
+.block-list.mobile-sort-empty{min-height:46px;border:2px dashed var(--ui-control-selected-border);border-radius:12px}
 .block-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .block-head h5{margin:0;font-size:var(--fs-sm);font-weight:700;line-height:1.4}
 .complete-badge{

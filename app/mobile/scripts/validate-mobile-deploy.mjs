@@ -14,10 +14,10 @@ check("mobile output contains only deployable root assets",()=>assert.deepEqual(
 
 check("bundled mobile note fonts are deployed and cached",async()=>{
   const fontFiles=(await readdir(resolve(output,"assets/fonts"))).sort();
-  assert.deepEqual(fontFiles,["LICENSE-Pretendard.txt","LICENSE-SourceHanSerif.txt","Pretendard-Bold-subset.woff2","Pretendard-Regular-subset.woff2","SourceHanSerifKR-Bold_subset.woff2","SourceHanSerifKR-Regular_subset.woff2"]);
+  assert.deepEqual(fontFiles,["LICENSE-Pretendard.txt","LICENSE-SourceHanSerif.txt","Pretendard-Bold.woff2","Pretendard-Regular.woff2","SourceHanSerifKR-Bold-fullhangul.woff2","SourceHanSerifKR-Regular-fullhangul.woff2"]);
   assert.match(css,/@font-face\{font-family:"Pretendard"/);
   assert.match(css,/@font-face\{font-family:"Source Han Serif KR"/);
-  for(const font of ["Pretendard-Regular-subset.woff2","Pretendard-Bold-subset.woff2","SourceHanSerifKR-Regular_subset.woff2","SourceHanSerifKR-Bold_subset.woff2"])assert.ok(serviceWorker.includes("/assets/fonts/"+font),font+" should be cached for offline use");
+  for(const font of ["Pretendard-Regular.woff2","Pretendard-Bold.woff2","SourceHanSerifKR-Regular-fullhangul.woff2","SourceHanSerifKR-Bold-fullhangul.woff2"])assert.ok(serviceWorker.includes("/assets/fonts/"+font),font+" should be cached for offline use");
   assert.match(app,/<option value="Pretendard">프리텐다드<\/option>/);
   assert.match(app,/<option value="Source Han Serif KR">본명조<\/option>/);
   assert.match(app,/<option value="system-ui">시스템<\/option>/);

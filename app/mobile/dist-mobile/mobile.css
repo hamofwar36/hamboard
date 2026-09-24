@@ -1,7 +1,7 @@
-@font-face{font-family:"Pretendard";font-style:normal;font-weight:400;font-display:swap;src:local("Pretendard Regular"),url("./assets/fonts/Pretendard-Regular-subset.woff2") format("woff2")}
-@font-face{font-family:"Pretendard";font-style:normal;font-weight:700;font-display:swap;src:local("Pretendard Bold"),url("./assets/fonts/Pretendard-Bold-subset.woff2") format("woff2")}
-@font-face{font-family:"Source Han Serif KR";font-style:normal;font-weight:400;font-display:swap;src:local("Source Han Serif KR Regular"),url("./assets/fonts/SourceHanSerifKR-Regular_subset.woff2") format("woff2")}
-@font-face{font-family:"Source Han Serif KR";font-style:normal;font-weight:700;font-display:swap;src:local("Source Han Serif KR Bold"),url("./assets/fonts/SourceHanSerifKR-Bold_subset.woff2") format("woff2")}
+@font-face{font-family:"Pretendard";font-style:normal;font-weight:400;font-display:swap;src:local("Pretendard Regular"),url("./assets/fonts/Pretendard-Regular.woff2") format("woff2")}
+@font-face{font-family:"Pretendard";font-style:normal;font-weight:700;font-display:swap;src:local("Pretendard Bold"),url("./assets/fonts/Pretendard-Bold.woff2") format("woff2")}
+@font-face{font-family:"Source Han Serif KR";font-style:normal;font-weight:400;font-display:swap;src:local("Source Han Serif KR Regular"),url("./assets/fonts/SourceHanSerifKR-Regular-fullhangul.woff2") format("woff2")}
+@font-face{font-family:"Source Han Serif KR";font-style:normal;font-weight:700;font-display:swap;src:local("Source Han Serif KR Bold"),url("./assets/fonts/SourceHanSerifKR-Bold-fullhangul.woff2") format("woff2")}
 
 :root{
   color-scheme:light;

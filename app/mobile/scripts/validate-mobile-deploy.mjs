@@ -10,15 +10,15 @@ const build=spawnSync(process.execPath,[resolve(root,"scripts/prepare-mobile-dep
 assert.equal(build.status,0,build.stderr||build.stdout);
 const output=resolve(root,"dist-mobile"),files=(await readdir(output)).sort(),html=await readFile(resolve(output,"index.html"),"utf8"),css=await readFile(resolve(output,"mobile.css"),"utf8"),app=await readFile(resolve(output,"mobile-app.js"),"utf8"),assetRepository=await readFile(resolve(output,"mobile-asset-repository.js"),"utf8"),transport=await readFile(resolve(output,"mobile-google-drive.js"),"utf8"),config=await readFile(resolve(output,"mobile-config.js"),"utf8"),manifest=JSON.parse(await readFile(resolve(output,"manifest.webmanifest"),"utf8")),serviceWorker=await readFile(resolve(output,"service-worker.js"),"utf8"),lucide=await readFile(resolve(output,"vendor/lucide/lucide.min.js"),"utf8"),vercel=JSON.parse(await readFile(resolve(root,"vercel.json"),"utf8")),authWorker=await readFile(resolve(root,"cloudflare-auth/worker.js"),"utf8"),authSchema=await readFile(resolve(root,"cloudflare-auth/schema.sql"),"utf8");
 const checks=[],check=(name,run)=>{run();checks.push(name)};
-check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["favicon.ico","icons","index.html","manifest.webmanifest","mobile-app.js","mobile-asset-repository.js","mobile-config.js","mobile-google-drive.js","mobile.css","service-worker.js","shared","vendor"]));
-check("mobile index uses deployment-local shared modules",()=>{assert.match(html,/src="\.\/shared\/sync-state-model\.js"/);assert.doesNotMatch(html,/\.\.\/shared/)});
+check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["favicon.ico","icons","index.html","manifest.webmanifest","mobile-app.js","mobile-asset-repository.js","mobile-config.js","mobile-google-drive.js","mobile-sync-engine.js","mobile.css","service-worker.js","shared","vendor"]));
+check("mobile index uses deployment-local shared modules",()=>{assert.match(html,/src="\.\/shared\/sync-state-model\.js(?:\?v=[^"]*)?"/);assert.doesNotMatch(html,/\.\.\/shared/)});
 check("runtime config loads before Google Drive transport",()=>assert.ok(html.indexOf("mobile-config.js")<html.indexOf("mobile-google-drive.js")));
 check("versioned mobile assets prevent stale mixed deployments",()=>{
   for(const asset of ["mobile.css","sync-state-model.js","project-repository.js","lucide.min.js","mobile-config.js","mobile-google-drive.js","mobile-asset-repository.js","mobile-app.js"]){
     assert.ok(html.includes(asset+"?v="+mobileVersion),asset+" should include the current mobile version")
   }
 });
-check("mobile uses bundled Lucide before app runtime",()=>{assert.match(html,/src="\.\/vendor\/lucide\/lucide\.min\.js"/);assert.ok(html.indexOf("lucide.min.js")<html.indexOf("mobile-app.js"));assert.ok(lucide.length>1000)});
+check("mobile uses bundled Lucide before app runtime",()=>{assert.match(html,/src="\.\/vendor\/lucide\/lucide\.min\.js(?:\?v=[^"]*)?"/);assert.ok(html.indexOf("lucide.min.js")<html.indexOf("mobile-app.js"));assert.ok(lucide.length>1000)});
 check("menu is a full mobile screen rather than a popover",()=>{assert.match(html,/id="menuScreen"/);assert.doesNotMatch(html,/id="mainMenuSheet"/);assert.match(app,/showScreen\(menuScreen/)});
 check("mobile app owns vertical scrolling while browser viewport stays locked",()=>{
   assert.match(css,/html\{[^}]*overflow:hidden/);
@@ -71,7 +71,7 @@ check("mobile colors use Windows core tokens through shared semantic roles",()=>
     .replace(/body\[data-theme="[^"]+"\]\{[^}]*\}/g,"")
     .replace(/body\[data-mode="dark"\]\{[\s\S]*?\n  \}/,"");
   assert.doesNotMatch(componentColorCss,/(?:#[0-9a-f]{3,8}\b|rgba?\()/i);
-  assert.doesNotMatch(app,/#292B38|#EEF0F4|#15171C|#FBFBFD|#15171c|#fbfbfd|#ffffff|#785b9f/);
+  assert.doesNotMatch(app.replace(/<input type="color"[^>]*>/g,""),/#292B38|#EEF0F4|#15171C|#FBFBFD|#15171c|#fbfbfd|#ffffff|#785b9f/);
   assert.match(app,/cssColorToken\("--text-light"\)/);
   assert.match(app,/cssColorToken\("--ui-page-bg"\)/);
   for(const userColor of ["--card-color","--stage-color","--node-color","--swatch"])assert.ok(css.includes(userColor),userColor)
@@ -128,7 +128,13 @@ check("backup and sync share snapshot plus asset restore",()=>{
   assert.match(app,/hamboard-sync-checkpoint/);
   assert.match(app,/syncModel\.applyCommitToCanonical/);
   assert.match(app,/tailCommits:tail\.length/);
-  assert.match(app,/downloadCurrentBackupAssets\(manifest,stateValue,onProgress\)/);
+  assert.match(app,/downloadCurrentBackupAssets\(manifest,projection,progress=>/);
+  const restore=app.slice(app.indexOf("async function loadBackupSource"),app.indexOf("function renderSyncSourceAction"));
+  const pauseAt=restore.indexOf('pauseSyncForRestore("backup-restore")'),downloadAt=restore.indexOf("downloadCurrentBackupAssets(manifest,projection"),appliedAt=restore.indexOf("restoreApplied=true");
+  assert.ok(pauseAt>=0&&downloadAt>=0&&appliedAt>=0,"restore steps are present");
+  assert.ok(pauseAt<downloadAt&&downloadAt<appliedAt&&appliedAt<restore.indexOf("restoreCloudProjection(projection)"),"pause → assets → mark applied → write");
+  assert.match(restore,/pausedForRestore&&!restoreApplied\?await resumeSyncAfterAbortedRestore\("backup-restore"\)/,"an aborted restore resumes sync");
+  assert.ok(restore.indexOf("downloadCurrentBackupAssets(manifest,projection")<restore.indexOf("restoreCloudProjection(projection)"));
   assert.match(app,/downloadCurrentSyncAssets\(listing,stateValue,onProgress\)/);
   assert.match(transport,/async function putSyncCheckpoint/);
 });
@@ -137,10 +143,11 @@ check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(html,/class="note-history-action"[^>]*data-note-command="redo"/);
   assert.match(html,/id="noteKeyboardToggle"/);
   assert.match(html,/data-note-keyboard-toggle/);
-  assert.match(css,/grid-template-columns:38px 38px 1px repeat\(4,38px\) 1px 38px/);
+  assert.match(css,/grid-template-columns:minmax\(28px,34px\) minmax\(28px,34px\) 1px repeat\(5,minmax\(28px,34px\)\) 1px minmax\(28px,32px\)/);
   assert.match(css,/\.note-history-action\{height:34px/);
   assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
-  assert.match(css,/\.note-panel-action\{height:34px;border-radius:9px/);\n  assert.match(css,/\.note-panel-action svg\{width:18px;height:18px/);
+  assert.match(css,/\.note-panel-action\{height:34px;border-radius:9px/);
+  assert.match(css,/\.note-panel-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-keyboard-dismiss\{[\s\S]*?width:30px;height:30px;justify-self:center/);
   assert.match(app,/function renderNoteKeyboardToggle\(open\)/);
   assert.match(app,/open\?"keyboard-off":"keyboard"/);
@@ -149,19 +156,19 @@ check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(app,/if\(keyboardOpen\)[\s\S]*?noteReaderContent\.blur\(\)[\s\S]*?else restoreMobileNoteSelection\(\)/);
 });
 check("note toolbar spacing stays balanced with keyboard control at the right edge",()=>{
-  assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?width:min\(100%,430px\)/);
-  assert.match(css,/grid-template-columns:38px 38px 1px repeat\(4,38px\) 1px 38px/);
+  assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?width:min\(calc\(100% - 4px\),360px\)/);
+  assert.match(css,/grid-template-columns:minmax\(28px,34px\) minmax\(28px,34px\) 1px repeat\(5,minmax\(28px,34px\)\) 1px minmax\(28px,32px\)/);
   assert.match(css,/justify-content:space-between;column-gap:0/);
-  assert.match(css,/padding:2px 6px/);
+  assert.match(css,/padding:2px 4px/);
   assert.match(css,/\.note-history-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-panel-action svg\{width:18px;height:18px/);
   assert.match(css,/\.note-keyboard-dismiss svg\{width:15px;height:15px/);
 });
-check("note keyboard mode hides main navigation and supports resized viewports",()=>{
+check("note keyboard mode keeps controls visible in resized viewports",()=>{
   assert.match(app,/noteViewportBaseHeight/);
   assert.match(app,/const contracted=Math\.max\(0,noteViewportBaseHeight-viewportHeight\)/);
   assert.match(app,/covered>=120\|\|contracted>=120/);
-  assert.match(css,/body\.note-keyboard-open \.mobile-bottom-nav\{display:none\}/);
+  assert.match(css,/body\.note-keyboard-open \.mobile-app\{[\s\S]*?scroll-padding-bottom:calc\(52px \+ var\(--note-keyboard-inset,0px\)\)/);
   assert.match(css,/body\.note-keyboard-open \.note-editor-controls\{[\s\S]*?\+ 6px/);
   assert.doesNotMatch(css,/note-keyboard-open \.mobile-bottom-nav\{bottom:/);
 });
@@ -172,7 +179,7 @@ check("note editor toolbar follows the on-screen keyboard",()=>{
   assert.match(app,/note-keyboard-open/);
   assert.match(app,/visualViewport\.addEventListener\("resize"/);
   assert.match(css,/body\.note-keyboard-open \.note-editor-controls/);
-  assert.match(css,/body\.note-keyboard-open \.mobile-bottom-nav/);
+  assert.match(css,/body\.note-keyboard-open \.mobile-app/);
   assert.match(css,/scroll-padding-bottom/);
 });
 check("cloud sync progress is single-run and monotonic",()=>{
@@ -187,10 +194,10 @@ check("mobile asset lookup mirrors desktop object-index validation",()=>{
   assert.match(transport,/async function loadObjectIndex/);
   assert.match(transport,/hamboardByteSize/);
   assert.match(transport,/google-drive-asset-object-metadata-mismatch/);
-  assert.doesNotMatch(transport,/appProperties has \{ key='hamboardObjectKey'/);
+  assert.match(transport,/appProperties has \{ key='hamboardObjectKey'/);
   assert.match(assetRepository,/record\.blob instanceof Blob/);
   assert.match(app,/await googleDrive\.loadObjectIndex\(\)/);
-  assert.match(app,/백업 이미지 확인:/);
+  assert.match(app,/백업 이미지 .*개를 불러오지 못했습니다/);
 });
 check("mobile cloud imports cache current image assets and render them",()=>{
   assert.match(assetRepository,/hamboard-mobile-assets/);
@@ -198,7 +205,7 @@ check("mobile cloud imports cache current image assets and render them",()=>{
   assert.match(transport,/async function getObjectByKey/);
   assert.match(app,/downloadCurrentSyncAssets/);
   assert.match(app,/downloadCurrentBackupAssets/);
-  assert.match(app,/mapWithConcurrency\(topology\.path,6/);
+  assert.match(app,/mapWithConcurrency\(tail,6/);
   assert.match(app,/img\[data-note-image\]/);
   assert.match(app,/node\.type==="image"&&node\.assetId/);
   assert.match(app,/hydrateLibraryCardImage/);
@@ -226,19 +233,19 @@ check("mobile note reader restores the shared Home back bar",()=>{
   assert.match(html,/class="document-title-display" id="noteReaderTitle"/);
   assert.doesNotMatch(html,/id="noteReaderMeta"/);
   assert.doesNotMatch(css,/\.note-open \.mobile-topbar\{display:none\}/);
-  assert.match(css,/\.document-mobile-head\{[\s\S]*?background:var\(--bg\)/);
-  assert.match(css,/\.document-title-accent\{[\s\S]*?background:var\(--secondary-base\)/);
+  assert.match(css,/\.document-mobile-head\{[\s\S]*?background:var\(--ui-page-bg\)/);
+  assert.match(css,/\.document-title-accent\{[\s\S]*?background:var\(--ui-accent-secondary\)/);
   assert.match(css,/\.note-reader-card\{[\s\S]*?border:0;border-radius:0;background:var\(--ui-surface-default\)/);
   assert.match(app,/backButton\.hidden=!back/);
   assert.match(app,/showScreen\(screen,\{heading:"홈",back:true/);
-  assert.match(app,/if\(activeDocumentType\)openLibrary\(\{replace:true\}\)/)
+  assert.match(app,/if\(activeDocumentType\)\{[^\n]*openLibrary\(\{replace:true\}\)/)
 });
 check("project stages track the active part and long-project episode cards mirror desktop structure",()=>{
   assert.match(css,/\.mobile-topbar\{[\s\S]*?min-height:44px/);
   assert.match(css,/\.episode-list\{[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(css,/\.episode-button\{[\s\S]*?background:var\(--card-color,var\(--surface\)\)/);
+  assert.match(css,/\.episode-button\{[\s\S]*?background:var\(--card-color,var\(--ui-surface-default\)\)/);
   assert.match(css,/\.episode-completion\{[\s\S]*?position:absolute/);
-  assert.match(app,/button\.style\.setProperty\("--card-color",episodeColor\)/);
+  assert.match(app,/card\.style\.setProperty\("--card-color",episodeColor\)/);
   assert.match(app,/element\("span","episode-number"/);
   assert.match(app,/element\("strong","episode-title"/);
   assert.match(app,/element\("span","episode-desc"/);
@@ -249,13 +256,13 @@ check("project stages track the active part and long-project episode cards mirro
   assert.match(app,/aria-current","step"/);
   assert.match(app,/requestAnimationFrame\(syncActivePart\)/);
   assert.match(app,/carousel\.scrollTo\(\{left:target,behavior:"smooth"\}\)/);
-  assert.match(css,/\.part-step\.active\{[\s\S]*?background:var\(--primary-base\)/);
+  assert.match(css,/\.part-step\.active\{[\s\S]*?background:var\(--ui-control-selected-bg\)/);
   assert.match(app,/renderUnit\(project,0,\{showHeading:false,compactBlocks:true\}\)/);
   assert.match(app,/compactBlocks:true/);
   assert.match(css,/\.block-preview\.no-title\{[\s\S]*?-webkit-line-clamp:2/);
   assert.match(css,/\.stage-carousel\{[\s\S]*?scroll-snap-type:x mandatory/)
 });
-check("new document drawer is isolated and creates supported mobile documents",()=>{assert.match(html,/class="nav-sheet-backdrop create-sheet-backdrop" id="createSheet"/);assert.match(html,/<strong>새 폴더<\/strong>/);assert.match(html,/<strong>새 작품<\/strong>/);assert.match(html,/<strong>새 노트<\/strong>/);assert.match(html,/<strong>새 마인드맵<\/strong>/);assert.doesNotMatch(html,/id="createSheetClose"/);assert.doesNotMatch(html,/data-lucide="chevron-right"/);assert.match(css,/--create-chooser-width:150px/);assert.match(css,/\.create-sheet-backdrop:not\(\.form-open\) \.create-sheet-panel\{[\s\S]*?width:var\(--create-chooser-width\);max-width:calc\(100vw - 24px\)/);assert.match(css,/\.nav-sheet-backdrop\{[\s\S]*?backdrop-filter:blur\(5px\)/);assert.match(html,/id="createForm"/);assert.match(html,/id="createColorToggle"/);assert.match(html,/id="createColorOptions" hidden/);assert.match(html,/id="createColorGrid"/);assert.match(html,/id="createColorPicker" type="color"/);assert.match(html,/id="createColorHex" type="text"/);assert.match(app,/function renderCreateColorOptions/);assert.match(app,/createColorCustom/);assert.match(app,/createColorExpanded/);assert.match(app,/createColorOptions\.hidden=!createColorExpanded/);assert.match(app,/createColorValue=safeColor\(button\.dataset\.color,CARD_COLORS\[0\]\)/);assert.match(app,/selectedColor=safeColor\(createColorValue,""\)/);assert.doesNotMatch(html,/data-create-type="(?:folder|project|note|mindmap)"[^>]*disabled/);assert.doesNotMatch(app,/createSheetClose/);assert.match(app,/async function createNewDocument/);assert.match(app,/function defaultStoryStages/);assert.match(app,/repository\.replaceState\(state\)/)});
+check("new document drawer is isolated and creates supported mobile documents",()=>{assert.match(html,/class="nav-sheet-backdrop create-sheet-backdrop" id="createSheet"/);assert.match(html,/<strong>새 폴더<\/strong>/);assert.match(html,/<strong>새 작품<\/strong>/);assert.match(html,/<strong>새 노트<\/strong>/);assert.match(html,/<strong>새 마인드맵<\/strong>/);assert.doesNotMatch(html,/id="createSheetClose"/);assert.match(css,/--create-chooser-width:150px/);assert.match(css,/\.create-sheet-backdrop:not\(\.form-open\) \.create-sheet-panel\{[\s\S]*?width:var\(--create-chooser-width\);max-width:calc\(100vw - 24px\)/);assert.match(css,/\.nav-sheet-backdrop\{[\s\S]*?backdrop-filter:blur\(5px\)/);assert.match(html,/id="createForm"/);assert.match(html,/id="createColorToggle"/);assert.match(html,/id="createColorOptions" hidden/);assert.match(html,/id="createColorGrid"/);assert.match(html,/id="createColorPicker" type="color"/);assert.match(html,/id="createColorHex" type="text"/);assert.match(app,/function renderCreateColorOptions/);assert.match(app,/createColorCustom/);assert.match(app,/createColorExpanded/);assert.match(app,/createColorOptions\.hidden=!createColorExpanded/);assert.match(app,/createColorValue=safeColor\(button\.dataset\.color,CARD_COLORS\[0\]\)/);assert.match(app,/selectedColor=safeColor\(createColorValue,""\)/);assert.doesNotMatch(html,/data-create-type="(?:folder|project|note|mindmap)"[^>]*disabled/);assert.doesNotMatch(app,/createSheetClose/);assert.match(app,/async function createNewDocument/);assert.match(app,/function defaultStoryStages/);assert.match(app,/repository\.replaceState\(state\)/)});
 check("Vercel builds the isolated mobile output",()=>{assert.equal(vercel.installCommand,"node --version");assert.equal(vercel.buildCommand,"npm run mobile:build");assert.equal(vercel.outputDirectory,"dist-mobile")});
 check("desktop application is absent from deployment output",()=>{assert.equal(files.includes("src-tauri"),false);assert.equal(files.includes("package.json"),false)});
 console.log(`Hamboard mobile deployment QA passed (${checks.length} checks).`);

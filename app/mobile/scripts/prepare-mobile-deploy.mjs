@@ -20,6 +20,7 @@ let html=await readFile(resolve(mobileRoot,"index.html"),"utf8");
 html=html
   .replaceAll('src="../shared/','src="./shared/')
   .replace('src="../../../window/web/shared/cloud-payload.js"','src="./shared/cloud-payload.js"')
+  .replace('src="../../../window/web/shared/sync-coordination.js"','src="./shared/sync-coordination.js"')
   .replace('src="../../../window/web/assets/vendor/lucide/lucide.min.js"','src="./vendor/lucide/lucide.min.js"')
   .replace('  <script src="./mobile-google-drive.js"></script>','  <script src="./mobile-config.js"></script>\n  <script src="./mobile-google-drive.js"></script>');
 
@@ -30,10 +31,12 @@ for(const asset of [
   "./shared/sync-state-model.js",
   "./shared/project-repository.js",
   "./shared/cloud-payload.js",
+  "./shared/sync-coordination.js",
   "./vendor/lucide/lucide.min.js",
   "./mobile-config.js",
   "./mobile-google-drive.js",
   "./mobile-asset-repository.js",
+  "./mobile-sync-engine.js",
   "./mobile-app.js"
 ]){
   html=html.replaceAll(asset,`${asset}${versionTag}`);
@@ -45,12 +48,14 @@ await Promise.all([
   cp(resolve(mobileRoot,"mobile-app.js"),resolve(outputRoot,"mobile-app.js")),
   cp(resolve(mobileRoot,"mobile-google-drive.js"),resolve(outputRoot,"mobile-google-drive.js")),
   cp(resolve(mobileRoot,"mobile-asset-repository.js"),resolve(outputRoot,"mobile-asset-repository.js")),
+  cp(resolve(mobileRoot,"mobile-sync-engine.js"),resolve(outputRoot,"mobile-sync-engine.js")),
   cp(resolve(mobileRoot,"manifest.webmanifest"),resolve(outputRoot,"manifest.webmanifest")),
   cp(resolve(mobileRoot,"service-worker.js"),resolve(outputRoot,"service-worker.js")),
   cp(resolve(mobileRoot,"icons"),resolve(outputRoot,"icons"),{recursive:true}),
   cp(resolve(sharedRoot,"sync-state-model.js"),resolve(outputRoot,"shared/sync-state-model.js")),
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
   cp(resolve(sharedRoot,"cloud-payload.js"),resolve(outputRoot,"shared/cloud-payload.js")),
+  cp(resolve(sharedRoot,"sync-coordination.js"),resolve(outputRoot,"shared/sync-coordination.js")),
   cp(resolve(projectRoot,"../window/web/assets/vendor/lucide"),resolve(outputRoot,"vendor/lucide"),{recursive:true}),
   cp(resolve(projectRoot,"web/favicon.ico"),resolve(outputRoot,"favicon.ico")),
   writeFile(resolve(outputRoot,"mobile-config.js"),`window.HAMBOARD_MOBILE_CONFIG=Object.freeze({authBaseUrl:${JSON.stringify(authBaseUrl)},version:${JSON.stringify(mobileVersion)},assetVersion:${JSON.stringify(assetVersion)}});\n`)

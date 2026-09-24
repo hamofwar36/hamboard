@@ -379,4 +379,42 @@ await check("first link: a differing trash entry keeps only the more recently de
   assert.deepEqual(m.state.trash.map(t=>t.label),["폰"]);await p.pull();assert.deepEqual(p.state.trash.map(t=>t.label),["폰"],"the kept version reaches the PC")
 });
 
+await check("new episodes, reordered parts and blocks, and mindmap edits round-trip without losing desktop data",async()=>{
+  const d=createDrive(),p=createDesktop(d),project={id:"story",title:"장편",kind:"long",episodes:[{id:"ep-1",title:"1화",subtitle:"",stageDefs:[{id:"part-a",name:"기"},{id:"part-b",name:"승"}],stages:{"part-a":[{id:"block-a",type:"detail",title:"첫 블록",children:[]}],"part-b":[]}}]};
+  const mindmap={id:"map",title:"구상",nodes:[{id:"node-1",type:"text",title:"처음",x:10,y:20}],groups:[],edges:[],viewport:{x:40,y:40,zoom:1}};
+  await p.commit([{entityType:"project",entityId:"story",operation:"upsert",payload:project},{entityType:"mindmap",entityId:"map",operation:"upsert",payload:mindmap}]);
+  const m=createMobile(d);await m.engine.init();await m.engine.link();
+  m.edit(s=>{
+    const story=s.projects.find(item=>item.id==="story"),first=story.episodes[0];
+    story.episodes.push({id:"ep-2",title:"2화",subtitle:"새 화",stageDefs:[{id:"part-c",name:"시작"}],stages:{"part-c":[{id:"script-1",type:"script",title:"대화",scriptBlocks:[{id:"line-1",type:"dialogue",speaker:"화자",text:"대사"}],children:[]}]}});
+    first.stageDefs.reverse();first.stages["part-b"].push(first.stages["part-a"].shift());
+    s.mindmaps[0].subtitle="폰에서 추가";s.mindmaps[0].nodes.push({id:"node-2",type:"text",title:"다음",x:300,y:20});s.mindmaps[0].edges.push({id:"edge-1",from:"node-1",to:"node-2"})
+  });
+  const upload=await m.engine.sync("new-mobile-edits");assert.equal(upload.synced,true);
+  const commit=[...d.files.values()].find(file=>file.meta.revision===upload.committed).value;
+  assert.deepEqual(commit.changes.map(change=>change.entityType),["project","mindmap"]);
+  await p.pull();
+  assert.deepEqual(p.state.projects.find(item=>item.id==="story").episodes.map(item=>item.id),["ep-1","ep-2"]);
+  assert.deepEqual(p.state.projects.find(item=>item.id==="story").episodes[0].stageDefs.map(item=>item.id),["part-b","part-a"]);
+  assert.equal(p.state.projects.find(item=>item.id==="story").episodes[0].stages["part-b"][0].id,"block-a");
+  assert.equal(p.state.projects.find(item=>item.id==="story").episodes[1].stages["part-c"][0].scriptBlocks[0].text,"대사");
+  assert.equal(p.state.mindmaps[0].edges[0].to,"node-2");assert.deepEqual(p.state.storyTemplates,[{id:"tpl"}]);
+  await p.commit([{entityType:"project",entityId:"story",operation:"upsert",payload:{...p.state.projects[0],episodes:[...p.state.projects[0].episodes].reverse()}},{entityType:"mindmap",entityId:"map",operation:"upsert",payload:{...p.state.mindmaps[0],nodes:[...p.state.mindmaps[0].nodes,{id:"node-3",type:"text",title:"PC 노드"}]}}]);
+  const download=await m.engine.sync("pc-edits");assert.equal(download.synced,true);
+  assert.deepEqual(m.state.projects[0].episodes.map(item=>item.id),["ep-2","ep-1"]);
+  assert.ok(m.state.mindmaps[0].nodes.some(item=>item.id==="node-3"));assert.equal(m.engine.pendingChanges().length,0)
+});
+
+await check("simultaneous edits to the same project or mindmap still preserve mobile conflict copies",async()=>{
+  const base={schemaVersion:1,projects:[{id:"p",title:"장편",kind:"long",episodes:[{id:"e",title:"1화",stageDefs:[],stages:{}}]}],mindmaps:[{id:"m",title:"구상",nodes:[],edges:[]}]};
+  const remote=clone(base),local=clone(base);
+  remote.projects[0].episodes[0].title="PC 화";local.projects[0].episodes[0].title="폰 화";
+  remote.mindmaps[0].nodes.push({id:"pc-node",title:"PC"});local.mindmaps[0].nodes.push({id:"mobile-node",title:"폰"});
+  const merged=Engine.mergeStates({syncModel:model,profile:model.CLIENT_PROFILES.mobileCore,base,remote,local,newId:(()=>{let i=0;return()=>`copy-${++i}`})()});
+  assert.equal(merged.copies,2);assert.equal(merged.merged.projects.find(item=>item.id==="p").episodes[0].title,"PC 화");
+  assert.equal(merged.merged.projects.find(item=>item.id!=="p").episodes[0].title,"폰 화");
+  assert.equal(merged.merged.mindmaps.find(item=>item.id==="m").nodes[0].id,"pc-node");
+  assert.equal(merged.merged.mindmaps.find(item=>item.id!=="m").nodes[0].id,"mobile-node")
+});
+
 console.log(`Mobile two-way sync QA passed (${checks.length} checks).`);

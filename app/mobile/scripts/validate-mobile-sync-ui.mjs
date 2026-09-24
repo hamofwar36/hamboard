@@ -118,6 +118,35 @@ await check("the cloud screen action reflects the sync state",async()=>{
   await app.openCloudSources("library");await until(()=>doc.querySelector("#loadSyncSource")?.textContent==="지금 동기화","button label")
 });
 
+await check("mobile episode creation and mindmap metadata edits reach Windows through the existing sync",async()=>{
+  await pc.pull();
+  await pc.commit([
+    {entityType:"project",entityId:"long-story",operation:"upsert",payload:{id:"long-story",title:"장편 작품",kind:"long",episodes:[{id:"episode-1",title:"1화",stageDefs:[{id:"stage-1",name:"시작",hint:"",color:"#BDE7C4"}],stages:{"stage-1":[]}}]}},
+    {entityType:"mindmap",entityId:"editable-map",operation:"upsert",payload:{id:"editable-map",title:"마인드맵",subtitle:"",nodes:[{id:"node-1",type:"text",title:"첫 노드",x:0,y:0}],groups:[],edges:[],viewport:{x:40,y:40,zoom:1}}}
+  ]);
+  await app.syncNow("new-documents");
+  assert.equal(app.snapshot().projects.find(item=>item.id==="long-story")?.episodes.length,1);
+  assert.equal(app.snapshot().mindmaps.find(item=>item.id==="editable-map")?.nodes[0].title,"첫 노드");
+  app.openDocument("project","long-story");
+  doc.querySelector(".episode-add-button").click();
+  doc.querySelector("[data-episode-title]").value="2화";
+  doc.querySelector("[data-episode-subtitle]").value="모바일에서 추가";
+  doc.querySelector("[data-episode-save]").click();
+  await until(()=>app.snapshot().projects.find(item=>item.id==="long-story")?.episodes.length===2,"episode saved");
+  app.openLibrary();
+  doc.querySelector('[data-document-id="editable-map"] .document-card-menu').click();
+  doc.querySelector("#createTitleInput").value="수정된 마인드맵";
+  doc.querySelector("#createSubtitleInput").value="모바일 편집";
+  doc.querySelector("#createSubmit").click();
+  await until(()=>app.snapshot().mindmaps.find(item=>item.id==="editable-map")?.subtitle==="모바일 편집","mindmap saved");
+  await until(async()=>{
+    await pc.pull();
+    return pcState.projects.find(item=>item.id==="long-story")?.episodes.length===2&&pcState.mindmaps.find(item=>item.id==="editable-map")?.subtitle==="모바일 편집"
+  },"episode and mindmap pushed",6000);
+  assert.equal(pcState.projects.find(item=>item.id==="long-story").episodes[1].subtitle,"모바일에서 추가");
+  assert.equal(pcState.mindmaps.find(item=>item.id==="editable-map").nodes[0].title,"첫 노드","mindmap nodes retained")
+});
+
 async function restoreBackupViaUi(){
   backupEntries.splice(0,backupEntries.length,{remoteObjectId:"backup-1",objectKey:"backups/backup-1.json",createdAtMs:String(window.Date.now()),byteSize:100,label:"백업"});
   await app.openCloudSources("library");

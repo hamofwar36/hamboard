@@ -132,6 +132,7 @@
   let activeDocumentType="";
   let activeDocumentId="";
   let activeEpisodeId="";
+  let activeFolderId="";
   let activeBlockEditor=null;
   let blockSaveTimer=0;
   let blockSaveChain=Promise.resolve();
@@ -416,6 +417,7 @@
     createColorField.hidden=type==="folder";
     renderCreateColorOptions();
     fillCreateFolderOptions(type==="folder");
+    if(activeFolderId)createFolderSelect.value=activeFolderId;
     createFormStatus.hidden=true;
     createFormStatus.textContent="";
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
@@ -578,11 +580,7 @@
       closeBottomSheet(createSheet);
       resetCreateSheet();
       if(createdType)openDocument(createdType,createdId);
-      else{
-        renderHome();
-        setStatus("새 폴더를 만들었습니다.");
-        setTimeout(()=>{if(!libraryScreen.hidden)renderLibrary()},1600)
-      }
+      else openFolder(createdId)
     }catch(error){
       logDiagnostic("error","REPOSITORY",`${config.label} 저장에 실패했습니다.`,error);
       createFormStatus.textContent="저장하지 못했습니다. 다시 시도해 주세요.";
@@ -770,7 +768,9 @@
   }
   const appBaseUrl=()=>location.pathname+location.search;
   function appRouteUrl(route){
-    return route?.view==="document"&&route.type&&route.id?`${appBaseUrl()}#${route.type}/${encodeURIComponent(route.id)}`:appBaseUrl()
+    if(route?.view==="document"&&route.type&&route.id)return `${appBaseUrl()}#${route.type}/${encodeURIComponent(route.id)}`;
+    if(route?.view==="folder"&&route.id)return `${appBaseUrl()}#folder/${encodeURIComponent(route.id)}`;
+    return appBaseUrl()
   }
   function writeRoute(route,{replace=false}={}){
     const state={hamboard:true,...route};
@@ -1132,23 +1132,49 @@
 
   function renderLibrary(){
     const state=snapshot(),query=librarySearch.value.trim().toLocaleLowerCase("ko"),allDocuments=libraryDocuments(state);
-    const documents=query?allDocuments.filter(({type,item})=>{
+    const folderIds=new Set((state.folders||[]).map(folder=>String(folder.id||"")));
+    const folderLocation=id=>folderIds.has(String(id||""))?String(id):"";
+    const folders=(state.folders||[]).filter(folder=>{
+      if(activeFolderId&&folderLocation(folder.parentId)!==activeFolderId)return false;
+      if(query)return `${folder.name||""} ${folder.subtitle||""}`.toLocaleLowerCase("ko").includes(query);
+      return folderLocation(folder.parentId)===activeFolderId
+    });
+    const scopedDocuments=query&&!activeFolderId?allDocuments:allDocuments.filter(({item})=>folderLocation(item.folderId)===activeFolderId);
+    const documents=scopedDocuments.filter(({type,item})=>{
+      if(!query)return true;
       const descriptor=documentDescriptor(type,item,state);
       const extra=type==="note"?stripHtml(item.content||""):type==="mindmap"?(item.nodes||[]).map(node=>`${node.title||""} ${node.text||""}`).join(" "):"";
       return `${item.title||""} ${descriptor.subtitle} ${descriptor.folder} ${extra}`.toLocaleLowerCase("ko").includes(query)
-    }):allDocuments;
+    });
     const host=$("#libraryList");
     host.replaceChildren();
-    if(!allDocuments.length){
+    if(!allDocuments.length&&!(state.folders||[]).length){
       setStatus("동기화된 작품, 노트 또는 마인드맵이 아직 없습니다.",{action:"데이터 파일 불러오기",run:()=>fileInput.click()});
       refreshLucideIcons();
       return
     }
-    if(query&&!documents.length){
-      setStatus("검색 결과가 없습니다.");
+    if(!documents.length&&!folders.length){
+      setStatus(query?"검색 결과가 없습니다.":activeFolderId?"이 폴더는 비어 있습니다.":"홈에 표시할 항목이 없습니다.");
       return
     }
     hideStatus();
+    for(const folder of folders){
+      const id=String(folder.id||""),card=element("article","folder-card");
+      card.dataset.folderId=id;
+      const count=(state.folders||[]).filter(item=>String(item.parentId||"")===id).length+
+        allDocuments.filter(({item})=>String(item.folderId||"")===id).length;
+      const icon=element("span","folder-card-icon");
+      icon.innerHTML='<i data-lucide="folder" aria-hidden="true"></i>';
+      const label=element("span","folder-card-label","폴더");
+      const name=element("strong","folder-card-title",folder.name||"제목 없는 폴더");
+      const meta=element("span","folder-card-meta",`${count}개 항목`);
+      const open=element("button","folder-card-open");
+      open.type="button";
+      open.setAttribute("aria-label",(folder.name||"제목 없는 폴더")+" 폴더 열기");
+      open.onclick=()=>openFolder(id);
+      card.append(icon,label,name,meta,open);
+      host.append(card)
+    }
     for(const entry of documents){
       const {type,item}=entry,descriptor=documentDescriptor(type,item,state),card=element("article",`project-card ${type==="project"?"story-card":type==="note"?"note-card":"mindmap-card"}`);
       card.dataset.documentType=type;
@@ -2148,6 +2174,34 @@
     releaseMobileInputFocus()
   }
 
+  function openMobileBlockTypeChooser(stageId){
+    document.querySelector("[data-block-type-chooser]")?.remove();
+    const backdrop=element("div","nav-sheet-backdrop"),panel=element("section","nav-sheet block-type-panel"),heading=element("div","block-type-heading"),options=element("div","block-type-options");
+    backdrop.dataset.blockTypeChooser="";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label","새 블록 종류 선택");
+    const close=element("button","sheet-close","");
+    close.type="button";
+    close.setAttribute("aria-label","닫기");
+    close.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';
+    close.onclick=()=>backdrop.remove();
+    heading.append(element("strong","","새 블록 추가"),close);
+    for(const [type,label,icon] of [["detail","일반 블록","file-text"],["script","스크립트 블록","clapperboard"]]){
+      const button=element("button","","");
+      button.type="button";
+      button.innerHTML=`<i data-lucide="${icon}" aria-hidden="true"></i>`;
+      button.append(element("span","",label));
+      button.onclick=()=>{backdrop.remove();openMobileBlockEditor(stageId,-1,type)};
+      options.append(button)
+    }
+    panel.append(heading,options);
+    backdrop.append(panel);
+    backdrop.onclick=event=>{if(event.target===backdrop)backdrop.remove()};
+    document.body.append(backdrop);
+    refreshLucideIcons()
+  }
+
   async function deleteMobileBlock(){
     const edit=activeBlockEditor;
     if(!edit||edit.creating)return;
@@ -2246,15 +2300,9 @@
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
       const addBlock=element("button","stage-add-block","");
       addBlock.type="button";
-      addBlock.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>일반 블록 추가</span>';
-      addBlock.onclick=()=>openMobileBlockEditor(stage.id);
-      const addScript=element("button","stage-add-block","");
-      addScript.type="button";
-      addScript.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>스크립트 블록 추가</span>';
-      addScript.onclick=()=>openMobileBlockEditor(stage.id,-1,"script");
-      const addActions=element("div","stage-add-actions");
-      addActions.append(addBlock,addScript);
-      section.append(stageHead,blocks,addActions);
+      addBlock.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>새 블록 추가</span>';
+      addBlock.onclick=()=>openMobileBlockTypeChooser(stage.id);
+      section.append(stageHead,blocks,addBlock);
       carousel.append(section);
       sections.push(section)
     }
@@ -3800,7 +3848,7 @@
     }
   }
 
-  function renderDocument(type,id){
+  function renderDocument(type,id,returnFolderId=""){
     const state=snapshot(),key=String(id||"");
     const item=type==="project"?(state.projects||[]).find(entry=>String(entry?.id||"")===key):type==="note"?(state.notes||[]).find(entry=>String(entry?.id||"")===key):(state.mindmaps||[]).find(entry=>String(entry?.id||"")===key);
     if(!item){renderHome();return}
@@ -3809,30 +3857,52 @@
     activeEpisodeId="";
     activeBlockEditor=null;
     const screen=documentScreen(type);
-    showScreen(screen,{heading:"홈",back:true,account:false,nav:"library"});
+    showScreen(screen,{heading:folderName(returnFolderId,state)||"홈",back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
     else renderMindmap(item)
   }
 
-  function renderHome(){
+  function renderHome({query=null}={}){
+    activeFolderId="";
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
     activeBlockEditor=null;
+    if(query!==null)librarySearch.value=query;
     showScreen(libraryScreen,{heading:"홈",back:false,account:true,nav:"library"});
     renderAccountButton();
     restoreGoogleConnection();
     renderLibrary()
   }
 
+  function renderFolder(id,query=""){
+    const folder=(snapshot().folders||[]).find(item=>String(item.id||"")===String(id||""));
+    if(!folder){renderHome();return false}
+    activeFolderId=String(folder.id);
+    activeDocumentType="";
+    activeDocumentId="";
+    activeEpisodeId="";
+    activeBlockEditor=null;
+    librarySearch.value=query;
+    showScreen(libraryScreen,{heading:folder.name||"제목 없는 폴더",back:true,account:true,nav:"library"});
+    renderAccountButton();
+    renderLibrary();
+    return true
+  }
+
+  function openFolder(id,{replace=false}={}){
+    if(renderFolder(id))writeRoute({view:"folder",id:String(id)},{replace})
+  }
+
   function openDocument(type,id,{replace=false}={}){
-    renderDocument(type,id);
-    writeRoute({view:"document",type,id:String(id||"")},{replace})
+    const returnFolderId=!libraryScreen.hidden?activeFolderId:"";
+    renderDocument(type,id,returnFolderId);
+    writeRoute({view:"document",type,id:String(id||""),returnFolderId},{replace})
   }
 
   function openLibrary({replace=false}={}){
-    renderHome();
+    renderHome({query:""});
     writeRoute({view:"home"},{replace})
   }
 
@@ -4561,7 +4631,8 @@
 
   function renderRoute(route){
     if(!route||route.hamboard!==true){renderHome();return}
-    if(route.view==="document"){renderDocument(route.type,route.id);return}
+    if(route.view==="document"){renderDocument(route.type,route.id,route.returnFolderId);return}
+    if(route.view==="folder"){renderFolder(route.id,route.query||"");return}
     if(route.view==="menu"){renderMenu();return}
     if(route.view==="trash"){renderTrashScreen();return}
     if(route.view==="settings"){renderSettingsScreen(route.section==="info"?"info":"display");return}
@@ -4572,7 +4643,7 @@
       else cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
-    renderHome()
+    renderHome({query:route.query||""})
   }
 
   function handleBack(){
@@ -4597,11 +4668,15 @@
       applyMobileTheme();
       logDiagnostic("info","APP","모바일 저장소를 열었습니다.");
       const authResult=consumeMobileAuthResult();
-      const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
+      const match=location.hash.match(/^#(project|note|mindmap|folder)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
       installNoteViewportTracking();
-      if(match)openDocument(match[1],decodeURIComponent(match[2]));
+      if(match){
+        const id=decodeURIComponent(match[2]);
+        if(match[1]==="folder")openFolder(id);
+        else openDocument(match[1],id)
+      }
       refreshLucideIcons();
       registerMobileServiceWorker();
       renderInstallAction();
@@ -4621,7 +4696,7 @@
       if(saved)closeMobileGeneralBlockEditor();
       return
     }
-    if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}openLibrary({replace:true})}
+    if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}handleBack()}
     else handleBack()
   };
   blockEditorTitle.addEventListener("input",scheduleMobileGeneralBlockSave);
@@ -4799,7 +4874,7 @@
     scheduleMobileGeneralBlockSave()
   };
   blockEditorDelete.onclick=deleteMobileBlock;
-  libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
+  libraryNav.onclick=()=>{if(history.state?.view!=="home"){librarySearch.value="";openLibrary()}};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
   createFormClose.onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
@@ -4989,7 +5064,12 @@
     }
   });
   window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave();if(activeBlockEditor)flushMobileGeneralBlockSave()});
-  librarySearch.addEventListener("input",renderLibrary);
+  librarySearch.addEventListener("input",()=>{
+    if(history.state?.hamboard&&["home","folder"].includes(history.state.view)){
+      history.replaceState({...history.state,query:librarySearch.value},"",location.href)
+    }
+    renderLibrary()
+  });
   menuCloud.onclick=()=>openCloudSources("menu");
   menuDisplay.onclick=()=>openSettings("display");
   menuAppInfo.onclick=()=>openSettings("info");

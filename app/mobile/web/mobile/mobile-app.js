@@ -1251,7 +1251,8 @@
       copy.append(element("h3","",title));
       if(message)copy.append(element("p","",message));
       const actions=element("div","mobile-confirm-actions");
-      if([cancelLabel,confirmLabel].some(label=>Array.from(label).length>8))actions.classList.add("stacked");
+      if(Array.from(confirmLabel).length>8)actions.classList.add("wide-submit");
+      else if(Array.from(cancelLabel).length>8)actions.classList.add("wide-cancel");
       const cancel=element("button","mobile-confirm-cancel",cancelLabel),confirm=element("button","mobile-confirm-submit"+(destructive?" destructive":""),confirmLabel);
       cancel.type="button";
       confirm.type="button";

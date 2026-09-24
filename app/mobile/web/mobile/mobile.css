@@ -307,8 +307,14 @@ svg.lucide{stroke:currentColor}
   background:var(--ui-surface-subtle);color:var(--ui-content-default);box-shadow:var(--soft-shadow)
 }
 .folder-card::before{
-  content:"";position:absolute;left:-1px;top:-8px;width:60px;height:12px;border:1px solid var(--ui-border-default);
-  border-bottom:0;border-radius:9px 9px 0 0;background:var(--ui-surface-subtle)
+  content:"";position:absolute;left:-1px;top:-8px;width:60px;height:9px;box-sizing:border-box;
+  border:1px solid var(--ui-border-default);border-bottom:0;border-radius:9px 6px 0 0;
+  background:var(--ui-surface-subtle)
+}
+.folder-card::after{
+  content:"";position:absolute;left:58px;top:-3px;width:8px;height:4px;box-sizing:border-box;
+  border-left:1px solid var(--ui-border-default);border-bottom:1px solid var(--ui-border-default);
+  border-bottom-left-radius:6px;background:var(--ui-surface-subtle);pointer-events:none
 }
 .folder-card:active{transform:translateY(1px);box-shadow:var(--ui-press-shadow)}
 .folder-card-icon{height:25px;color:var(--ui-accent-strong)}

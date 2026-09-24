@@ -1240,6 +1240,7 @@
       }
       const preview=compactBlockPreview(block);
       if(preview)card.append(element("p","block-text block-preview"+(titleText?"":" no-title"),preview));
+      if(editable)card.append(element("span","mobile-sort-hint block-sort-hint","↕ 꾹 눌러 블록 이동"));
       return card
     }
 
@@ -1265,6 +1266,7 @@
       for(const child of block.children)children.append(blockElement(child));
       card.append(children)
     }
+    if(editable)card.append(element("span","mobile-sort-hint block-sort-hint","↕ 꾹 눌러 블록 이동"));
     return card
   }
   const MOBILE_TRASH_LABELS=Object.freeze({project:"작품",mindmap:"마인드맵",note:"노트",folder:"폴더",episode:"화",stage:"파트",block:"블록",character:"캐릭터",memo:"메모",quickMemo:"퀵메모",resource:"이미지"});
@@ -2234,6 +2236,7 @@
       stripe.style.setProperty("--stage-color",stageColor);
       copy.append(element("h4","",stage.name||"파트"));
       if(stage.hint)copy.append(element("p","",stage.hint));
+      copy.append(element("span","mobile-sort-hint stage-sort-hint","↔ 꾹 눌러 파트 이동"));
       const edit=element("button","stage-edit-button","");
       edit.type="button";
       edit.setAttribute("aria-label",(stage.name||"파트")+" 편집");
@@ -2497,7 +2500,8 @@
           card.append(
             element("span","episode-number",(index+1)+"화"),
             element("strong","episode-title",episode.title||(index+1)+"화"),
-            element("span","episode-desc",episode.subtitle||blocks.length+"개 블록")
+            element("span","episode-desc",episode.subtitle||blocks.length+"개 블록"),
+            element("span","mobile-sort-hint episode-sort-hint","↕ 꾹 눌러 화 이동")
           );
           if(showCompletion){
             const completion=element("span","episode-completion");
@@ -2561,6 +2565,12 @@
     sort.markerList?.classList.remove("mobile-sort-before","mobile-sort-after","mobile-sort-empty");
     sort.markerElement=null;sort.markerList=null;sort.target=null
   }
+  function mobileSortDestination(sort,label="이동할 위치로 끌어 놓으세요."){
+    if(!sort.notice)return;
+    const message=sort.target?`${label} · 손을 놓으면 이동합니다.`:label;
+    if(sort.notice.textContent!==message)sort.notice.textContent=message;
+    sort.notice.classList.toggle("ready",!!sort.target)
+  }
   function closestMobileSortItem(items,x,y){
     return items.reduce((best,item)=>{
       const rect=item.getBoundingClientRect(),dx=Math.max(rect.left-x,0,x-rect.right),dy=Math.max(rect.top-y,0,y-rect.bottom),distance=dx*dx+dy*dy;
@@ -2572,45 +2582,55 @@
     const {x,y}=sort;
     if(sort.kind==="episode"){
       const list=$("#episodeList"),rect=list.getBoundingClientRect();
-      if(x<rect.left-24||x>rect.right+24||y<rect.top-24||y>rect.bottom+24)return;
+      if(x<rect.left-24||x>rect.right+24||y<rect.top-24||y>rect.bottom+24){mobileSortDestination(sort);return}
       const cards=[...list.querySelectorAll(".episode-button")],card=closestMobileSortItem(cards,x,y);
-      if(!card)return;
+      if(!card){mobileSortDestination(sort);return}
       const bounds=card.getBoundingClientRect(),after=y>bounds.top+bounds.height/2;
+      if(card.dataset.episodeId===sort.sourceId){mobileSortDestination(sort,"현재 화입니다. 다른 위치로 끌어 놓으세요.");return}
       card.classList.add(after?"mobile-sort-after":"mobile-sort-before");
       sort.markerElement=card;sort.target={targetId:card.dataset.episodeId,after};
+      mobileSortDestination(sort,`${cards.indexOf(card)+1}화 ${after?"뒤":"앞"}에 놓기`);
       return
     }
     const carousel=$("#projectContent .stage-carousel");
-    if(!carousel)return;
+    if(!carousel){mobileSortDestination(sort);return}
     const rect=carousel.getBoundingClientRect();
-    if(x<rect.left-24||x>rect.right+24||y<rect.top-32||y>rect.bottom+32)return;
+    if(x<rect.left-24||x>rect.right+24||y<rect.top-32||y>rect.bottom+32){mobileSortDestination(sort);return}
     const sections=[...carousel.querySelectorAll(".stage-section")];
     const under=document.elementFromPoint(x,y)?.closest(".stage-section");
     const section=under&&carousel.contains(under)?under:closestMobileSortItem(sections,x,y);
-    if(!section)return;
+    if(!section){mobileSortDestination(sort);return}
     const bounds=section.getBoundingClientRect();
     if(sort.kind==="stage"){
       const after=x>bounds.left+bounds.width/2;
+      if(section.dataset.stageId===sort.sourceId){mobileSortDestination(sort,"현재 파트입니다. 다른 위치로 끌어 놓으세요.");return}
       section.classList.add(after?"mobile-sort-after":"mobile-sort-before");
       sort.markerElement=section;sort.target={targetId:section.dataset.stageId,after};
+      mobileSortDestination(sort,`${sections.indexOf(section)+1}번째 파트 ${after?"뒤":"앞"}에 놓기`);
       return
     }
     const list=section.querySelector(".block-list"),blocks=[...list.querySelectorAll(":scope > .editable-block-card")];
     const card=closestMobileSortItem(blocks,x,y);
-    section.classList.add("mobile-sort-target");sort.markerElement=section;
     if(card){
       const cardRect=card.getBoundingClientRect(),after=y>cardRect.top+cardRect.height/2;
+      if(section.dataset.stageId===sort.sourceStageId&&card.dataset.blockId===sort.sourceId){
+        mobileSortDestination(sort,"현재 블록입니다. 다른 위치로 끌어 놓으세요.");return
+      }
+      section.classList.add("mobile-sort-target");sort.markerElement=section;
       card.classList.add(after?"mobile-sort-after":"mobile-sort-before");
       sort.markerList=card;
-      sort.target={targetStageId:section.dataset.stageId,targetId:card.dataset.blockId,targetIndex:Number(card.dataset.blockIndex),after}
+      sort.target={targetStageId:section.dataset.stageId,targetId:card.dataset.blockId,targetIndex:Number(card.dataset.blockIndex),after};
+      mobileSortDestination(sort,`${sections.indexOf(section)+1}번째 파트 · ${blocks.indexOf(card)+1}번째 블록 ${after?"뒤":"앞"}에 놓기`)
     }else{
+      section.classList.add("mobile-sort-target");sort.markerElement=section;
       list.classList.add("mobile-sort-empty");sort.markerList=list;
-      sort.target={targetStageId:section.dataset.stageId,targetId:"",targetIndex:0,after:false}
+      sort.target={targetStageId:section.dataset.stageId,targetId:"",targetIndex:0,after:false};
+      mobileSortDestination(sort,`${sections.indexOf(section)+1}번째 파트 · 첫 블록으로 놓기`)
     }
   }
   function moveMobileSortPreview(sort){
-    sort.preview.style.left=`${Math.max(8,Math.min(sort.x+12,window.innerWidth-220))}px`;
-    sort.preview.style.top=`${Math.max(8,Math.min(sort.y+12,window.innerHeight-65))}px`;
+    sort.preview.style.left=`${Math.max(8,Math.min(sort.x+14,window.innerWidth-230))}px`;
+    sort.preview.style.top=`${Math.max(8,Math.min(sort.y-80,window.innerHeight-100))}px`;
     updateMobileSortTarget(sort)
   }
   function scrollMobileSort(sort){
@@ -2633,9 +2653,12 @@
     if(mobileSort!==sort||!sort.element.isConnected)return;
     sort.active=true;
     sort.element.classList.add("mobile-sort-source");
-    const preview=element("div","mobile-sort-preview",sort.element.querySelector(".episode-title,.stage-heading h4,.block-head h5")?.textContent?.trim()||sort.element.textContent.trim().slice(0,60)||"블록");
+    const preview=element("div","mobile-sort-preview");
+    preview.append(element("span","mobile-sort-preview-grip",sort.kind==="stage"?"↔":"↕"),element("span","mobile-sort-preview-title",sort.element.querySelector(".episode-title,.stage-heading h4,.block-head h5")?.textContent?.trim()||sort.element.textContent.trim().slice(0,60)||"블록"));
     preview.setAttribute("aria-hidden","true");sort.preview=preview;
-    document.body.append(preview);
+    sort.notice=element("div","mobile-sort-destination","이동할 위치로 끌어 놓으세요.");
+    sort.notice.setAttribute("role","status");sort.notice.setAttribute("aria-live","polite");
+    document.body.append(preview,sort.notice);
     document.body.classList.add("mobile-sorting");
     const carousel=$("#projectContent .stage-carousel");
     if(carousel&&sort.kind!=="episode"){sort.carousel=carousel;carousel.style.scrollSnapType="none"}
@@ -2649,7 +2672,7 @@
     if(sort.scrollFrame)cancelAnimationFrame(sort.scrollFrame);
     clearMobileSortMarker(sort);
     sort.element.classList.remove("mobile-sort-source");
-    sort.preview?.remove();sort.carousel?.style.removeProperty("scroll-snap-type");
+    sort.preview?.remove();sort.notice?.remove();sort.carousel?.style.removeProperty("scroll-snap-type");
     document.body.classList.remove("mobile-sorting");
     mobileSort=null
   }

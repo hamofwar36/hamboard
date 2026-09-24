@@ -2761,7 +2761,7 @@
     if(!noteReaderContent)return;
     const style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
     const font=normalizeMobileNoteFont(style.fontFamily);
-    noteReaderContent.style.fontFamily=font==="__default__"?"":font;
+    noteReaderContent.style.fontFamily=font==="__default__"||font===MOBILE_NOTE_FONT_SYSTEM?"":font;
     noteReaderContent.style.textAlign=["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left";
     noteReaderContent.style.setProperty("--note-first-line-indent",style.firstLineIndent===true?"1em":"0");
     noteReaderContent.style.setProperty("--note-paragraph-spacing",style.paragraphSpacing===true?"1.6em":".25em")
@@ -2796,8 +2796,9 @@
         return {font:String(style.fontFamily||"__default__").trim()||"__default__",align:["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left",indent:style.firstLineIndent===true,spacing:style.paragraphSpacing===true}
       })();
       current.font=normalizeMobileNoteFont(current.font);
-      const standard=new Set(["__default__",MOBILE_NOTE_FONT_PRETENDARD,MOBILE_NOTE_FONT_SERIF,MOBILE_NOTE_FONT_SYSTEM]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
-      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">기본 글꼴</option><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option><option value="system-ui">시스템</option>'+extra+'</select></label>'+
+      if(current.font===MOBILE_NOTE_FONT_PRETENDARD||current.font===MOBILE_NOTE_FONT_SYSTEM)current.font="__default__";
+      const standard=new Set(["__default__",MOBILE_NOTE_FONT_SERIF]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
+      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">프리텐다드</option><option value="Source Han Serif KR">본명조</option>'+extra+'</select></label>'+
         '<div class="note-style-row"><span>글 정렬</span><div class="note-style-align" data-note-default-align><button type="button" value="left" aria-label="왼쪽 정렬"><i data-lucide="align-left"></i></button><button type="button" value="center" aria-label="가운데 정렬"><i data-lucide="align-center"></i></button><button type="button" value="right" aria-label="오른쪽 정렬"><i data-lucide="align-right"></i></button><button type="button" value="justify" aria-label="양쪽 정렬"><i data-lucide="align-justify"></i></button></div></div>'+
         '<label class="note-style-row"><span>들여쓰기</span><select data-note-default-indent><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
         '<label class="note-style-row"><span>문단 사이 여백 주기</span><select data-note-default-spacing><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
@@ -3332,7 +3333,7 @@
       '<button type="button" class="note-format-action" data-note-command="strikeThrough"><i data-lucide="strikethrough"></i><span>취소선</span></button>'+
       '</div>';
     if(key==="decorate")return '<div class="note-format-panel-title">글자 꾸미기</div>'+
-      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="inherit">기본</option><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option><option value="system-ui">시스템</option></select></label>'+
+      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option></select></label>'+
       '<div class="note-format-grid">'+
       '<label class="note-format-action note-color-action"><i data-lucide="paintbrush"></i><span>글자색</span><input type="color" value="#292B38" data-note-color="foreColor" aria-label="글자색"></label>'+
       '<label class="note-format-action note-color-action"><i data-lucide="paint-bucket"></i><span>배경색</span><input type="color" value="#F6D872" data-note-color="hiliteColor" aria-label="배경색"></label>'+

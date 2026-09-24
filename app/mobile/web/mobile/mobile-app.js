@@ -261,14 +261,14 @@
         const id=String(folder?.id||"");
         if(!id||seen.has(id))continue;
         seen.add(id);
-        rows.push({id,name:String(folder.name||"이름 없는 폴더"),depth});
+        rows.push({id,name:String(folder.name||"제목 없는 폴더"),depth});
         walk(children.get(id)||[],depth+1)
       }
     };
     walk(roots,0);
     for(const folder of folders){
       const id=String(folder?.id||"");
-      if(id&&!seen.has(id))rows.push({id,name:String(folder.name||"이름 없는 폴더"),depth:0})
+      if(id&&!seen.has(id))rows.push({id,name:String(folder.name||"제목 없는 폴더"),depth:0})
     }
     return rows
   }
@@ -360,15 +360,15 @@
     createActions.classList.remove("editing");
     createFormBack.textContent="이전";
     createSubmit.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>만들기</span>';
-    createTitleLabel.textContent=type==="folder"?"폴더 이름":"제목";
-    createSubtitleField.querySelector("span").innerHTML=type==="folder"?"부제 <small>· 선택</small>":"부제 <small>· 선택</small>";
+    createTitleLabel.textContent="제목";
+    createSubtitleField.querySelector("span").innerHTML="부제 <small>· 선택</small>";
     createFolderLabel.innerHTML=type==="folder"?"상위 폴더 <small>· 선택</small>":"폴더 <small>· 선택</small>";
     createFormKind.textContent=`새 ${config.label}`;
     createFormIcon.innerHTML=`<i data-lucide="${config.icon}" aria-hidden="true"></i>`;
     createSheet.classList.add("form-open");
     createTitleInput.value=config.defaultTitle;
     createSubtitleInput.value="";
-    createSubtitleInput.placeholder=type==="folder"?"폴더 설명":type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
+    createSubtitleInput.placeholder="부제 입력";
     createColorValue=randomCardColor();
     createColorCustom=false;
     createColorExpanded=false;
@@ -405,7 +405,7 @@
     createSheet.classList.add("form-open");
     createTitleInput.value=String(item.title||"");
     createSubtitleInput.value=String(item.subtitle||"");
-    createSubtitleInput.placeholder=type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
+    createSubtitleInput.placeholder="부제 입력";
     createColorValue=safeColor(item.color,randomCardColor());
     createColorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===createColorValue.toLowerCase());
     createColorExpanded=false;
@@ -1126,7 +1126,7 @@
 
   function blockElement(block,{compact=false,stageId="",blockIndex=-1}={}){
     const editable=Boolean(stageId);
-    const card=element("article","block-card"+(block.type==="script"?" script-block-card":"")+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
+    const card=element("article","block-card"+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
     const titleText=String(block.title||"").trim();
     if(editable){
       card.setAttribute("role","button");
@@ -1304,7 +1304,7 @@
     panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="layout-list" aria-hidden="true"></i></span><strong>'+(existing?"파트 편집":"새 파트 추가")+'</strong></div><button type="button" class="sheet-close" data-project-stage-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-project-stage-title maxlength="120" placeholder="예: 만남, 동행, 균열, 이별"></label>'+
-      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트의 간단한 설명"></label>'+
+      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트 부제"></label>'+
       '<fieldset class="create-color-field project-stage-color-field">'+
       '<legend>색상</legend>'+
       '<button class="create-color-toggle" type="button" data-project-stage-color-toggle aria-expanded="false">'+
@@ -1439,7 +1439,7 @@
       deleteButton.disabled=true;
       setStatus("");
       try{
-        pushMobileTrash(current.state,"stage",target?.name||"이름 없는 파트",{stageDef:target,blocks},{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,index});
+        pushMobileTrash(current.state,"stage",target?.name||"제목 없는 파트",{stageDef:target,blocks},{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,index});
         defs.splice(index,1);
         if(current.unit.stages&&typeof current.unit.stages==="object")delete current.unit.stages[stageId];
         current.project.updatedAt=new Date().toISOString();
@@ -2220,24 +2220,24 @@
     document.querySelector("[data-episode-editor]")?.remove()
   }
 
-  function openMobileEpisodeEditor(episodeId){
+  function openMobileEpisodeEditor(episodeId=""){
     const projectId=String(activeDocumentId||""),state=snapshot();
     const project=(state.projects||[]).find(item=>String(item?.id||"")===projectId);
     if(!project||project.kind!=="long")return;
-    const episode=(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||""));
-    if(!episode)return;
-    let selectedColor=safeColor(episode.color||randomCardColor(),randomCardColor()),colorsOpen=false;
+    const isNew=!episodeId,episode=isNew?null:(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId));
+    if(!isNew&&!episode)return;
+    let selectedColor=safeColor(episode?.color||randomCardColor(),CARD_COLORS[0]),colorsOpen=false;
     let colorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===selectedColor.toLowerCase());
     closeMobileEpisodeEditor();
     const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel");
     wrap.dataset.episodeEditor="1";
     panel.setAttribute("role","dialog");
     panel.setAttribute("aria-modal","true");
-    panel.setAttribute("aria-label","화 편집");
-    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="files" aria-hidden="true"></i></span><strong>화 편집</strong></div><button type="button" class="sheet-close" data-episode-editor-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+    panel.setAttribute("aria-label",isNew?"새 화 추가":"화 편집");
+    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="files" aria-hidden="true"></i></span><strong>'+(isNew?"새 화 추가":"화 편집")+'</strong></div><button type="button" class="sheet-close" data-episode-editor-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-episode-title maxlength="120" autocomplete="off"></label>'+
-      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-episode-subtitle maxlength="240" autocomplete="off" placeholder="이번 화의 핵심"></label>'+
+      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-episode-subtitle maxlength="240" autocomplete="off" placeholder="화 부제"></label>'+
       '<fieldset class="create-color-field project-stage-color-field">'+
       '<legend>색상</legend>'+
       '<button class="create-color-toggle" type="button" data-episode-color-toggle aria-expanded="false">'+
@@ -2251,7 +2251,7 @@
       '<input type="text" data-episode-color-hex maxlength="7" spellcheck="false" autocomplete="off" aria-label="HEX 색상">'+
       '</div></div></fieldset>'+
       '<p class="project-stage-editor-status" data-episode-status hidden></p>'+
-      '<div class="note-sheet-actions"><button type="button" class="secondary" data-episode-editor-close>취소</button><button type="button" class="primary" data-episode-save>저장</button></div>'+
+      '<div class="note-sheet-actions"><button type="button" class="secondary" data-episode-editor-close>취소</button><button type="button" class="primary" data-episode-save>'+(isNew?"추가":"저장")+'</button></div>'+
       '</div>';
     wrap.append(panel);
     document.body.append(wrap);
@@ -2261,8 +2261,8 @@
     const colorOptions=panel.querySelector("[data-episode-color-options]"),colorGrid=panel.querySelector("[data-episode-color-grid]");
     const colorEditor=panel.querySelector("[data-episode-color-editor]"),colorPicker=panel.querySelector("[data-episode-color-picker]");
     const colorHex=panel.querySelector("[data-episode-color-hex]"),status=panel.querySelector("[data-episode-status]"),save=panel.querySelector("[data-episode-save]");
-    title.value=String(episode.title||"");
-    subtitle.value=String(episode.subtitle||"");
+    title.value=String(episode?.title||(project.episodes||[]).length+1+"화");
+    subtitle.value=String(episode?.subtitle||"");
     const syncColor=()=>{
       selectedColor=safeColor(selectedColor,CARD_COLORS[0]);
       colorPreview.style.setProperty("--swatch",selectedColor);
@@ -2339,14 +2339,16 @@
     wrap.onclick=event=>{if(event.target===wrap)closeMobileEpisodeEditor()};
     save.onclick=async()=>{
       const current=snapshot(),targetProject=(current.projects||[]).find(item=>String(item?.id||"")===projectId);
-      const target=targetProject?.kind==="long"?(targetProject.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||"")):null;
-      if(!targetProject||!target){
-        setStatus("편집할 화를 찾지 못했습니다.");
+      const target=targetProject?.kind==="long"&&!isNew?(targetProject.episodes||[]).find(item=>String(item?.id||"")===String(episodeId)):null;
+      if(targetProject?.kind!=="long"||(!isNew&&!target)){
+        setStatus(isNew?"작품을 찾지 못했습니다.":"편집할 화를 찾지 못했습니다.");
         return
       }
-      target.title=title.value.trim()||"제목 없는 화";
-      target.subtitle=subtitle.value.trim();
-      target.color=selectedColor;
+      const next=target||{id:uid(),...defaultStoryStages()};
+      next.title=title.value.trim()||"제목 없는 화";
+      next.subtitle=subtitle.value.trim();
+      next.color=selectedColor;
+      if(isNew){targetProject.episodes=Array.isArray(targetProject.episodes)?targetProject.episodes:[];targetProject.episodes.push(next)}
       targetProject.updatedAt=new Date().toISOString();
       save.disabled=true;
       setStatus("");
@@ -2358,8 +2360,8 @@
           renderProject(targetProject)
         }
       }catch(error){
-        console.error("모바일 화 정보 저장 실패",error);
-        logDiagnostic("error","REPOSITORY","화 정보 저장에 실패했습니다.",error);
+        console.error(isNew?"모바일 화 추가 실패":"모바일 화 정보 저장 실패",error);
+        logDiagnostic("error","REPOSITORY",isNew?"화를 추가하지 못했습니다.":"화 정보 저장에 실패했습니다.",error);
         save.disabled=false;
         setStatus("저장하지 못했습니다. 다시 시도해 주세요.")
       }
@@ -2380,15 +2382,16 @@
 
     if(project.kind==="long"){
       const list=project.episodes||[];
-      if(!list.length){
-        content.replaceChildren(element("div","status-card","등록된 화가 없습니다."));
-        return
-      }
-
       const activeIndex=list.findIndex(item=>String(item.id)===activeEpisodeId);
       if(activeIndex<0){
         activeEpisodeId="";
         content.replaceChildren();
+        const addEpisode=element("button","episode-add-button","");
+        addEpisode.type="button";
+        addEpisode.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>새 화 추가</span>';
+        addEpisode.onclick=()=>openMobileEpisodeEditor();
+        episodes.append(addEpisode);
+        if(!list.length)content.replaceChildren(element("div","status-card","등록된 화가 없습니다."));
         const showCompletion=snapshot().settings?.completionEnabled!==false;
         list.forEach((episode,index)=>{
           const card=element("article","episode-button");
@@ -2424,6 +2427,7 @@
           card.append(open,menu);
           episodes.append(card)
         });
+        refreshLucideIcons();
         return
       }
 

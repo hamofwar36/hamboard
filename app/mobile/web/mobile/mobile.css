@@ -389,6 +389,13 @@ svg.lucide{stroke:currentColor}
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0;padding:0
 }
 .episode-list[hidden]{display:none}
+.episode-add-button{
+  grid-column:1/-1;min-height:42px;display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:0 12px;border:1px dashed var(--ui-control-neutral-border);border-radius:12px;
+  background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font-size:var(--fs-sm);font-weight:700
+}
+.episode-add-button svg{width:17px;height:17px}
+.episode-add-button:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
 .episode-button{
   position:relative;width:100%;min-width:0;min-height:154px;display:block;
   padding:14px 14px 43px;overflow:hidden;border:1px solid var(--ui-border-default);border-radius:18px;
@@ -403,11 +410,11 @@ svg.lucide{stroke:currentColor}
 }
 .episode-card-open:focus-visible{outline:2px solid var(--ui-field-focus-border);outline-offset:-3px}
 .episode-card-menu{
-  position:absolute;z-index:3;top:7px;right:7px;width:22px;height:22px;display:grid;place-items:center;padding:0;
-  border:0;border-radius:6px;background:transparent;color:var(--ui-muted)
+  position:absolute;z-index:3;top:8px;right:8px;width:32px;height:32px;display:grid;place-items:center;padding:0;
+  border:1px solid var(--ui-border-default);border-radius:9px;background:var(--ui-surface-default);color:var(--ui-content-default)
 }
-.episode-card-menu:active{background:transparent;color:var(--ui-fg)}
-.episode-card-menu svg{width:12px;height:12px}
+.episode-card-menu:active{background:var(--ui-control-pressed-bg);color:var(--ui-control-pressed-fg)}
+.episode-card-menu svg{width:17px;height:17px}
 .episode-number,.episode-title,.episode-desc{position:relative;z-index:1}
 .episode-number{display:block;margin:0 0 8px;color:var(--ui-muted);font-size:var(--fs-xs);font-weight:700;line-height:1.2}
 .episode-title{
@@ -501,7 +508,6 @@ svg.lucide{stroke:currentColor}
   padding:15px 14px;border:1px solid var(--ui-border-default);border-radius:15px;background:var(--ui-surface-default);
   box-shadow:var(--ui-card-shadow)
 }
-.script-block-card{border:1px solid var(--ui-border-strong);border-left:4px solid var(--primary-base);margin-block:3px}
 .editable-block-card{cursor:pointer;touch-action:manipulation}
 .editable-block-card:active{background:var(--ui-control-hover-bg)}
 .editable-block-card:focus-visible{outline:0;border-color:var(--ui-field-focus-border)}
@@ -518,7 +524,6 @@ svg.lucide{stroke:currentColor}
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden
 }
 .block-preview.no-title{margin-top:0;-webkit-line-clamp:2}
-.script-block-card .block-preview{white-space:pre-wrap;-webkit-line-clamp:3}
 .block-notes{padding:9px 10px;margin-top:8px;border-radius:10px;background:var(--ui-surface-subtle);color:var(--ui-muted);font-size:var(--fs-xs);line-height:1.6;white-space:pre-wrap}
 .child-blocks{margin:12px 0 0 10px;padding-left:10px;border-left:2px solid var(--ui-border-default)}
 .empty-stage{padding:18px;color:var(--ui-muted);font-size:var(--fs-sm);text-align:center}

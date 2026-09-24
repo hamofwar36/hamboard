@@ -264,9 +264,10 @@
 
           <div class="diagnostics-panel">
             <div class="diagnostics-head">
-              <div class="settings-copy"><strong>진단 로그</strong><small>현재 실행 중 발생한 주요 오류와 연결 상태를 표시합니다.</small></div>
-              <button id="diagnosticsClear" type="button">지우기</button>
+              <div class="settings-copy"><strong>진단 로그</strong><small>이 실행의 오류, 동기화 단계와 연결 상태를 기록합니다. 공유하기 전 보고서 내용을 확인해 주세요.</small></div>
+              <div class="diagnostics-actions"><button id="diagnosticsCopy" type="button">복사</button><button id="diagnosticsDownload" type="button">저장</button><button id="diagnosticsClear" type="button">지우기</button></div>
             </div>
+            <p class="diagnostics-feedback" id="diagnosticsFeedback" role="status" aria-live="polite" hidden></p>
             <div class="diagnostics-log" id="diagnosticsLog"></div>
           </div>
         </section>

@@ -340,19 +340,26 @@
 
     // -- cycle ----------------------------------------------------------------------------
     async function cycle(reason){
-      if(pauseRequested)return {skipped:"suspended"};
-      if(!meta?.linked)return {skipped:"not-linked"};
-      if(meta.suspended)return {skipped:"suspended"};
-      if(!online())return {skipped:"offline"};
-      if(!connected()){const reconnected=await hooks.ensureConnected?.().catch(()=>false);if(!reconnected||!connected())return {skipped:"disconnected"}}
-      await hooks.flushPendingSaves?.();
-      for(let attempt=0;attempt<3;attempt++){
-        const objects=await listTopology();updateRemotePresence(objects);
-        const pulled=await pull(objects);if(pulled.blocked||pulled.deferred)return pulled;
-        const pushed=await push(objects);if(pushed.rerun)continue;
-        return {...pushed,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,reason}
+      let phase="preflight";
+      try{
+        if(pauseRequested)return {skipped:"suspended"};
+        if(!meta?.linked)return {skipped:"not-linked"};
+        if(meta.suspended)return {skipped:"suspended"};
+        if(!online())return {skipped:"offline"};
+        if(!connected()){phase="reconnect";const reconnected=await hooks.ensureConnected?.().catch(error=>{log("warn","reconnect-failed",{reason,error});return false});if(!reconnected||!connected())return {skipped:"disconnected"}}
+        phase="flush-local-saves";await hooks.flushPendingSaves?.();
+        for(let attempt=0;attempt<3;attempt++){
+          phase="list-remote";const objects=await listTopology();updateRemotePresence(objects);
+          phase="pull-remote";const pulled=await pull(objects);if(pulled.blocked||pulled.deferred)return {...pulled,phase};
+          phase="push-local";const pushed=await push(objects);if(pushed.rerun)continue;
+          return {...pushed,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,reason}
+        }
+        return {deferred:"remote-busy",retryInMs:1500,phase}
+      }catch(error){
+        log("error","sync-cycle-failed",{reason,phase,error});
+        // The public result retains the original message for existing UI error handling.
+        return {failed:true,error:text(error?.message||error),phase,reason}
       }
-      return {deferred:"remote-busy",retryInMs:1500}
     }
     function sync(reason="manual"){
       if(pauseRequested)return Promise.resolve({skipped:"suspended"});

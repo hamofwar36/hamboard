@@ -1305,7 +1305,10 @@ body.block-editor-open .mobile-bottom-nav{display:none}
 .info-row strong{font-size:var(--fs-xs);font-weight:700}
 .diagnostics-panel{margin-top:12px;padding:14px;border:1px solid var(--ui-border-default);border-radius:16px;background:var(--ui-surface-default)}
 .diagnostics-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.diagnostics-head>button{flex:0 0 auto;height:28px;padding:0 8px;border:1px solid var(--ui-control-neutral-border);border-radius:9px;background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-muted);font-size:var(--fs-compact-10);font-weight:700;white-space:nowrap}
+.diagnostics-head .settings-copy{min-width:0}
+.diagnostics-actions{display:flex;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;gap:5px}
+.diagnostics-actions button{min-width:43px;height:32px;padding:0 8px;border:1px solid var(--ui-control-neutral-border);border-radius:9px;background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-muted);font-size:var(--fs-compact-10);font-weight:700;white-space:nowrap}
+.diagnostics-feedback{margin:9px 0 0;color:var(--ui-muted);font-size:var(--fs-compact-10)}
 .diagnostics-log{display:grid;gap:7px;max-height:280px;margin-top:12px;overflow:auto}
 .diagnostics-entry{padding:9px 10px;border-radius:10px;background:var(--ui-surface-subtle);font-size:var(--fs-xs)}
 .diagnostics-entry-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -1313,6 +1316,10 @@ body.block-editor-open .mobile-bottom-nav{display:none}
 .diagnostics-entry-head time{color:var(--ui-muted);font-size:var(--fs-compact-10)}
 .diagnostics-entry-message{margin-top:4px;line-height:1.45}
 .diagnostics-entry-detail{margin-top:3px;color:var(--ui-muted);font-size:var(--fs-compact-10);line-height:1.4;overflow-wrap:anywhere}
+.diagnostics-entry-meta{margin-top:5px;color:var(--ui-muted);font-size:var(--fs-compact-10);overflow-wrap:anywhere}
+.diagnostics-entry details{margin-top:6px;color:var(--ui-muted);font-size:var(--fs-compact-10)}
+.diagnostics-entry summary{cursor:pointer}
+.diagnostics-entry pre{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
 .diagnostics-warn{border-left:3px solid var(--status-warning)}
 .diagnostics-error{border-left:3px solid var(--status-error)}
 .diagnostics-empty{padding:18px 8px;color:var(--ui-muted);font-size:var(--fs-xs);text-align:center}

@@ -118,6 +118,9 @@
   const statusCloud=$("#statusCloud");
   const statusDocuments=$("#statusDocuments");
   const diagnosticsLog=$("#diagnosticsLog");
+  const diagnosticsCopy=$("#diagnosticsCopy");
+  const diagnosticsDownload=$("#diagnosticsDownload");
+  const diagnosticsFeedback=$("#diagnosticsFeedback");
   const diagnosticsClear=$("#diagnosticsClear");
   const cloudDisconnect=$("#cloudDisconnect");
   const cloudSourceStatus=$("#cloudSourceStatus");
@@ -165,6 +168,7 @@
   let noteHtmlDirty=false;
   let createColorExpanded=false;
   const diagnostics=[];
+  let diagnosticSequence=0;
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
   const DEFAULT_STAGE_COLORS=Object.freeze([CARD_COLORS[11],CARD_COLORS[7],CARD_COLORS[4],CARD_COLORS[0]]);
   const MOBILE_SCRIPT_TYPES=Object.freeze({narration:"지문",dialogue:"대사",background:"배경",direction:"연출",page:"페이지",cut:"컷"});
@@ -588,16 +592,61 @@
     }
   }
 
+  // The report is session-only. Keep diagnostic codes and source locations; avoid document bodies,
+  // account IDs, URLs with credentials, and raw remote response payloads.
+  function diagnosticText(value){
+    return String(value??"").replace(/\b(google-drive-http-\d+):[^\n]*/gi,"$1")
+      .replace(/https?:\/\/[^\s<>"']+/gi,"[URL]")
+      .replace(/\bBearer\s+[^\s,;]+/gi,"Bearer [비공개]")
+      .replace(/\b(?:access_token|refresh_token|authorization|code|client_secret|id_token)\s*[:=]\s*[^\s,;]+/gi,"[인증 정보]")
+      .replace(/\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?\b/g,"[인증 정보]")
+      .slice(0,400)
+  }
+  function diagnosticStack(error){
+    return String(error?.stack||"").split("\n").slice(1,9).map(line=>{
+      const location=line.match(/([\w.-]+\.(?:js|mjs|html)):(\d+)(?::(\d+))?/);
+      return location?`${location[1]}:${location[2]}:${location[3]||"0"}`:""
+    }).filter(Boolean).join(" ← ")
+  }
+  function diagnosticFailure(value,depth=0){
+    if(!value)return null;
+    if(value instanceof Error||typeof value==="object"&&typeof value.message==="string"){
+      const result={name:diagnosticText(value.name||"Error"),message:diagnosticText(value.message),stack:diagnosticStack(value)};
+      if(Number.isFinite(Number(value.status)))result.status=Number(value.status);
+      if(depth<2&&value.cause&&value.cause!==value)result.cause=diagnosticFailure(value.cause,depth+1);
+      return result
+    }
+    return {message:diagnosticText(value)}
+  }
+  function diagnosticDetail(value){
+    if(!value)return null;
+    if(value instanceof Error||typeof value!=="object"||typeof value.message==="string")return diagnosticFailure(value);
+    // Sync engine details are structured; only these known operational fields may leave the app.
+    const detail={};
+    for(const key of ["reason","phase","event","code","status","failed","blocked","skipped","deferred","retryInMs","changes","conflicts","pulled","hasPending","wasPolling"]){
+      const item=value[key];
+      if(typeof item==="boolean"||typeof item==="number"&&Number.isFinite(item))detail[key]=item;
+      else if(typeof item==="string")detail[key]=diagnosticText(item)
+    }
+    if(value.error)detail.error=diagnosticFailure(value.error);
+    if(!Object.keys(detail).length)detail.type=Array.isArray(value)?"Array":"Object";
+    return detail
+  }
+  function diagnosticEnvironment(){
+    const cloud=googleDrive?.status?.()||{},sync=syncEngine?.status?.()||{};
+    return {screen:currentScreen?.id||"unknown",online:navigator.onLine!==false,cloudConnected:!!cloud.connected,cloudAuthorized:!!cloud.authorized,syncLinked:!!sync.linked,syncPaused:!!sync.suspended,syncDirty:!!sync.dirty,syncBusy:!!sync.busy}
+  }
   function logDiagnostic(level,area,message,error=null){
-    diagnostics.unshift({
-      time:new Date().toISOString(),
-      level:String(level||"info"),
-      area:String(area||"APP"),
-      message:String(message||""),
-      detail:error?String(error?.message||error):""
-    });
-    if(diagnostics.length>80)diagnostics.length=80;
+    const time=new Date().toISOString(),detail=diagnosticDetail(error);
+    const entry={id:++diagnosticSequence,time,level:["info","warn","error"].includes(level)?level:"info",area:diagnosticText(area||"APP"),message:diagnosticText(message),detail,context:diagnosticEnvironment(),count:1};
+    const latest=diagnostics[0];
+    if(entry.level!=="info"&&latest?.level===entry.level&&latest.area===entry.area&&latest.message===entry.message&&JSON.stringify(latest.detail)===JSON.stringify(entry.detail)&&Date.now()-Date.parse(latest.time)<30000){latest.count++;latest.time=time;latest.context=entry.context}
+    else{diagnostics.unshift(entry);if(diagnostics.length>160)diagnostics.length=160}
     if(settingsScreen&&!settingsScreen.hidden)renderDiagnostics()
+  }
+
+  function diagnosticReport(){
+    return JSON.stringify({format:"hamboard-mobile-diagnostics-v1",createdAt:new Date().toISOString(),version:diagnosticText(window.HAMBOARD_MOBILE_CONFIG?.version||"unknown"),browser:diagnosticText(navigator.userAgent),environment:diagnosticEnvironment(),events:[...diagnostics].reverse()},null,2)
   }
 
   function renderDiagnostics(){
@@ -611,11 +660,15 @@
       const row=element("div",`diagnostics-entry diagnostics-${entry.level}`);
       const head=element("div","diagnostics-entry-head");
       head.append(
-        element("strong","",entry.area),
+        element("strong","",`${entry.level.toUpperCase()} · ${entry.area} #${entry.id}${entry.count>1?` (×${entry.count})`:""}`),
         element("time","",new Intl.DateTimeFormat("ko-KR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(entry.time)))
       );
       row.append(head,element("div","diagnostics-entry-message",entry.message));
-      if(entry.detail)row.append(element("div","diagnostics-entry-detail",entry.detail));
+      row.append(element("div","diagnostics-entry-meta",`${entry.context.screen} · ${entry.context.online?"온라인":"오프라인"} · 클라우드 ${entry.context.cloudConnected?"연결":"미연결"} · 동기화 ${entry.context.syncPaused?"중지":entry.context.syncLinked?"연결":"미연결"}`));
+      if(entry.detail){
+        const details=element("details"),summary=element("summary","","오류 정보와 발생 위치"),body=element("pre","",JSON.stringify(entry.detail,null,2));
+        details.append(summary,body);row.append(details)
+      }
       diagnosticsLog.append(row)
     }
   }
@@ -3958,7 +4011,7 @@
       if(run!==mobileReturnRun||result?.cancelled)return result;
       if(result?.skipped==="offline"||result?.skipped==="disconnected"){hideMobileReturnGate();showSyncToast(result.skipped==="offline"?"오프라인이라 최신 내용을 확인하지 못했습니다.":"클라우드에 로그인되어 있지 않아 최신 내용을 확인하지 못했습니다.");return result}
       if(result?.waitingTimedOut){showMobileReturnGate({message:"다른 기기의 변경사항이 아직 올라오지 않았습니다. 그 기기에서 햄보드를 열어 동기화하거나, 기다리지 않고 편집할 수 있습니다."});return result}
-      if(result?.failed||result?.blocked){showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
+      if(result?.failed||result?.blocked){logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
       hideMobileReturnGate();return result
     }catch(error){
       if(run===mobileReturnRun){logDiagnostic("error","SYNC","최신 내용 확인에 실패했습니다.",error);showMobileReturnGate({message:"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."})}
@@ -4005,7 +4058,7 @@
     if(name==="result"&&googleDrive?.status?.().connected&&navigator.onLine!==false){
       const status=syncEngine?.status();
       if(status?.suspended)setIndicator("local","동기화 멈춤");
-      else if(detail?.failed||detail?.blocked){setIndicator("error","동기화 보류");if(detail?.error)logDiagnostic("warn","SYNC",`자동 동기화 보류: ${detail.error}`)}
+      else if(detail?.failed||detail?.blocked){setIndicator("error","동기화 보류");logDiagnostic("warn","SYNC","자동 동기화가 보류되었습니다.",detail)}
       else if(status?.linked&&(detail?.synced||detail?.skipped==="lease"))setIndicator("connected",detail?.committed?"올림 완료":"동기화됨")
     }
   }
@@ -4051,12 +4104,12 @@
     // Folders that differed follow the cloud; keep the phone's previous names findable.
     const folders=Array.isArray(result.foldersFollowedCloud)?result.foldersFollowedCloud:[];
     const renamed=folders.filter(item=>item.localName&&item.localName!==item.cloudName);
-    for(const item of renamed)logDiagnostic("info","SYNC",`폴더 이름을 클라우드 기준으로 맞췄습니다: 이 기기 '${item.localName}' → 클라우드 '${item.cloudName}'`);
+    if(renamed.length)logDiagnostic("info","SYNC",`폴더 이름 ${renamed.length}개를 클라우드 기준으로 맞췄습니다.`);
     if(folders.length>renamed.length)logDiagnostic("info","SYNC",`이름 외 설정이 달랐던 폴더 ${folders.length-renamed.length}개를 클라우드 기준으로 맞췄습니다.`);
     // link() returns the first sync's result: only claim success when that sync actually finished.
     const finished=result?.synced===true,pendingUpload=!!syncEngine.status().dirty;
     if(!finished)logDiagnostic("warn","SYNC",`자동 동기화를 연결했지만 첫 동기화를 마치지 못했습니다: ${result?.error||result?.blocked||result?.skipped||result?.deferred||"unknown"}`);
-    const folderNote=renamed.length?` 이름이 달랐던 폴더 ${renamed.length}개는 클라우드 이름을 따랐고, 이 기기의 이전 이름은 진단 기록에 남겼습니다.`:"";
+    const folderNote=renamed.length?` 이름이 달랐던 폴더 ${renamed.length}개는 클라우드 이름을 따랐습니다.`:"";
     const message=finished?`자동 동기화를 시작했습니다.${folderNote}`:pendingUpload?`자동 동기화를 연결했지만 이 기기의 변경사항을 아직 올리지 못했습니다. 자동으로 다시 시도합니다.${folderNote}`:`자동 동기화를 연결했지만 최신 상태 확인을 마치지 못했습니다. 자동으로 다시 시도합니다.${folderNote}`;
     showSyncToast(message);
     result.linkMessage=message;
@@ -4124,7 +4177,11 @@
         drive:googleDrive,syncModel,coordination:syncCoordination,metaStore:syncEngineCore.createIndexedDbMetaStore(),
         readLocal:()=>baseRepository.snapshot(),writeLocal:engineWriteLocal,displayName:mobileDeviceName(),
         hooks:{flushPendingSaves:flushPendingMobileSaves,hasPendingSaves:hasPendingMobileSaves,ensureConnected:async()=>{await restoreGoogleConnection();return googleDrive?.status?.().connected===true},onStatus:handleSyncStatus},
-        log:(level,event,detail)=>{if(level!=="info")logDiagnostic(level==="error"?"error":"warn","SYNC",String(event),detail instanceof Error?detail:null)}
+        log:(level,event,detail)=>{
+          // Operational milestones make it possible to place failures between a pull and a push.
+          if(level==="info"&&!["remote-applied","commit-uploaded","sync-resumed"].includes(event))return;
+          logDiagnostic(level==="error"?"error":level==="warn"?"warn":"info","SYNC",`동기화: ${event}`,detail)
+        }
       });
       const status=await syncEngine.init();installMobileSyncGuards();
       if(status.linked&&!status.suspended)runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}));
@@ -4957,7 +5014,20 @@
   themeSecondaryColor.oninput=()=>saveThemeSettings({theme:"custom",themeCustomB:safeColor(themeSecondaryColor.value,"#FFD0AE")});
   themeSwapButton.onclick=()=>saveThemeSettings({theme:"custom",themeCustomA:themeSecondaryColor.value,themeCustomB:themePrimaryColor.value});
   themePairSwap.onclick=()=>saveThemeSettings({themeSwapped:!normalizedThemeSettings().themeSwapped});
-  diagnosticsClear.onclick=()=>{diagnostics.length=0;renderDiagnostics()};
+  diagnosticsClear.onclick=()=>{diagnostics.length=0;diagnosticsFeedback.hidden=false;diagnosticsFeedback.textContent="현재 실행의 로그를 지웠습니다.";renderDiagnostics()};
+  diagnosticsCopy.onclick=async()=>{
+    try{await navigator.clipboard.writeText(diagnosticReport());diagnosticsFeedback.textContent="진단 보고서를 복사했습니다."}
+    catch(error){diagnosticsFeedback.textContent="복사할 수 없습니다. 저장 버튼으로 파일을 내려받아 주세요.";logDiagnostic("warn","CLIPBOARD","진단 보고서 복사에 실패했습니다.",error)}
+    diagnosticsFeedback.hidden=false
+  };
+  diagnosticsDownload.onclick=()=>{
+    try{
+      const link=document.createElement("a"),url=URL.createObjectURL(new Blob([diagnosticReport()],{type:"application/json;charset=utf-8"}));
+      link.href=url;link.download=`hamboard-mobile-diagnostics-${new Date().toISOString().slice(0,10)}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+      diagnosticsFeedback.textContent="진단 보고서를 저장했습니다. 공유하기 전 내용을 확인해 주세요."
+    }catch(error){diagnosticsFeedback.textContent="보고서를 저장하지 못했습니다.";logDiagnostic("warn","DOWNLOAD","진단 보고서 저장에 실패했습니다.",error)}
+    diagnosticsFeedback.hidden=false
+  };
   indicator.onclick=()=>openCloudSources("library");
   loadSyncSource.onclick=loadSelectedSync;
   cloudDisconnect.onclick=async()=>{
@@ -5011,7 +5081,17 @@
     logDiagnostic("warn","NETWORK","오프라인 상태로 전환되었습니다.");
     renderAccountButton()
   });
-  window.addEventListener("error",event=>logDiagnostic("error","RUNTIME","실행 오류",event.error||event.message));
+  window.addEventListener("error",event=>{
+    if(event.target!==window){
+      const resource=event.target?.localName||"resource";
+      logDiagnostic("error","RESOURCE",`${resource} 파일을 불러오지 못했습니다.`,{phase:"load",event:resource});
+      return
+    }
+    logDiagnostic("error","RUNTIME","실행 오류",{
+      phase:event.filename?`${String(event.filename).split("/").pop().split("?")[0]}:${event.lineno||0}:${event.colno||0}`:"runtime",
+      error:event.error||event.message||"Unknown script error"
+    })
+  },true);
   window.addEventListener("unhandledrejection",event=>logDiagnostic("error","RUNTIME","처리되지 않은 비동기 오류",event.reason));
   fileInput.onchange=async()=>{
     const file=fileInput.files?.[0];fileInput.value="";

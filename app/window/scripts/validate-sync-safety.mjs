@@ -94,7 +94,7 @@ await check('actual automatic sync retains lock until lease release; backup and 
     SYNC_POLL_INTERVAL_MS:30000,syncAutomaticFailureCount:0,syncAutomaticRetryNotBefore:0,
     GoogleDriveService:{status:async()=>{events.push('sync-start');await connection.promise;return {connected:false}}},
     syncSetReadonly(){},syncReleaseOwnLease:async()=>{events.push('lease-release');await lease.promise},
-    syncResetAutomaticBackoff(){},scheduleAutomaticSync(){},
+    syncResetAutomaticBackoff(){},scheduleAutomaticSync(){},syncDesiredPollInterval:()=>30000,
     DiagnosticsLog:{info(){},warn(){},error(){}},
     CloudBackupRepository:{readRun:async()=>{events.push('backup-start');await backup.promise;return {id:'backup-1'}},progress:async()=>({total:1,uploaded:1}),complete:async()=>events.push('backup-complete')},
     applyPreparedBackupExclusive:async()=>events.push('restore-start')

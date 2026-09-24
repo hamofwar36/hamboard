@@ -4,6 +4,7 @@ import process from "node:process";
 const root = new URL("../", import.meta.url);
 const html = await readFile(new URL("web/index.html", root), "utf8");
 const sharedModelSource = await readFile(new URL("web/shared/sync-state-model.js", root), "utf8");
+const sharedCoordinationSource = await readFile(new URL("web/shared/sync-coordination.js", root), "utf8");
 const rust = await readFile(new URL("src-tauri/src/google_drive.rs", root), "utf8");
 const lib = await readFile(new URL("src-tauri/src/lib.rs", root), "utf8");
 const cargo = await readFile(new URL("src-tauri/Cargo.toml", root), "utf8");
@@ -290,12 +291,14 @@ check(
   html.includes("CloudPayload.unpackUserState(validated.manifest,SyncStateModel)"),
 );
 
-const topologyStart = html.indexOf("function syncCommitTopology");
-const topologyEnd = html.indexOf("async function syncPublishCheckpoint", topologyStart);
-const topologySource = html.slice(topologyStart, topologyEnd);
+const topologyStart = sharedCoordinationSource.indexOf("  function commitTopology");
+const topologyEnd = sharedCoordinationSource.indexOf("\n  function deviceLabel", topologyStart);
+const topologySource = sharedCoordinationSource.slice(topologyStart, topologyEnd);
 check(
-  "sync topology keeps two checkpoint anchors before compacting history",
-  topologySource.includes("checkpointHits>=2") && topologySource.includes("orphanHeads"),
+  "sync topology is shared and keeps two checkpoint anchors before compacting history",
+  html.includes("function syncCommitTopology(objects,baseRevision=\"\"){return SyncCoordination.commitTopology(objects,baseRevision)}")
+    && topologySource.includes("checkpointHits>=2")
+    && topologySource.includes("orphanHeads"),
 );
 const cleanupStart = html.indexOf("async function syncCleanupRemoteStorage");
 const cleanupEnd = html.indexOf("function syncActiveLeases", cleanupStart);
@@ -491,7 +494,7 @@ try {
   const mobileCommitProjection=sharedModel.projectChangesForClient([{entityType:"user-library",entityId:"main",operation:"upsert",payload:{tagLibrary:[],favorites:[],workspace:{settings:{theme:"dark",calendarDesktopWidget:{enabled:false}}},utilityLibrary:sharedModel.projectUtilityLibrary(mobileState),mascotLibrary:{common:{speechEnabled:true,speechInterval:30},items:[{id:"pet-x"}]}}}],sharedModel.CLIENT_PROFILES.mobileCore);
   check("mobile commit projection strips desktop utility mascot and widget state", !mobileCommitProjection[0].payload.utilityLibrary&&!mobileCommitProjection[0].payload.mascotLibrary&&!Object.prototype.hasOwnProperty.call(mobileCommitProjection[0].payload.workspace.settings,"calendarDesktopWidget")&&mobileCommitProjection[0].payload.workspace.settings.theme==="dark");
 
-  const topologyHarness=new Function(`${topologySource}; return syncCommitTopology;`)();
+  const topologyHarness=new Function("text",`${topologySource}; return commitTopology;`)(value=>String(value??""));
   const commit=(n,base)=>({syncType:"commit",revision:`r${n}`,baseRevision:base===null?"":`r${base}`,objectKey:`sync/commits/r${n}.json`,createdAtMs:n});
   const checkpoint=n=>({syncType:"checkpoint",revision:`r${n}`,objectKey:`sync/checkpoints/r${n}.json`,createdAtMs:n});
   let compactObjects=[];for(let n=1;n<=18;n++)compactObjects.push(commit(n,n===1?null:n-1));compactObjects.push(checkpoint(8),checkpoint(16));

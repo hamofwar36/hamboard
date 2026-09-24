@@ -10,7 +10,18 @@ const build=spawnSync(process.execPath,[resolve(root,"scripts/prepare-mobile-dep
 assert.equal(build.status,0,build.stderr||build.stdout);
 const output=resolve(root,"dist-mobile"),files=(await readdir(output)).sort(),html=await readFile(resolve(output,"index.html"),"utf8"),css=await readFile(resolve(output,"mobile.css"),"utf8"),app=await readFile(resolve(output,"mobile-app.js"),"utf8"),assetRepository=await readFile(resolve(output,"mobile-asset-repository.js"),"utf8"),transport=await readFile(resolve(output,"mobile-google-drive.js"),"utf8"),config=await readFile(resolve(output,"mobile-config.js"),"utf8"),manifest=JSON.parse(await readFile(resolve(output,"manifest.webmanifest"),"utf8")),serviceWorker=await readFile(resolve(output,"service-worker.js"),"utf8"),lucide=await readFile(resolve(output,"vendor/lucide/lucide.min.js"),"utf8"),vercel=JSON.parse(await readFile(resolve(root,"vercel.json"),"utf8")),authWorker=await readFile(resolve(root,"cloudflare-auth/worker.js"),"utf8"),authSchema=await readFile(resolve(root,"cloudflare-auth/schema.sql"),"utf8");
 const checks=[],check=(name,run)=>{run();checks.push(name)};
-check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["favicon.ico","icons","index.html","manifest.webmanifest","mobile-app.js","mobile-asset-repository.js","mobile-config.js","mobile-google-drive.js","mobile-sync-engine.js","mobile.css","service-worker.js","shared","vendor"]));
+check("mobile output contains only deployable root assets",()=>assert.deepEqual(files,["assets","favicon.ico","icons","index.html","manifest.webmanifest","mobile-app.js","mobile-asset-repository.js","mobile-config.js","mobile-google-drive.js","mobile-sync-engine.js","mobile.css","service-worker.js","shared","vendor"]));
+
+check("bundled mobile note fonts are deployed and cached",async()=>{
+  const fontFiles=(await readdir(resolve(output,"assets/fonts"))).sort();
+  assert.deepEqual(fontFiles,["LICENSE-Pretendard.txt","LICENSE-SourceHanSerif.txt","Pretendard-Bold-subset.woff2","Pretendard-Regular-subset.woff2","SourceHanSerifKR-Bold_subset.woff2","SourceHanSerifKR-Regular_subset.woff2"]);
+  assert.match(css,/@font-face\{font-family:"Pretendard"/);
+  assert.match(css,/@font-face\{font-family:"Source Han Serif KR"/);
+  for(const font of ["Pretendard-Regular-subset.woff2","Pretendard-Bold-subset.woff2","SourceHanSerifKR-Regular_subset.woff2","SourceHanSerifKR-Bold_subset.woff2"])assert.ok(serviceWorker.includes("/assets/fonts/"+font),font+" should be cached for offline use");
+  assert.match(app,/<option value="Pretendard">프리텐다드<\/option>/);
+  assert.match(app,/<option value="Source Han Serif KR">본명조<\/option>/);
+  assert.match(app,/<option value="system-ui">시스템<\/option>/);
+});
 check("mobile index uses deployment-local shared modules",()=>{assert.match(html,/src="\.\/shared\/sync-state-model\.js(?:\?v=[^"]*)?"/);assert.doesNotMatch(html,/\.\.\/shared/)});
 check("runtime config loads before Google Drive transport",()=>assert.ok(html.indexOf("mobile-config.js")<html.indexOf("mobile-google-drive.js")));
 check("versioned mobile assets prevent stale mixed deployments",()=>{
@@ -153,7 +164,11 @@ check("note toolbar prioritizes history controls and toggles keyboard",()=>{
   assert.match(app,/open\?"keyboard-off":"keyboard"/);
   assert.match(app,/open\?"키보드 내리기":"키보드 띄우기"/);
   assert.match(app,/event\.preventDefault\(\)/);
-  assert.match(app,/if\(keyboardOpen\)[\s\S]*?noteReaderContent\.blur\(\)[\s\S]*?else restoreMobileNoteSelection\(\)/);
+  assert.match(app,/if\(keyboardOpen\)[\s\S]*?noteReaderContent\.blur\(\)[\s\S]*?else\{[\s\S]*?setMobileNoteKeyboardSuppressed\(false\);[\s\S]*?restoreMobileNoteSelection\(\)/);
+  // Formatting panels keep the keyboard down; toolbar/panel buttons never steal focus from the note.
+  assert.match(app,/noteReaderContent\.setAttribute\("inputmode","none"\)/);
+  assert.match(app,/if\(event\.target\.closest\("button"\)\)\{event\.preventDefault\(\);captureMobileNoteSelection\(\)\}/);
+  assert.doesNotMatch(app,/window\.prompt\(/);
 });
 check("note toolbar spacing stays balanced with keyboard control at the right edge",()=>{
   assert.match(css,/\.note-mobile-toolbar\{[\s\S]*?width:min\(calc\(100% - 4px\),360px\)/);

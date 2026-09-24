@@ -15,6 +15,7 @@ await rm(outputRoot,{recursive:true,force:true});
 await mkdir(resolve(outputRoot,"shared"),{recursive:true});
 await mkdir(resolve(outputRoot,"vendor"),{recursive:true});
 await mkdir(resolve(outputRoot,"icons"),{recursive:true});
+await mkdir(resolve(outputRoot,"assets/fonts"),{recursive:true});
 
 let html=await readFile(resolve(mobileRoot,"index.html"),"utf8");
 html=html
@@ -52,6 +53,7 @@ await Promise.all([
   cp(resolve(mobileRoot,"manifest.webmanifest"),resolve(outputRoot,"manifest.webmanifest")),
   cp(resolve(mobileRoot,"service-worker.js"),resolve(outputRoot,"service-worker.js")),
   cp(resolve(mobileRoot,"icons"),resolve(outputRoot,"icons"),{recursive:true}),
+  cp(resolve(mobileRoot,"assets/fonts"),resolve(outputRoot,"assets/fonts"),{recursive:true}),
   cp(resolve(sharedRoot,"sync-state-model.js"),resolve(outputRoot,"shared/sync-state-model.js")),
   cp(resolve(sharedRoot,"project-repository.js"),resolve(outputRoot,"shared/project-repository.js")),
   cp(resolve(sharedRoot,"cloud-payload.js"),resolve(outputRoot,"shared/cloud-payload.js")),

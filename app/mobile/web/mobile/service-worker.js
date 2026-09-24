@@ -8,6 +8,10 @@ const core=[
   "./favicon.ico",
   "./icons/hamboard-192.svg",
   "./icons/hamboard-512.svg",
+  "./assets/fonts/Pretendard-Regular-subset.woff2",
+  "./assets/fonts/Pretendard-Bold-subset.woff2",
+  "./assets/fonts/SourceHanSerifKR-Regular_subset.woff2",
+  "./assets/fonts/SourceHanSerifKR-Bold_subset.woff2",
   `./mobile.css${versionTag}`,
   `./shared/sync-state-model.js${versionTag}`,
   `./shared/cloud-payload.js${versionTag}`,
@@ -22,6 +26,7 @@ const core=[
 ];
 const cacheablePaths=new Set([
   "/manifest.webmanifest","/favicon.ico","/icons/hamboard-192.svg","/icons/hamboard-512.svg",
+  "/assets/fonts/Pretendard-Regular-subset.woff2","/assets/fonts/Pretendard-Bold-subset.woff2","/assets/fonts/SourceHanSerifKR-Regular_subset.woff2","/assets/fonts/SourceHanSerifKR-Bold_subset.woff2",
   "/mobile.css","/shared/sync-state-model.js","/shared/project-repository.js","/shared/cloud-payload.js","/shared/sync-coordination.js",
   "/vendor/lucide/lucide.min.js","/mobile-config.js","/mobile-google-drive.js","/mobile-asset-repository.js","/mobile-sync-engine.js","/mobile-app.js"
 ]);

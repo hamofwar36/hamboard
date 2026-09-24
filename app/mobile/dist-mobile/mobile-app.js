@@ -155,6 +155,7 @@
   let noteViewportBaseHeight=0;
   let noteSavedRange=null;
   let noteFormatPanelKey="";
+  let noteKeyboardSuppressed=false;
   let noteSaveTimer=0;
   let pendingNoteSave=null;
   let noteSaveChain=Promise.resolve();
@@ -1532,6 +1533,7 @@
           }else if(name==="data-divider"&&el.tagName==="HR"&&["solid","dotted","dashed","double"].includes(rawValue)){
           }else if(name==="start"&&el.tagName==="OL"&&/^\d+$/.test(rawValue)){
           }else if(name==="style"){
+            if(el.style.fontFamily)el.style.fontFamily=normalizeMobileNoteFont(el.style.fontFamily);
             const kept=[...el.style].filter(key=>styles.has(key)).map(key=>key+":"+el.style.getPropertyValue(key)).join(";");
             if(kept)el.setAttribute("style",kept);else el.removeAttribute("style")
           }else el.removeAttribute(attribute.name)
@@ -2452,7 +2454,7 @@
         if(el.tagName==="FONT"){
           const replacement=document.createElement("span"),legacyColor=String(el.getAttribute("color")||"").trim(),legacyFace=String(el.getAttribute("face")||"").trim();
           if(legacyColor)replacement.style.color=legacyColor;
-          if(legacyFace)replacement.style.fontFamily=legacyFace;
+          if(legacyFace)replacement.style.fontFamily=normalizeMobileNoteFont(legacyFace);
           while(el.firstChild)replacement.appendChild(el.firstChild);
           el.replaceWith(replacement);
           el=replacement
@@ -2741,10 +2743,22 @@
     refreshLucideIcons()
   }
 
+  const MOBILE_NOTE_FONT_PRETENDARD="Pretendard";
+  const MOBILE_NOTE_FONT_SERIF="Source Han Serif KR";
+  const MOBILE_NOTE_FONT_SYSTEM="system-ui";
+
+  function normalizeMobileNoteFont(value){
+    const font=String(value||"__default__").trim()||"__default__",normalized=font.replace(/["']/g,"").toLowerCase();
+    if(normalized==="sans-serif")return MOBILE_NOTE_FONT_PRETENDARD;
+    if(normalized==="serif")return MOBILE_NOTE_FONT_SERIF;
+    if(normalized==="monospace")return MOBILE_NOTE_FONT_SYSTEM;
+    return font
+  }
+
   function applyMobileNoteDefaultStyle(note){
     if(!noteReaderContent)return;
     const style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
-    const font=String(style.fontFamily||"__default__").trim()||"__default__";
+    const font=normalizeMobileNoteFont(style.fontFamily);
     noteReaderContent.style.fontFamily=font==="__default__"?"":font;
     noteReaderContent.style.textAlign=["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left";
     noteReaderContent.style.setProperty("--note-first-line-indent",style.firstLineIndent===true?"1em":"0");
@@ -2779,8 +2793,9 @@
         const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===String(activeDocumentId||"")),style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
         return {font:String(style.fontFamily||"__default__").trim()||"__default__",align:["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left",indent:style.firstLineIndent===true,spacing:style.paragraphSpacing===true}
       })();
-      const standard=new Set(["__default__","sans-serif","serif","monospace"]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
-      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">기본 글꼴</option><option value="sans-serif">고딕</option><option value="serif">명조</option><option value="monospace">고정폭</option>'+extra+'</select></label>'+
+      current.font=normalizeMobileNoteFont(current.font);
+      const standard=new Set(["__default__",MOBILE_NOTE_FONT_PRETENDARD,MOBILE_NOTE_FONT_SERIF,MOBILE_NOTE_FONT_SYSTEM]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
+      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">기본 글꼴</option><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option><option value="system-ui">시스템</option>'+extra+'</select></label>'+
         '<div class="note-style-row"><span>글 정렬</span><div class="note-style-align" data-note-default-align><button type="button" value="left" aria-label="왼쪽 정렬"><i data-lucide="align-left"></i></button><button type="button" value="center" aria-label="가운데 정렬"><i data-lucide="align-center"></i></button><button type="button" value="right" aria-label="오른쪽 정렬"><i data-lucide="align-right"></i></button><button type="button" value="justify" aria-label="양쪽 정렬"><i data-lucide="align-justify"></i></button></div></div>'+
         '<label class="note-style-row"><span>들여쓰기</span><select data-note-default-indent><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
         '<label class="note-style-row"><span>문단 사이 여백 주기</span><select data-note-default-spacing><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
@@ -2830,8 +2845,9 @@
 
   function restoreMobileNoteSelection(){
     const editor=noteReaderContent,selection=window.getSelection();
-    editor.focus({preventScroll:true});
+    // Read the saved range before focusing: the focus listener re-captures whatever caret the browser picks.
     let range=noteSavedRange&&editor.contains(noteSavedRange.commonAncestorContainer)?noteSavedRange.cloneRange():null;
+    editor.focus({preventScroll:true});
     if(!range){
       range=document.createRange();
       range.selectNodeContents(editor);
@@ -3000,12 +3016,144 @@
     scheduleMobileNoteSave()
   }
 
+  function normalizeMobileNoteLinkUrl(value){
+    const raw=String(value||"").trim();
+    if(!raw)return "";
+    if(/^(https?:|mailto:)/i.test(raw)||raw.startsWith("#"))return /\s/.test(raw)?null:raw;
+    if(/^[a-z][a-z0-9+.-]*:/i.test(raw)&&!/^[^:\/]+:\d+(\/|$)/.test(raw))return null;
+    if(/\s/.test(raw))return null;
+    if(/^[^@\/]+@[^@\/]+\.[^@\/]+$/.test(raw))return "mailto:"+raw;
+    return "https://"+raw.replace(/^\/+/,"")
+  }
+
+  function closeMobileNoteLinkSheet(){
+    document.querySelector("[data-note-link-sheet]")?.remove()
+  }
+
   function insertMobileNoteLink(){
-    const elementAtSelection=mobileNoteSelectionElement(),anchor=elementAtSelection?.closest?.("a");
-    if(anchor){execMobileNoteCommand("unlink");return}
+    if(activeDocumentType!=="note")return;
     captureMobileNoteSelection();
-    const url=window.prompt("연결할 주소를 입력하세요.","https://");
-    if(url)execMobileNoteCommand("createLink",url)
+    const editor=noteReaderContent,saved=noteSavedRange&&editor.contains(noteSavedRange.commonAncestorContainer)?noteSavedRange.cloneRange():null;
+    let node=saved?.commonAncestorContainer||null;
+    node=node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement;
+    const found=node?.closest?.("a"),anchor=found&&found!==editor&&editor.contains(found)?found:null;
+    const selectedText=saved&&!saved.collapsed?saved.toString().trim():"",needsText=!anchor&&!selectedText;
+    const title=anchor?"링크 편집":"링크 삽입";
+    closeMobileNoteLinkSheet();
+    const wrap=element("div","nav-sheet-backdrop note-tool-sheet-backdrop"),panel=element("section","nav-sheet note-tool-sheet-panel");
+    wrap.dataset.noteLinkSheet="1";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label",title);
+    const head=element("div","note-tool-sheet-head"),close=element("button","sheet-close");
+    close.type="button";
+    close.setAttribute("aria-label","닫기");
+    close.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';
+    head.append(element("h3","",title),close);
+    const body=element("div","note-tool-sheet-body");
+    const urlField=element("label","create-field"),urlInput=element("input");
+    urlInput.type="url";
+    urlInput.inputMode="url";
+    urlInput.autocomplete="off";
+    urlInput.spellcheck=false;
+    urlInput.placeholder="https://example.com";
+    urlInput.value=anchor?.getAttribute("href")||"";
+    urlField.append(element("span","","주소"),urlInput);
+    body.append(urlField);
+    let textInput=null;
+    if(needsText){
+      const textField=element("label","create-field"),label=element("span","","표시할 텍스트 ");
+      label.append(element("small","","· 선택"));
+      textInput=element("input");
+      textInput.type="text";
+      textInput.autocomplete="off";
+      textInput.placeholder="비워두면 주소를 그대로 표시합니다";
+      textField.append(label,textInput);
+      body.append(textField)
+    }else if(selectedText){
+      body.append(element("p","note-link-target","선택한 “"+selectedText.slice(0,60)+(selectedText.length>60?"…":"")+"”에 링크를 겁니다."))
+    }
+    const error=element("p","note-correction-status error");
+    error.hidden=true;
+    error.setAttribute("role","alert");
+    body.append(error);
+    const actions=element("div","mobile-confirm-actions note-link-actions"+(anchor?" has-remove":""));
+    let removeButton=null;
+    if(anchor){
+      removeButton=element("button","create-delete","링크 해제");
+      removeButton.type="button";
+      actions.append(removeButton)
+    }
+    const cancel=element("button","mobile-confirm-cancel","취소"),submitButton=element("button","mobile-confirm-submit",anchor?"저장":"삽입");
+    cancel.type="button";
+    submitButton.type="button";
+    actions.append(cancel,submitButton);
+    panel.append(head,body,actions);
+    wrap.append(panel);
+    document.body.append(wrap);
+    refreshLucideIcons();
+    const showError=message=>{error.textContent=message;error.hidden=!message};
+    const backToEditor=()=>{
+      closeMobileNoteLinkSheet();
+      if(saved&&saved.startContainer.isConnected&&editor.contains(saved.commonAncestorContainer))noteSavedRange=saved.cloneRange();
+      restoreMobileNoteSelection()
+    };
+    const finish=()=>{
+      captureMobileNoteSelection();
+      scheduleMobileNoteSave();
+      updateMobileNoteFormatState();
+      updateMobileNoteCharacterCount()
+    };
+    const submit=()=>{
+      const url=normalizeMobileNoteLinkUrl(urlInput.value);
+      if(url===""){showError("연결할 주소를 입력하세요.");urlInput.focus();return}
+      if(url===null){showError("http, https, 메일 주소만 연결할 수 있습니다.");urlInput.focus();return}
+      const label=String(textInput?.value||"").trim();
+      backToEditor();
+      if(anchor&&anchor.isConnected){anchor.setAttribute("href",url);finish();return}
+      if(needsText){
+        const selection=window.getSelection();
+        if(!selection?.rangeCount)return;
+        const range=selection.getRangeAt(0),text=document.createTextNode(label||url.replace(/^mailto:/i,""));
+        range.deleteContents();
+        range.insertNode(text);
+        const target=document.createRange();
+        target.selectNodeContents(text);
+        noteSavedRange=target.cloneRange();
+        execMobileNoteCommand("createLink",url);
+        const after=window.getSelection();
+        if(after?.rangeCount)after.collapseToEnd()
+      }else execMobileNoteCommand("createLink",url);
+      finish()
+    };
+    const remove=()=>{
+      backToEditor();
+      if(!anchor?.isConnected)return;
+      const first=anchor.firstChild,last=anchor.lastChild;
+      anchor.replaceWith(...anchor.childNodes);
+      if(first&&last&&first.isConnected){
+        const range=document.createRange();
+        range.setStartBefore(first);
+        range.setEndAfter(last);
+        noteSavedRange=range.cloneRange();
+        restoreMobileNoteSelection()
+      }
+      finish()
+    };
+    submitButton.onclick=submit;
+    cancel.onclick=backToEditor;
+    close.onclick=backToEditor;
+    if(removeButton)removeButton.onclick=remove;
+    wrap.onclick=event=>{if(event.target===wrap)backToEditor()};
+    [urlInput,textInput].filter(Boolean).forEach(input=>{
+      input.addEventListener("input",()=>showError(""));
+      input.addEventListener("keydown",event=>{
+        if(event.isComposing)return;
+        if(event.key==="Enter"){event.preventDefault();if(input===urlInput&&textInput&&!textInput.value)textInput.focus();else submit()}
+        else if(event.key==="Escape"){event.preventDefault();backToEditor()}
+      })
+    });
+    requestAnimationFrame(()=>urlInput.focus())
   }
 
   function insertMobileNoteDivider(style="solid"){
@@ -3156,6 +3304,11 @@
   }
 
   function closeMobileNoteFormatPanel(){
+    if(noteKeyboardSuppressed){
+      captureMobileNoteSelection();
+      if(document.activeElement===noteReaderContent)noteReaderContent.blur();
+      setMobileNoteKeyboardSuppressed(false)
+    }
     noteFormatPanelKey="";
     noteFormatPanel.hidden=true;
     noteFormatPanel.replaceChildren();
@@ -3177,7 +3330,7 @@
       '<button type="button" class="note-format-action" data-note-command="strikeThrough"><i data-lucide="strikethrough"></i><span>취소선</span></button>'+
       '</div>';
     if(key==="decorate")return '<div class="note-format-panel-title">글자 꾸미기</div>'+
-      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="inherit">기본</option><option value="sans-serif">고딕</option><option value="serif">명조</option><option value="monospace">고정폭</option></select></label>'+
+      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="inherit">기본</option><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option><option value="system-ui">시스템</option></select></label>'+
       '<div class="note-format-grid">'+
       '<label class="note-format-action note-color-action"><i data-lucide="paintbrush"></i><span>글자색</span><input type="color" value="#292B38" data-note-color="foreColor" aria-label="글자색"></label>'+
       '<label class="note-format-action note-color-action"><i data-lucide="paint-bucket"></i><span>배경색</span><input type="color" value="#F6D872" data-note-color="hiliteColor" aria-label="배경색"></label>'+
@@ -3212,9 +3365,23 @@
       '</div><p class="note-format-panel-note">이미지는 모바일 Asset 저장 경로를 연결한 뒤 활성화됩니다.</p>'
   }
 
+  function setMobileNoteKeyboardSuppressed(suppressed){
+    noteKeyboardSuppressed=!!suppressed;
+    if(noteKeyboardSuppressed)noteReaderContent.setAttribute("inputmode","none");
+    else noteReaderContent.removeAttribute("inputmode")
+  }
+
   function openMobileNoteFormatPanel(key){
     if(noteFormatPanelKey===key){closeMobileNoteFormatPanel();return}
     captureMobileNoteSelection();
+    if(!noteKeyboardSuppressed){
+      // Formatting mode: hide the keyboard once, keep the caret/selection without it.
+      const hadFocus=document.activeElement===noteReaderContent;
+      setMobileNoteKeyboardSuppressed(true);
+      if(hadFocus){noteReaderContent.blur();restoreMobileNoteSelection()}
+      scheduleNoteViewportSync();
+      setTimeout(scheduleNoteViewportSync,120)
+    }
     noteFormatPanelKey=key;
     noteFormatPanel.innerHTML=mobileNotePanelHtml(key);
     noteFormatPanel.hidden=false;
@@ -3674,7 +3841,56 @@
     if(documentCount()===0&&!(snapshot().folders||[]).length){try{await startMobileLink()}catch(error){logDiagnostic("warn","SYNC","자동 동기화 연결을 미뤘습니다.",error)}return}
     setStatus("이 기기의 문서를 클라우드와 자동으로 동기화하려면 연결을 시작하세요.",{action:"자동 동기화 시작",run:()=>openCloudSources("library")})
   }
-  async function initMobileSync(){
+  function consumeMobileAuthResult(){
+    try{
+      const url=new URL(location.href),value=String(url.searchParams.get("auth")||"");
+      if(!value)return "";
+      url.searchParams.delete("auth");
+      history.replaceState(history.state,"",url.pathname+url.search+url.hash);
+      return value
+    }catch{return ""}
+  }
+
+  async function askMobileSyncImportAfterConnect(){
+    const connection=await restoreGoogleConnection();
+    if(!connection?.connected||syncEngine?.status().linked){maybeStartMobileLink();return}
+    let head=null;
+    try{
+      const fast=googleDrive.listSyncRestoreSource?await googleDrive.listSyncRestoreSource():null,listing=fast||await googleDrive.listSyncObjects();
+      if(listing?.truncated)throw new Error("sync-object-list-truncated");
+      head=listing?.fast===true?listing.head:requireCloudCommitTopology(listing?.objects||[]).head
+    }catch(error){
+      logDiagnostic("warn","SYNC","계정 연결 직후 동기화 데이터를 확인하지 못했습니다.",error);
+      maybeStartMobileLink();
+      return
+    }
+    if(!head){
+      showSyncToast("계정을 연결했습니다. 클라우드에 저장된 동기화 데이터는 아직 없습니다.");
+      maybeStartMobileLink();
+      return
+    }
+    const localCount=documentCount();
+    const confirmed=await openMobileConfirm({
+      title:"기존 동기화 데이터를 불러오시겠습니까?",
+      message:`Google Drive에 햄보드 동기화 데이터가 있습니다(최근 동기화 · ${formatCloudTime(head.createdAtMs)}). 불러오면 이 기기와 자동 동기화를 시작합니다.${localCount?" 이 기기에만 있는 문서는 다음 단계에서 처리 방법을 고를 수 있습니다.":""}`,
+      confirmLabel:"불러오기",cancelLabel:"나중에"
+    });
+    if(!confirmed){
+      setStatus("클라우드의 동기화 데이터를 아직 불러오지 않았습니다.",{action:"자동 동기화 시작",run:()=>openCloudSources("library")});
+      return
+    }
+    showSyncToast("클라우드 데이터를 불러오는 중입니다.");
+    try{
+      const result=await startMobileLink();
+      if(!result?.cancelled)renderHome()
+    }catch(error){
+      console.error("계정 연결 직후 동기화 불러오기 실패",error);
+      logDiagnostic("error","SYNC","계정 연결 직후 동기화 데이터를 불러오지 못했습니다.",error);
+      setStatus(cloudErrorMessage(error),{action:"다시 시도",run:()=>openCloudSources("library")})
+    }
+  }
+
+  async function initMobileSync({justConnected=false}={}){
     if(!googleDrive?.listSyncTopology)return;
     try{
       syncEngine=syncEngineCore.createMobileSyncEngine({
@@ -3685,7 +3901,7 @@
       });
       const status=await syncEngine.init();installMobileSyncGuards();
       if(status.linked&&!status.suspended)runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}));
-      else if(!status.linked)maybeStartMobileLink();
+      else if(!status.linked)justConnected?askMobileSyncImportAfterConnect():maybeStartMobileLink();
       else setIndicator("local","동기화 멈춤")
     }catch(error){console.error("모바일 자동 동기화 시작 실패",error);logDiagnostic("error","SYNC","자동 동기화를 시작하지 못했습니다.",error)}
   }
@@ -4094,6 +4310,7 @@
       await repository.load();
       applyMobileTheme();
       logDiagnostic("info","APP","모바일 저장소를 열었습니다.");
+      const authResult=consumeMobileAuthResult();
       const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
@@ -4102,7 +4319,9 @@
       refreshLucideIcons();
       registerMobileServiceWorker();
       renderInstallAction();
-      initMobileSync()
+      if(authResult==="denied")showSyncToast("Google 계정 연결을 취소했습니다.");
+      else if(authResult&&authResult!=="connected")showSyncToast("Google 계정을 연결하지 못했습니다. 다시 시도해 주세요.");
+      initMobileSync({justConnected:authResult==="connected"})
     }catch(error){
       console.error("모바일 저장소를 열지 못했습니다.",error);
       logDiagnostic("error","REPOSITORY","모바일 저장소를 열지 못했습니다.",error);
@@ -4368,6 +4587,18 @@
   noteReaderContent.addEventListener("keyup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
   noteReaderContent.addEventListener("pointerup",()=>{captureMobileNoteSelection();updateMobileNoteFormatState()});
   noteReaderContent.addEventListener("focus",captureMobileNoteSelection);
+  // In formatting mode a plain tap on the text means "I want to type": leave the panel and bring the keyboard.
+  // A long-press selection (no click, non-collapsed range) stays in formatting mode without the keyboard.
+  noteReaderContent.addEventListener("click",()=>{
+    if(!noteKeyboardSuppressed||!noteFormatPanelKey)return;
+    const selection=window.getSelection();
+    if(selection?.rangeCount&&!selection.isCollapsed)return;
+    captureMobileNoteSelection();
+    closeMobileNoteFormatPanel();
+    restoreMobileNoteSelection();
+    scheduleNoteViewportSync();
+    setTimeout(scheduleNoteViewportSync,120)
+  });
   noteMobileToolbar.addEventListener("pointerdown",event=>{
     const keyboardButton=event.target.closest("[data-note-keyboard-toggle]");
     if(keyboardButton){
@@ -4375,7 +4606,8 @@
       if(document.body.classList.contains("note-keyboard-open"))captureMobileNoteSelection();
       return
     }
-    if(event.target.closest("button"))captureMobileNoteSelection()
+    // Keep focus in the note so tapping a toolbar button never drops and re-raises the keyboard.
+    if(event.target.closest("button")){event.preventDefault();captureMobileNoteSelection()}
   });
   noteMobileToolbar.addEventListener("click",event=>{
     const keyboardButton=event.target.closest("[data-note-keyboard-toggle]");
@@ -4384,7 +4616,12 @@
       if(keyboardOpen){
         captureMobileNoteSelection();
         noteReaderContent.blur()
-      }else restoreMobileNoteSelection();
+      }else{
+        if(noteFormatPanelKey)closeMobileNoteFormatPanel();
+        else if(document.activeElement===noteReaderContent){captureMobileNoteSelection();noteReaderContent.blur()}
+        setMobileNoteKeyboardSuppressed(false);
+        restoreMobileNoteSelection()
+      }
       scheduleNoteViewportSync();
       setTimeout(scheduleNoteViewportSync,80);
       return
@@ -4396,6 +4633,7 @@
   });
   noteFormatPanel.addEventListener("pointerdown",event=>{
     const button=event.target.closest("button");
+    if(button)event.preventDefault();
     if(button&&!button.disabled)captureMobileNoteSelection();
     else if(event.target.closest("select,input"))captureMobileNoteSelection()
   });

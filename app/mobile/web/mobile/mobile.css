@@ -1,3 +1,8 @@
+@font-face{font-family:"Pretendard";font-style:normal;font-weight:400;font-display:swap;src:local("Pretendard Regular"),url("./assets/fonts/Pretendard-Regular-subset.woff2") format("woff2")}
+@font-face{font-family:"Pretendard";font-style:normal;font-weight:700;font-display:swap;src:local("Pretendard Bold"),url("./assets/fonts/Pretendard-Bold-subset.woff2") format("woff2")}
+@font-face{font-family:"Source Han Serif KR";font-style:normal;font-weight:400;font-display:swap;src:local("Source Han Serif KR Regular"),url("./assets/fonts/SourceHanSerifKR-Regular_subset.woff2") format("woff2")}
+@font-face{font-family:"Source Han Serif KR";font-style:normal;font-weight:700;font-display:swap;src:local("Source Han Serif KR Bold"),url("./assets/fonts/SourceHanSerifKR-Bold_subset.woff2") format("woff2")}
+
 :root{
   color-scheme:light;
   /* Windows 햄보드와 같은 역할 기반 토큰 체계. */
@@ -87,7 +92,7 @@
   --mobile-page-gap:14px;
   --create-chooser-width:150px;
 
-  font-family:var(--interface-font-family,"Pretendard","Source Han Serif KR","Malgun Gothic","Microsoft YaHei UI","Yu Gothic UI",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
+  font-family:"Pretendard",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Microsoft YaHei UI","Yu Gothic UI",sans-serif;
   background:var(--bg);
   color:var(--text)
 }
@@ -741,6 +746,10 @@ body.note-html-mode .note-editor-controls{display:none}
   border:1px solid var(--ui-control-neutral-border);background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg)
 }
 .mobile-confirm-submit{border:0;background:var(--ui-control-primary-bg);color:var(--ui-control-primary-fg)}
+.note-link-actions.has-remove{grid-template-columns:auto minmax(0,1fr) minmax(0,1fr)}
+.note-link-actions .create-delete{padding:0 8px}
+.note-link-target{margin:0;padding:10px 11px;border-radius:11px;background:var(--ui-surface-subtle);color:var(--ui-muted);font-size:var(--fs-xs);line-height:1.5;overflow-wrap:anywhere}
+.note-tool-sheet-body .note-correction-status[hidden]{display:none}
 .mobile-confirm-submit.destructive{
   border:1px solid var(--ui-status-error-border);background:var(--ui-status-error-bg);color:var(--ui-status-error-fg)
 }

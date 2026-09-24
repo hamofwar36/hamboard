@@ -669,7 +669,7 @@
   function setIndicator(state,text){indicator.dataset.state=state;indicator.textContent=text}
   function setStatus(message,{action="",run=null}={}){
     const status=$("#libraryStatus");
-    status.replaceChildren(document.createTextNode(message));
+    status.replaceChildren(element("p","",message));
     if(action&&run){const button=element("button","",action);button.type="button";button.onclick=run;status.append(button)}
     status.hidden=false
   }
@@ -1251,6 +1251,7 @@
       copy.append(element("h3","",title));
       if(message)copy.append(element("p","",message));
       const actions=element("div","mobile-confirm-actions");
+      if([cancelLabel,confirmLabel].some(label=>Array.from(label).length>8))actions.classList.add("stacked");
       const cancel=element("button","mobile-confirm-cancel",cancelLabel),confirm=element("button","mobile-confirm-submit"+(destructive?" destructive":""),confirmLabel);
       cancel.type="button";
       confirm.type="button";

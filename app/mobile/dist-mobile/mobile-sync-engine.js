@@ -338,6 +338,7 @@
       // Images this state references must be on Drive before a commit that points at them is published.
       emit("pushing",{changes:changes.length});
       await hooks.beforeCommit?.({state:snapshot,changes});
+      emit("committing",{changes:changes.length});
       const held=await acquireLease(objects);if(!held)return {skipped:"lease",retryInMs:1500};
       try{
         const headNow=topology(held.objects,meta.baseRevision);

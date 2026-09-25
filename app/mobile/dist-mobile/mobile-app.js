@@ -19,6 +19,7 @@
   const assetRepository=assetRepositoryCore.createIndexedDbAssetRepository({databaseName:"hamboard-mobile-assets",storeName:"assets"});
   const assetUploader=googleDrive?assetRepositoryCore.createMobileAssetUploader({
     drive:googleDrive,assetRepository,sha256Hex:bytes=>googleDrive.sha256Hex(bytes),
+    onProgress:progress=>updatePublishPanel({images:progress}),
     log:(level,event,detail)=>logDiagnostic(level==="warn"?"warn":"info","ASSET",level==="warn"?"클라우드에서 사라진 이미지 정보를 다시 올렸습니다.":"이미지를 클라우드에 올렸습니다.",detail)
   }):null;
   const $=selector=>document.querySelector(selector);
@@ -3526,7 +3527,7 @@
     const input=document.createElement("input");
     input.type="file";input.accept="image/*";input.multiple=true;input.hidden=true;
     document.body.append(input);
-    input.onchange=()=>{const files=[...(input.files||[])];input.remove();if(files.length)insertMobileNoteImages(files)};
+    input.onchange=()=>{const files=[...(input.files||[])];input.remove();if(files.length){closeMobileNoteFormatPanel();insertMobileNoteImages(files)}};
     input.addEventListener("cancel",()=>input.remove(),{once:true});
     input.click()
   }
@@ -3534,15 +3535,17 @@
     const noteId=String(activeDocumentId||""),images=files.filter(file=>String(file?.type||"").startsWith("image/"));
     if(!images.length){showSyncToast("이미지 파일을 선택해 주세요.");return}
     noteImageInsertBusy=true;
-    showSyncToast(images.length>1?`이미지 ${images.length}개를 준비하고 있습니다.`:"이미지를 준비하고 있습니다.");
+    const linked=!!syncEngine?.status().linked&&!syncEngine.status().suspended;
+    if(linked)showPublishPanel("image");
+    else showSyncToast(images.length>1?`이미지 ${images.length}개를 준비하고 있습니다.`:"이미지를 준비하고 있습니다.");
     const added=[];let failed=0;
     try{
       for(const file of images){
         try{const prepared=await prepareMobileImageAsset(file,`note:${noteId}`);added.push({...prepared,name:String(file.name||"").trim()||"이미지",type:String(prepared.blob.type||file.type||"image/*")})}
         catch(error){failed++;logDiagnostic("error","ASSET",error?.message==="mobile-image-too-large"?"이미지가 너무 커서 추가하지 못했습니다.":"노트 이미지를 저장하지 못했습니다.",error)}
       }
-      if(!added.length){showSyncToast("이미지를 추가하지 못했습니다.");return}
-      if(activeDocumentType!=="note"||String(activeDocumentId||"")!==noteId||!noteReaderContent.isConnected){showSyncToast("노트가 바뀌어 이미지를 넣지 못했습니다.");return}
+      if(!added.length){if(linked)hidePublishPanel();showSyncToast("이미지를 추가하지 못했습니다.");return}
+      if(activeDocumentType!=="note"||String(activeDocumentId||"")!==noteId||!noteReaderContent.isConnected){if(linked)hidePublishPanel();showSyncToast("노트가 바뀌어 이미지를 넣지 못했습니다.");return}
       const now=new Date().toISOString(),editorWidth=Math.max(1,noteReaderContent.clientWidth||1);
       pendingNoteImageResources.set(noteId,[...(pendingNoteImageResources.get(noteId)||[]),...added.map(item=>({id:item.id,name:item.name,type:item.type,size:item.blob.size,description:"",favorite:false,addedAt:now,updatedAt:now,inline:true}))]);
       const range=restoreMobileNoteSelection();
@@ -3558,9 +3561,9 @@
       noteSavedRange=range.cloneRange();
       scheduleMobileNoteSave();
       updateMobileNoteCharacterCount();
-      // Publish now instead of waiting for the edit debounce: the image upload is the slow part.
-      flushMobileNoteSave();noteSaveChain.then(()=>{if(syncEngine?.status().linked)syncEngine.sync("image-insert")});
-      showSyncToast(failed?`이미지 ${added.length}개를 추가했고 ${failed}개는 실패했습니다.`:added.length>1?`이미지 ${added.length}개를 추가했습니다.`:"이미지를 추가했습니다.")
+      // Publish now instead of waiting for the edit debounce, and keep the progress in view until Drive has it.
+      flushMobileNoteSave();noteSaveChain.then(()=>{if(linked)syncEngine.sync("image-insert")});
+      if(failed||!linked)showSyncToast(failed?`이미지 ${added.length}개를 추가했고 ${failed}개는 실패했습니다.`:added.length>1?`이미지 ${added.length}개를 추가했습니다.`:"이미지를 추가했습니다.")
     }finally{noteImageInsertBusy=false}
   }
 
@@ -3770,7 +3773,7 @@
       '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="dotted"><span class="note-divider-preview dotted"></span><span>점선</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="dashed"><span class="note-divider-preview dashed"></span><span>파선</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="double"><span class="note-divider-preview double"></span><span>이중선</span></button>'+
-      '</div><p class="note-format-panel-note">이미지는 모바일 Asset 저장 경로를 연결한 뒤 활성화됩니다.</p>'
+      '</div>'
   }
 
   function setMobileNoteKeyboardSuppressed(suppressed){
@@ -4191,7 +4194,9 @@
       if(result?.waitingTimedOut){showMobileReturnGate({message:"다른 기기의 변경사항이 아직 올라오지 않았습니다. 그 기기에서 햄보드를 열어 동기화하거나, 기다리지 않고 편집할 수 있습니다."});return result}
       if(result?.failed||result?.blocked){logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
       mobileDisconnectedNoticeShown=false;
-      hideMobileReturnGate();return result
+      hideMobileReturnGate();
+      if(syncEngine.pendingChanges().length&&!publishPanelState.active){showPublishPanel("resume");syncEngine.sync("resume-publish")}
+      return result
     }catch(error){
       if(run===mobileReturnRun){logDiagnostic("error","SYNC","최신 내용 확인에 실패했습니다.",error);showMobileReturnGate({message:"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."})}
       return null
@@ -4223,9 +4228,82 @@
     if(away<MOBILE_SHORT_AWAY_MS&&!backgroundPublishPending){syncEngine.startPolling();return}
     runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}))
   }
+  // Upload panel: shown while an image edit (or edits left from a previous visit) goes up to Drive,
+  // so nobody turns the screen off halfway. Editing stays possible; it closes once Drive has everything.
+  const PUBLISH_SLOW_MS=10000,PUBLISH_DONE_HIDE_MS=1400;
+  const publishPanelState={active:false,reason:"",stage:"",images:null,slowTimer:0,hideTimer:0};
+  function publishPanelElement(){
+    let panel=document.getElementById("mobilePublishPanel");
+    if(panel)return panel;
+    panel=element("section","mobile-publish-panel");panel.id="mobilePublishPanel";
+    panel.setAttribute("role","status");panel.setAttribute("aria-live","polite");
+    panel.innerHTML='<div class="mobile-publish-head"><strong data-publish-title></strong><span data-publish-step></span></div><p data-publish-text></p><div class="mobile-publish-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span></div><div class="mobile-publish-actions" hidden><button type="button" data-publish-retry>다시 시도</button><button type="button" data-publish-close>닫기</button></div>';
+    panel.querySelector("[data-publish-retry]").onclick=()=>{if(!syncEngine)return;showPublishPanel(publishPanelState.reason||"image");syncEngine.sync("publish-retry")};
+    panel.querySelector("[data-publish-close]").onclick=()=>hidePublishPanel();
+    document.body.append(panel);
+    return panel
+  }
+  function renderPublishPanel(){
+    const panel=publishPanelElement(),state=publishPanelState,images=state.images;
+    const resume=state.reason==="resume";
+    let title=resume?"지난번 변경을 올리는 중":"Drive에 올리는 중",text=resume?"지난번에 다 올라가지 않은 변경이 있어 지금 올립니다. 화면을 끄지 마세요.":"화면을 끄지 마세요. 다 올라가면 이 안내가 사라집니다.",step=state.reason==="image"?"이미지 준비 중":"준비 중",percent=8,actions=false,retry=false;
+    if(state.stage==="images"&&images?.total){step=`이미지 ${Math.min(images.done+1,images.total)}/${images.total}`;percent=10+Math.round(60*images.done/images.total)}
+    else if(state.stage==="saving"){step="변경 저장 중";percent=82}
+    else if(state.stage==="done"){title="Drive에 올렸습니다";text="이제 화면을 꺼도 됩니다.";step="완료";percent=100}
+    else if(state.stage==="failed"){title="아직 올리지 못했습니다";text=state.error||"폰에는 저장되어 있습니다. 연결을 확인한 뒤 다시 시도해 주세요.";step="보류";actions=true;retry=true}
+    if(state.stage==="slow"||(state.slow&&!["done","failed"].includes(state.stage))){text="연결이 느립니다. 폰에는 저장되어 있고, 다음에 앱을 열면 이어서 올립니다.";actions=true}
+    panel.dataset.stage=state.stage||"preparing";
+    panel.querySelector("[data-publish-title]").textContent=title;
+    panel.querySelector("[data-publish-step]").textContent=step;
+    panel.querySelector("[data-publish-text]").textContent=text;
+    const bar=panel.querySelector(".mobile-publish-progress");bar.setAttribute("aria-valuenow",String(percent));bar.firstElementChild.style.width=`${percent}%`;
+    panel.querySelector(".mobile-publish-actions").hidden=!actions;
+    panel.querySelector("[data-publish-retry]").hidden=!retry;
+    requestAnimationFrame(()=>panel.classList.add("visible"))
+  }
+  function showPublishPanel(reason="image"){
+    const state=publishPanelState;
+    if(state.hideTimer){clearTimeout(state.hideTimer);state.hideTimer=0}
+    if(state.slowTimer)clearTimeout(state.slowTimer);
+    Object.assign(state,{active:true,reason,stage:"preparing",images:null,slow:false,error:""});
+    state.slowTimer=setTimeout(()=>{state.slowTimer=0;if(state.active&&!["done","failed"].includes(state.stage)){state.slow=true;renderPublishPanel()}},PUBLISH_SLOW_MS);
+    renderPublishPanel()
+  }
+  function hidePublishPanel(){
+    const state=publishPanelState;state.active=false;
+    for(const key of ["slowTimer","hideTimer"])if(state[key]){clearTimeout(state[key]);state[key]=0}
+    const panel=document.getElementById("mobilePublishPanel");
+    if(!panel)return;
+    panel.classList.remove("visible");setTimeout(()=>{if(!publishPanelState.active)panel.remove()},220)
+  }
+  function updatePublishPanel({images=null,stage="",error=""}={}){
+    const state=publishPanelState;
+    if(!state.active||state.stage==="done")return;
+    // After a failure the engine keeps retrying on its own; stay on the failure (with its retry button)
+    // until one of those attempts actually lands.
+    if(state.stage==="failed"&&stage!=="done")return;
+    if(images){state.images=images;state.stage=images.total&&images.done<images.total?"images":"saving"}
+    if(stage)state.stage=stage;
+    if(error)state.error=error;
+    if(state.stage==="done"){
+      if(state.slowTimer){clearTimeout(state.slowTimer);state.slowTimer=0}
+      state.slow=false;state.hideTimer=setTimeout(hidePublishPanel,PUBLISH_DONE_HIDE_MS)
+    }
+    renderPublishPanel()
+  }
+  function publishPanelResult(result){
+    if(!publishPanelState.active)return;
+    if(result?.synced&&!syncEngine?.pendingChanges().length){updatePublishPanel({stage:"done"});return}
+    if(result?.skipped==="offline")updatePublishPanel({stage:"failed",error:"오프라인입니다. 폰에는 저장되어 있고, 연결되면 이어서 올립니다."});
+    else if(result?.skipped==="disconnected")updatePublishPanel({stage:"failed",error:"클라우드에 로그인되어 있지 않습니다. 폰에는 저장되어 있습니다."});
+    else if(result?.failed||result?.blocked)updatePublishPanel({stage:"failed"})
+    // Deferred (another device is uploading) or edits made meanwhile: the engine retries by itself.
+  }
+
   function handleSyncStatus(name,detail){
     if(name==="readonly"){renderSyncReadonly(detail);return}
-    if(name==="pushing"){if(googleDrive?.status?.().connected)setIndicator("connected","올리는 중…");return}
+    if(name==="pushing"){if(googleDrive?.status?.().connected)setIndicator("busy","올리는 중…");if(publishPanelState.stage!=="images")updatePublishPanel({stage:publishPanelState.stage==="preparing"?"images":publishPanelState.stage});return}
+    if(name==="committing"){updatePublishPanel({stage:"saving"});return}
     if(name==="conflicts"){
       const rows=Array.isArray(detail)?detail:[];if(!rows.length)return;
       const copied=rows.filter(item=>/copy/.test(String(item?.kind||""))).length,merged=rows.filter(item=>["field-merged","initial-merged"].includes(String(item?.kind||""))).length,remoteKept=rows.filter(item=>/remote-kept|local-deleted-remote-modified/.test(String(item?.kind||""))).length,parts=[];
@@ -4235,6 +4313,7 @@
       showSyncToast(`동기화 충돌 ${rows.length}건: ${parts.join(" · ")||"내용을 확인했습니다."}`);
       logDiagnostic("warn","SYNC",`동기화 충돌 ${rows.length}건: ${parts.join(" · ")||"분류 없음"}`);return
     }
+    if(name==="result")publishPanelResult(detail);
     if(name==="result"&&googleDrive?.status?.().connected&&navigator.onLine!==false){
       const status=syncEngine?.status();
       if(status?.suspended)setIndicator("local","동기화 멈춤");

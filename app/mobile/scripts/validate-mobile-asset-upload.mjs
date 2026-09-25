@@ -172,7 +172,13 @@ await check("the service worker's background publisher imports only files the de
   assert.ok(block,"importScripts list found");
   const paths=[...block[1].matchAll(/"\.\/([^"]+)"/g)].map(match=>match[1]);
   assert.ok(paths.includes("mobile-sync-engine.js")&&paths.includes("mobile-asset-repository.js"));
-  for(const path of paths)await readFile(new URL(`dist-mobile/${path}`,root));
+  // Resolve each path the way prepare-mobile-deploy.mjs lays out the deployment.
+  const prepare=await readFile(new URL("scripts/prepare-mobile-deploy.mjs",root),"utf8");
+  for(const path of paths){
+    if(path==="mobile-config.js"){assert.match(prepare,/writeFile\(resolve\(outputRoot,"mobile-config\.js"\)/);continue}
+    const shipped=path.startsWith("shared/")?prepare.includes(`resolve(outputRoot,"${path}")`)&&await readFile(new URL(`../window/web/${path}`,root)):prepare.includes(`resolve(outputRoot,"${path}")`)&&await readFile(new URL(`web/mobile/${path}`,root));
+    assert.ok(shipped,`${path} is shipped next to the service worker`)
+  }
   assert.match(worker,/addEventListener\("sync",event=>\{if\(event\.tag===PUBLISH_TAG\)event\.waitUntil\(backgroundPublish\(\)\)\}\)/);
   assert.match(worker,/navigator\.locks\.request\(SYNC_LOCK/)
 });

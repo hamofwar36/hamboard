@@ -1677,3 +1677,40 @@ body[data-mode="dark"] .project-card{box-shadow:var(--soft-shadow)}
   opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease
 }
 .mobile-sync-toast.visible{opacity:1;transform:translate(-50%,0)}
+
+/* Drive upload panel: stays in view until the edit (and its images) is on Drive. */
+.mobile-publish-panel{
+  position:fixed;z-index:150;left:50%;top:calc(env(safe-area-inset-top,0px) + 52px);
+  width:min(420px,calc(100vw - 24px));padding:14px 16px 13px;border:1px solid var(--ui-border-default);border-radius:16px;
+  background:var(--ui-panel-bg);color:var(--ui-content-default);box-shadow:var(--soft-shadow);
+  transform:translate(-50%,-8px);opacity:0;transition:opacity .2s ease,transform .2s ease
+}
+.mobile-publish-panel.visible{opacity:1;transform:translate(-50%,0)}
+.mobile-publish-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.mobile-publish-head strong{font-size:var(--fs-base);font-weight:700}
+.mobile-publish-head span{flex:0 0 auto;color:var(--ui-content-muted);font-size:var(--fs-xs);font-weight:700;font-variant-numeric:tabular-nums}
+.mobile-publish-panel p{margin:5px 0 11px;color:var(--ui-content-muted);font-size:var(--fs-sm);line-height:1.45}
+.mobile-publish-progress{position:relative;height:8px;overflow:hidden;border-radius:999px;background:var(--primary-soft)}
+.mobile-publish-progress span{
+  position:absolute;inset:0 auto 0 0;width:0;border-radius:inherit;
+  background:linear-gradient(90deg,var(--primary-base),var(--secondary-base));transition:width .45s ease
+}
+/* While a step is running the bar keeps moving so a slow network does not look frozen. */
+.mobile-publish-panel:not([data-stage="done"]):not([data-stage="failed"]) .mobile-publish-progress span::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--ui-panel-bg) 55%,transparent),transparent);
+  animation:mobile-publish-sheen 1.3s ease-in-out infinite
+}
+@keyframes mobile-publish-sheen{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.mobile-publish-panel[data-stage="failed"] .mobile-publish-progress span{background:var(--ui-status-error-fg)}
+.mobile-publish-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.mobile-publish-actions button{
+  min-height:34px;padding:0 14px;border:1px solid var(--ui-control-neutral-border);border-radius:10px;
+  background:var(--ui-control-neutral-bg);color:var(--ui-control-neutral-fg);font-size:var(--fs-sm);font-weight:700
+}
+.mobile-publish-actions button[data-publish-retry]{border-color:transparent;background:var(--ui-control-primary-bg);color:var(--ui-control-primary-fg)}
+@media (prefers-reduced-motion:reduce){.mobile-publish-progress span,.mobile-publish-panel{transition:none}.mobile-publish-progress span::after{animation:none!important}}
+.sync-indicator[data-state="busy"]::before{
+  content:"";width:6px;height:6px;margin-right:5px;border-radius:50%;background:currentColor;animation:mobile-sync-pulse 1s ease-in-out infinite
+}
+@keyframes mobile-sync-pulse{50%{opacity:.25}}

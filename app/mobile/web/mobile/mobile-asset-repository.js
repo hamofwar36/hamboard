@@ -167,7 +167,7 @@
   // names them. Descriptors must exist before a commit that references the image is published.
   const SYNC_ASSET_QUALITY="balanced";
   const VERIFY_WINDOW_MS=30*60*1000,VERIFY_INTERVAL_MS=2*60*1000;
-  function createMobileAssetUploader({drive,assetRepository,sha256Hex,log=()=>{},now=()=>Date.now()}={}){
+  function createMobileAssetUploader({drive,assetRepository,sha256Hex,log=()=>{},now=()=>Date.now(),onProgress=()=>{}}={}){
     if(!drive||!assetRepository||!sha256Hex)throw new Error("mobile-asset-uploader-dependencies-missing");
     const textSha=value=>sha256Hex(new TextEncoder().encode(String(value)));
     const blobSha=async blob=>sha256Hex(await blob.arrayBuffer());
@@ -206,7 +206,9 @@
       const wanted=new Set([...(referencedIds||[])].map(String));
       const rows=(await assetRepository.listPendingUploads()).filter(record=>wanted.has(String(record.id)));
       const pending=rows.filter(record=>record.uploadState==="pending");
-      for(const record of pending)await uploadOne(record);
+      const progress=done=>{try{onProgress({phase:"images",done,total:pending.length})}catch{}};
+      progress(0);
+      for(let index=0;index<pending.length;index++){await uploadOne(pending[index]);progress(index+1)}
       // Uploaded earlier but not yet part of a published commit: make sure the descriptor is still
       // on Drive right before the commit that will point at it (older Windows cleanup drops it).
       let restored=0;

@@ -573,6 +573,29 @@ await check("background publish: page and worker never run a sync cycle at the s
   d.putSyncValue=value
 });
 
+await check("with the real sync lock, the return check does not queue behind this phone's own running upload",async()=>{
+  const {d,phone}=await sharedLinked();
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="업로드 중 복귀"});
+  let release;const hold=new Promise(resolve=>{release=resolve});const value=d.putSyncValue.bind(d);
+  d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")await hold;return value(request)};
+  const upload=phone.page.sync("push");await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(phone.lock.held,1,"the upload holds the lock");
+  let settled=false;const check=phone.page.checkOnReturn().then(result=>{settled=true;return result});
+  for(let i=0;i<50&&!settled;i++)await new Promise(resolve=>setTimeout(resolve,2));
+  assert.equal(settled,true,"the return check finished while the upload still held the lock");
+  assert.ok((await check).upToDate);
+  release();assert.ok((await upload).committed);d.putSyncValue=value
+});
+
+await check("with the real sync lock, the return check still waits for the background worker",async()=>{
+  const {phone}=await sharedLinked();
+  let release;const workerHold=new Promise(resolve=>{release=resolve});
+  const workerRun=phone.lock.run(()=>workerHold);await new Promise(resolve=>setTimeout(resolve,5));
+  let settled=false;const check=phone.page.checkOnReturn().then(()=>{settled=true});
+  await new Promise(resolve=>setTimeout(resolve,20));assert.equal(settled,false,"waits while the worker may be writing");
+  release();await workerRun;await check;assert.equal(settled,true)
+});
+
 await check("background publish: the worker withdraws the page's editing presence once everything is published",async()=>{
   const {d,phone}=await sharedLinked();
   const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new TypeError("Failed to fetch");return value(request)};

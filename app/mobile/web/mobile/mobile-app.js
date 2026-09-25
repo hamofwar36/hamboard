@@ -4051,6 +4051,10 @@
   // True while the service worker may be writing local state for a background publish; cleared once the
   // page has taken the sync lock again and reloaded whatever the worker wrote.
   let backgroundPublishPending=false;
+  // The return check runs quietly; it blocks input only while there is real work: another device's
+  // document changes being applied, another device still editing, a failure to report, or a background
+  // publish that may still be writing local state.
+  let mobileReturnGateBlocking=false;
   let mobileReturnGateActive=false,mobileReturnRun=0,mobileHiddenAt=0,syncToastTimer=0,syncNoticeAt=0,assetRefreshTimer=0;
   const MOBILE_SHORT_AWAY_MS=3000;
 
@@ -4073,7 +4077,7 @@
   function noticeReadonly(){
     if(Date.now()-syncNoticeAt<2500)return;syncNoticeAt=Date.now();
     const remote=syncEngine?._readonly?.();
-    showSyncToast(remote?`${remoteDeviceText(remote)}. 반영될 때까지 읽기 전용입니다.`:"최신 내용을 확인하는 중입니다.")
+    showSyncToast(remote?`${remoteDeviceText(remote)}. 반영될 때까지 읽기 전용입니다.`:"다른 기기의 변경사항을 반영하는 중입니다. 잠시만 기다려 주세요.")
   }
   function renderSyncReadonly(remote){
     let banner=document.getElementById("mobileSyncReadonly");
@@ -4148,9 +4152,11 @@
   }
   function showMobileReturnGate({waiting=null,message="",pulling=false}={}){
     mobileReturnGateActive=true;
+    const blocking=!!(waiting||message||pulling||backgroundPublishPending);
+    if(blocking&&!mobileReturnGateBlocking)releaseMobileInputFocus();
+    mobileReturnGateBlocking=mobileReturnGateBlocking||blocking;
     let layer=document.getElementById("mobileSyncGate");
     if(!layer){
-      releaseMobileInputFocus();
       layer=element("div","mobile-sync-gate");layer.id="mobileSyncGate";
       layer.innerHTML='<section class="mobile-sync-gate-card" role="status" aria-live="polite"><strong></strong><p></p><div class="mobile-sync-gate-actions"><button type="button" data-sync-gate-retry>다시 확인</button><button type="button" data-sync-gate-skip>로컬에서 편집</button></div></section>';
       document.body.append(layer);
@@ -4161,7 +4167,8 @@
         else showSyncToast("최신 내용 확인 전에 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.");
         hideMobileReturnGate()
       };
-      revealMobileReturnGate(MOBILE_GATE_SLOW_REVEAL_MS)
+      // A plain check stays invisible; only a blocking one surfaces when it drags on.
+      if(blocking)revealMobileReturnGate(MOBILE_GATE_SLOW_REVEAL_MS)
     }
     layer.querySelector("strong").textContent=waiting?"다른 기기에서 수정 중":pulling?"변경사항 반영 중":"최신 내용 확인 중";
     layer.querySelector("p").textContent=message||(waiting?`${remoteDeviceText(waiting)}. 변경사항이 올라오면 자동으로 편집할 수 있습니다.`:pulling?"다른 기기의 변경사항을 반영하고 있습니다.":"다른 기기의 변경사항을 확인하고 있습니다.");
@@ -4170,7 +4177,7 @@
     else if(pulling)revealMobileReturnGate(MOBILE_GATE_PULL_REVEAL_MS)
   }
   function hideMobileReturnGate(){
-    mobileReturnGateActive=false;
+    mobileReturnGateActive=false;mobileReturnGateBlocking=false;
     if(mobileGateRevealTimer){clearTimeout(mobileGateRevealTimer);mobileGateRevealTimer=0}
     document.getElementById("mobileSyncGate")?.remove()
   }
@@ -4178,7 +4185,14 @@
     const status=syncEngine?.status();
     if(!status?.linked||status.suspended)return null;
     if(!force&&mobileReturnGateActive)return null;
-    const run=++mobileReturnRun;showMobileReturnGate();
+    const run=++mobileReturnRun;
+    // What a finished background publish wrote only needs one reload under the lock; after that the
+    // check itself no longer has to hold input.
+    if(backgroundPublishPending&&!(await backgroundPublishMayBeRunning())){
+      try{await syncEngine.reloadFromStore();backgroundPublishPending=false}catch(error){logDiagnostic("warn","SYNC","백그라운드 반영 내용을 불러오지 못했습니다.",error)}
+      if(run!==mobileReturnRun)return null
+    }
+    showMobileReturnGate();
     try{
       const pendingBefore=backgroundPublishPending;
       const result=await syncEngine.checkOnReturn({isCancelled:()=>run!==mobileReturnRun,onWaiting:remote=>{if(run===mobileReturnRun)showMobileReturnGate({waiting:remote})},onPulling:()=>{if(run===mobileReturnRun)showMobileReturnGate({pulling:true})}});
@@ -4206,7 +4220,7 @@
     if(document.documentElement.dataset.mobileSyncGuards)return;document.documentElement.dataset.mobileSyncGuards="1";
     const editable="input,textarea,[contenteditable='true'],[contenteditable='']";
     for(const type of ["beforeinput","paste","cut","drop"])document.addEventListener(type,event=>{
-      if(!(syncEngine?.isReadonly()||mobileReturnGateActive))return;
+      if(!(syncEngine?.isReadonly()||mobileReturnGateBlocking))return;
       const target=event.target;
       if(!target?.closest?.(editable)||target.closest("#mobileSyncGate,#librarySearch"))return;
       event.preventDefault();noticeReadonly()

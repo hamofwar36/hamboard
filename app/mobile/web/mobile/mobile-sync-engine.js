@@ -201,6 +201,13 @@
     // The page and the service worker (background publish) run separate engines over the same stores.
     // `exclusive` (a Web Lock) keeps them from syncing at the same time; each section starts from what
     // the other one saved, and a local-state write by the other side is reloaded before continuing.
+    // A read-only return probe never queues behind this engine's own running cycle (it would hold the
+    // user at the gate for a whole upload); it only waits when the other side (the worker) holds the lock.
+    let exclusiveDepth=0;
+    function runExclusive(run,kind="cycle"){
+      if(kind==="probe"&&exclusiveDepth>0)return run();
+      return exclusive(async()=>{exclusiveDepth++;try{return await run()}finally{exclusiveDepth--}})
+    }
     async function refreshFromStore(){
       const stored=await metaStore.read();
       if(!stored||stored.version!==META_VERSION||!meta||text(stored.deviceId)!==deviceId())return false;
@@ -399,7 +406,7 @@
       if(pauseRequested)return Promise.resolve({skipped:"suspended"});
       if(running){rerun=true;return running}
       rerun=false;
-      const operation=exclusive(async()=>{await refreshFromStore();return cycle(reason,options)}).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
+      const operation=runExclusive(async()=>{await refreshFromStore();return cycle(reason,options)}).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
       running=operation.finally(()=>{running=null;const again=rerun;rerun=false;const retry=Number(lastResult?.retryInMs)||0;if(again)schedulePoll(250);else if(retry)schedulePoll(retry);else if(polling)schedulePoll(pollInterval())});
       return running
     }
@@ -441,7 +448,7 @@
       for(;;){
         if(isCancelled())return {cancelled:true};
         let probe;
-        try{probe=await exclusive(async()=>{await refreshFromStore();return probeReturn()})}catch(error){log("error","return-probe-failed",{error});return {failed:true,error:text(error?.message||error),phase:"return-probe"}}
+        try{probe=await runExclusive(async()=>{await refreshFromStore();return probeReturn()},"probe")}catch(error){log("error","return-probe-failed",{error});return {failed:true,error:text(error?.message||error),phase:"return-probe"}}
         if(isCancelled())return {cancelled:true};
         if(probe.skipped)return probe;
         if(probe.remote){if(now()-started>maxWaitMs)return {waitingTimedOut:true};onWaiting(probe.remote);await sleep(POLL_READONLY_MS);continue}
@@ -561,7 +568,7 @@
     }
     async function unlink(){stopPolling();if(pushTimer){timers.clearTimeout(pushTimer);pushTimer=0;pushFirstAt=0}await releasePresence("unlink");meta={...meta,linked:false,suspended:"",baseRevision:"",baseState:null};remoteBlocking=null;await saveMeta();pauseRequested=false;emit("readonly",null);return status()}
 
-    return Object.freeze({init,status,isReadonly,pendingChanges,notifyLocalWrite,sync,startPolling,stopPolling,checkOnReturn,overrideRemote,leave,link,resetFromCloud,suspend,resume,unlink,releasePresence,releaseStoredPresence,_presenceTick:presenceTick,_readonly:()=>clone(remoteBlocking)})
+    return Object.freeze({init,status,isReadonly,pendingChanges,notifyLocalWrite,sync,startPolling,stopPolling,checkOnReturn,overrideRemote,leave,link,resetFromCloud,suspend,resume,unlink,releasePresence,releaseStoredPresence,reloadFromStore:()=>runExclusive(refreshFromStore),_presenceTick:presenceTick,_readonly:()=>clone(remoteBlocking)})
   }
 
   root.HamboardMobileSyncEngine=Object.freeze({createMobileSyncEngine,createIndexedDbMetaStore,createMemoryMetaStore,mergeStates,topology,entityRows});

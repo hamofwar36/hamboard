@@ -322,6 +322,8 @@
     async function push(objects){
       const snapshot=readLocal(),seq=writeSeq,changes=pendingChanges(snapshot);
       if(!changes.length){cleanSeq=seq;return {synced:true,changes:0}}
+      // Images this state references must be on Drive before a commit that points at them is published.
+      await hooks.beforeCommit?.({state:snapshot,changes});
       const held=await acquireLease(objects);if(!held)return {skipped:"lease",retryInMs:1500};
       try{
         const headNow=topology(held.objects,meta.baseRevision);
@@ -358,6 +360,7 @@
           // Return check: the latest remote state is applied; this device's own upload follows right after.
           if(pullOnly){const pushDeferred=pendingChanges().length>0;return {synced:true,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,pushDeferred,reason,...(pushDeferred?{retryInMs:PUSH_DEBOUNCE_MS}:{})}}
           phase="push-local";const pushed=await push(objects);if(pushed.rerun)continue;
+          if(pushed.synced&&hooks.afterSync){phase="after-sync";await Promise.resolve(hooks.afterSync({state:readLocal()})).catch(error=>log("warn","after-sync-hook-failed",{reason,error}))}
           return {...pushed,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,reason}
         }
         return {deferred:"remote-busy",retryInMs:1500,phase}

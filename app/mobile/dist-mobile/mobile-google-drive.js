@@ -369,7 +369,7 @@
       if(utf8Bytes(value).byteLength>100||/[\u0000-\u001f]/.test(value))throw new Error("google-drive-sync-metadata-invalid");
       properties[`hamboard${key[0].toUpperCase()}${key.slice(1)}`]=value
     }
-    if(!["commit","lease","checkpoint"].includes(properties.hamboardSyncType))throw new Error("google-drive-sync-type-invalid");
+    if(!["commit","lease","checkpoint","asset"].includes(properties.hamboardSyncType))throw new Error("google-drive-sync-type-invalid");
     return properties
   }
   function validSyncObjectKey(objectKey){return /^sync\/[A-Za-z0-9._\/-]{1,95}$/.test(String(objectKey||""))}
@@ -386,6 +386,49 @@
     const value=await (await authorizedFetch(url,{method:"POST",headers:{"Content-Type":`multipart/related; boundary=${boundary}`},body})).json();
     if(!validRemoteId(value?.id)||Number(value?.size)!==bytes.byteLength)throw new Error("google-drive-sync-upload-invalid");
     return String(value.id)
+  }
+
+  // Drive accepts multipart bodies up to 5 MB; larger images go through a resumable session.
+  const MULTIPART_MAX_BYTES=4*1024*1024;
+  async function uploadResumable(metadata,blob,contentType){
+    const start=new URL(DRIVE_UPLOAD_URL);start.searchParams.set("uploadType","resumable");start.searchParams.set("fields","id,size");
+    const session=await authorizedFetch(start,{method:"POST",headers:{"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":contentType,"X-Upload-Content-Length":String(blob.size)},body:JSON.stringify(metadata)});
+    const location=String(session.headers.get("Location")||"");
+    if(!location.startsWith("https://"))throw new Error("google-drive-upload-session-missing");
+    const response=await fetch(location,{method:"PUT",headers:{"Content-Type":contentType},body:blob});
+    if(!response.ok)return driveError(response);
+    const value=await response.json();
+    if(!validRemoteId(value?.id)||Number(value?.size)!==blob.size)throw new Error("google-drive-asset-upload-invalid");
+    return String(value.id)
+  }
+
+  // Image bytes in the content-addressed namespace the Windows app uses (objects/content-v1/<sha256>).
+  // An existing copy with the same hash is reused; the same key with other bytes is never overwritten.
+  async function putAssetObject({blob,contentSha256,byteSize,mimeType}={}){
+    const sha=String(contentSha256||"").toLowerCase(),size=Math.max(0,Number(byteSize)||0),type=String(mimeType||blob?.type||"application/octet-stream");
+    if(!(blob instanceof Blob)||!validSha(sha)||size<1||size!==blob.size||size>MAX_ASSET_OBJECT_BYTES||type.length>255||/[\r\n]/.test(type))throw new Error("google-drive-asset-object-request-invalid");
+    const bytes=await blob.arrayBuffer();
+    if(await sha256Hex(bytes)!==sha)throw new Error("google-drive-source-hash-mismatch");
+    const objectKey=`objects/content-v1/${sha}`,url=new URL(DRIVE_FILES_URL);
+    url.searchParams.set("spaces","appDataFolder");
+    url.searchParams.set("pageSize","100");
+    url.searchParams.set("q",`trashed = false and appProperties has { key='hamboardObjectKey' and value='${driveQueryValue(objectKey)}' }`);
+    url.searchParams.set("fields","files(id,size,appProperties)");
+    const existing=await (await authorizedFetch(url)).json();
+    let collision=false;
+    for(const file of existing.files||[]){
+      const properties=file.appProperties||{},fileSha=property(properties,"ContentSha256").toLowerCase(),fileSize=Math.max(0,Number(property(properties,"ByteSize"))||Number(file.size)||0);
+      if(property(properties,"ObjectKey")!==objectKey)continue;
+      if(fileSha===sha&&fileSize===size&&validRemoteId(file.id))return {remoteObjectId:String(file.id),objectKey,contentSha256:sha,byteSize:size,mimeType:type,reused:true};
+      collision=true
+    }
+    if(collision)throw new Error("google-drive-object-key-collision");
+    const metadata={name:`hamboard-object-${sha.slice(0,24)}.bin`,parents:["appDataFolder"],mimeType:type,appProperties:{
+      hamboardObjectKey:objectKey,hamboardContentSha256:sha,hamboardByteSize:String(size),hamboardFormatVersion:"1",hamboardKind:"asset",hamboardCreatedAtMs:String(Date.now())
+    }};
+    const remoteObjectId=size<=MULTIPART_MAX_BYTES?await uploadMultipart(metadata,new Uint8Array(bytes),type):await uploadResumable(metadata,new Blob([bytes],{type}),type);
+    clearObjectIndex();
+    return {remoteObjectId,objectKey,contentSha256:sha,byteSize:size,mimeType:type,reused:false}
   }
 
   async function findReusableContentPage(pageKey,expectedSha,expectedSize){
@@ -496,6 +539,6 @@
   async function getBackupPage(page={}){return readContentPage(page)}
 
   root.HamboardMobileGoogleDrive=Object.freeze({
-    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncRestoreSource,listSyncObjects,listSyncTopology,listSyncAssetDescriptors,getSyncObject,getSyncValue,putSyncText,putSyncValue,deleteSyncObject,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,getBackupPage,configuredAuthBaseUrl,sha256Hex
+    status,connect,reconnectSilently,disconnect,checkSession,requestAccessToken,listSyncRestoreSource,listSyncObjects,listSyncTopology,listSyncAssetDescriptors,getSyncObject,getSyncValue,putSyncText,putAssetObject,putSyncValue,deleteSyncObject,putSyncCheckpoint,loadObjectIndex,getObjectByKey,listBackups,getBackupManifest,getBackupPage,configuredAuthBaseUrl,sha256Hex
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

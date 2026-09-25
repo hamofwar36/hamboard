@@ -8,6 +8,7 @@
     "mobile:preview": "npm run mobile:build && node scripts/serve.mjs dist-mobile",
     "qa:cloud-formats": "node scripts/validate-cloud-formats.mjs",
     "qa:two-way-sync": "node scripts/validate-mobile-two-way-sync.mjs",
+    "qa:asset-upload": "node scripts/validate-mobile-asset-upload.mjs",
     "qa:sync-ui": "node scripts/validate-mobile-sync-ui.mjs",
     "qa:link-failure-ui": "node scripts/validate-mobile-link-failure-ui.mjs"
   }

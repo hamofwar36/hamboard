@@ -17,6 +17,10 @@
   let syncEngine=null,stateGeneration=0;
   const snapshotGenerations=new WeakMap(),preApplyStates=new Map();
   const assetRepository=assetRepositoryCore.createIndexedDbAssetRepository({databaseName:"hamboard-mobile-assets",storeName:"assets"});
+  const assetUploader=googleDrive?assetRepositoryCore.createMobileAssetUploader({
+    drive:googleDrive,assetRepository,sha256Hex:bytes=>googleDrive.sha256Hex(bytes),
+    log:(level,event,detail)=>logDiagnostic(level==="warn"?"warn":"info","ASSET",level==="warn"?"클라우드에서 사라진 이미지 정보를 다시 올렸습니다.":"이미지를 클라우드에 올렸습니다.",detail)
+  }):null;
   const $=selector=>document.querySelector(selector);
 
   const mobileScroll=$("#mobileApp");
@@ -158,6 +162,8 @@
   let noteViewportFrame=0;
   let noteViewportBaseHeight=0;
   let noteSavedRange=null;
+  const pendingNoteImageResources=new Map();
+  let noteImageInsertBusy=false;
   let noteFormatPanelKey="";
   let noteKeyboardSuppressed=false;
   let noteSaveTimer=0;
@@ -1056,7 +1062,7 @@
 
   function validateSyncAssetObject(raw){
     const objectKey=String(raw?.objectKey||""),contentSha256=String(raw?.contentSha256||"").toLowerCase(),byteSize=Math.max(0,Number(raw?.byteSize)||0),mimeType=String(raw?.mimeType||"application/octet-stream");
-    if(!/^sync\/(?:blobs|thumbs)\/[0-9a-f]{64}$/.test(objectKey)||!/^[0-9a-f]{64}$/.test(contentSha256)||byteSize<1)throw new Error("sync-asset-object-invalid");
+    if(!(/^sync\/(?:blobs|thumbs)\/[0-9a-f]{64}$/.test(objectKey)||/^objects\/content-v1\/[0-9a-f]{64}$/.test(objectKey))||!/^[0-9a-f]{64}$/.test(contentSha256)||byteSize<1)throw new Error("sync-asset-object-invalid");
     return {objectKey,contentSha256,byteSize,mimeType}
   }
 
@@ -2807,7 +2813,8 @@
           }else if(name==="data-note-image-width"&&el.tagName==="IMG"&&Number(rawValue)>0&&Number(rawValue)<=100){
           }else if(name==="alt"&&el.tagName==="IMG"){
           }else if(name==="style"){
-            const kept=[...el.style].filter(key=>styles.has(key)).map(key=>key+":"+el.style.getPropertyValue(key)).join(";");
+            const imageWidth=el.tagName==="IMG"&&/^\d{1,3}(?:\.\d+)?%$/.test(el.style.width)?"width:"+el.style.width:"";
+            const kept=[...[...el.style].filter(key=>styles.has(key)).map(key=>key+":"+el.style.getPropertyValue(key)),imageWidth].filter(Boolean).join(";");
             if(kept)el.setAttribute("style",kept);else el.removeAttribute("style")
           }else el.removeAttribute(attribute.name)
         }
@@ -3216,10 +3223,20 @@
     if(!payload)return noteSaveChain;
     noteSaveChain=noteSaveChain.then(async()=>{
       const state=snapshot(),note=(state.notes||[]).find(item=>String(item?.id||"")===payload.noteId);
-      if(!note||String(note.content||"")===payload.content)return;
+      if(!note)return;
+      // Only images present in this saved content are recorded; an older queued save must not drop newer ones.
+      const used=collectNoteHtmlAssetIds(payload.content),resourcesBefore=JSON.stringify(note.resources||[]),added=(pendingNoteImageResources.get(payload.noteId)||[]).filter(resource=>used.has(String(resource.id)));
+      if(added.length){
+        note.resources=Array.isArray(note.resources)?note.resources:[];
+        const known=new Set(note.resources.map(resource=>String(resource?.id||"")));
+        for(const resource of added)if(!known.has(String(resource.id)))note.resources.push(resource)
+      }
+      if(Array.isArray(note.resources))note.resources=note.resources.filter(resource=>resource?.inline!==true||used.has(String(resource.id||"")));
+      if(String(note.content||"")===payload.content&&JSON.stringify(note.resources||[])===resourcesBefore)return;
       note.content=payload.content;
       note.updatedAt=new Date().toISOString();
       await repository.replaceState(state);
+      if(added.length){const left=(pendingNoteImageResources.get(payload.noteId)||[]).filter(resource=>!added.includes(resource));if(left.length)pendingNoteImageResources.set(payload.noteId,left);else pendingNoteImageResources.delete(payload.noteId)}
       if(!libraryScreen.hidden)renderLibrary()
     }).catch(error=>{
       if(!pendingNoteSave)pendingNoteSave=payload;
@@ -3487,6 +3504,113 @@
     requestAnimationFrame(()=>urlInput.focus())
   }
 
+  // Images keep the Windows "balanced" policy: at most 2560px on the long edge, re-encoded only when
+  // they are larger; animated or special formats keep their original bytes. A 384px thumbnail rides along.
+  const MOBILE_IMAGE_MAX_EDGE=2560,MOBILE_THUMBNAIL_EDGE=384,MOBILE_IMAGE_MAX_BYTES=30*1024*1024;
+  async function mobileImageIsAnimated(blob){
+    const mime=String(blob?.type||"").toLowerCase();
+    if(mime==="image/gif")return true;
+    if(mime!=="image/webp"&&mime!=="image/png")return false;
+    try{
+      const bytes=new Uint8Array(await blob.slice(0,Math.min(blob.size,1024*1024)).arrayBuffer()),marker=mime==="image/webp"?"ANIM":"acTL";
+      outer:for(let i=0;i<=bytes.length-4;i++){for(let j=0;j<4;j++)if(bytes[i+j]!==marker.charCodeAt(j))continue outer;return true}
+      return false
+    }catch{return true}
+  }
+  async function decodeMobileImage(blob){
+    if(typeof createImageBitmap==="function"){try{return await createImageBitmap(blob)}catch{}}
+    const url=URL.createObjectURL(blob);
+    try{
+      return await new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error("mobile-image-decode-failed"));image.src=url})
+    }finally{setTimeout(()=>URL.revokeObjectURL(url),0)}
+  }
+  async function encodeMobileImage(source,width,height,maxEdge,quality,fallbackType){
+    const scale=maxEdge/Math.max(width,height),canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+    const context=canvas.getContext("2d",{alpha:true});
+    if(!context)throw new Error("mobile-image-canvas-unavailable");
+    context.imageSmoothingEnabled=true;context.imageSmoothingQuality="high";
+    context.drawImage(source,0,0,canvas.width,canvas.height);
+    const encode=type=>new Promise(resolve=>canvas.toBlob(resolve,type,quality));
+    let output=await encode("image/webp");
+    // Some Safari versions cannot write WebP and silently fall back to PNG.
+    if(!output||output.type!=="image/webp")output=await encode(fallbackType);
+    if(!output?.size)throw new Error("mobile-image-encode-failed");
+    return output
+  }
+  async function prepareMobileImageAsset(file,ownerId){
+    const originalType=String(file?.type||"").toLowerCase();
+    if(!originalType.startsWith("image/"))throw new Error("mobile-image-type-unsupported");
+    const preserve=["image/gif","image/svg+xml","image/avif","image/heic","image/heif"].includes(originalType)||await mobileImageIsAnimated(file);
+    let blob=file,width=0,height=0,thumbnail=null,source=null;
+    try{
+      source=await decodeMobileImage(file);
+      width=Math.floor(Number(source.width||source.naturalWidth)||0);height=Math.floor(Number(source.height||source.naturalHeight)||0);
+      const longEdge=Math.max(width,height),fallbackType=originalType==="image/png"?"image/png":"image/jpeg";
+      if(!preserve&&longEdge>MOBILE_IMAGE_MAX_EDGE){
+        blob=await encodeMobileImage(source,width,height,MOBILE_IMAGE_MAX_EDGE,.86,fallbackType);
+        const scale=MOBILE_IMAGE_MAX_EDGE/longEdge;width=Math.round(width*scale);height=Math.round(height*scale)
+      }
+      if(!preserve&&longEdge>MOBILE_THUMBNAIL_EDGE){
+        const thumbBlob=await encodeMobileImage(source,Math.floor(Number(source.width||source.naturalWidth)),Math.floor(Number(source.height||source.naturalHeight)),MOBILE_THUMBNAIL_EDGE,.78,fallbackType);
+        thumbnail={blob:thumbBlob,mimeType:thumbBlob.type,byteSize:thumbBlob.size,contentSha256:await googleDrive.sha256Hex(await thumbBlob.arrayBuffer())}
+      }
+    }catch(error){
+      // HEIC and other formats the browser cannot draw are kept as they are.
+      if(!preserve)logDiagnostic("warn","ASSET","이미지 크기를 줄이지 못해 원본으로 저장합니다.",error);
+      blob=file
+    }finally{source?.close?.()}
+    if(blob.size<1)throw new Error("mobile-image-empty");
+    if(blob.size>MOBILE_IMAGE_MAX_BYTES)throw new Error("mobile-image-too-large");
+    const id=uid(),sha=await googleDrive.sha256Hex(await blob.arrayBuffer());
+    const stored=blob.type?blob:new Blob([blob],{type:originalType});
+    await assetRepository.put({id,ownerId,blob:stored,mimeType:stored.type,byteSize:stored.size,sourceSha256:sha,contentSha256:sha,quality:"balanced",width,height,uploadState:"pending",thumbnail});
+    return {id,blob:stored,width,height}
+  }
+
+  function pickMobileNoteImages(){
+    if(activeDocumentType!=="note"||!activeDocumentId||noteImageInsertBusy)return;
+    if(syncEngine?.isReadonly()){noticeReadonly();return}
+    captureMobileNoteSelection();
+    const input=document.createElement("input");
+    input.type="file";input.accept="image/*";input.multiple=true;input.hidden=true;
+    document.body.append(input);
+    input.onchange=()=>{const files=[...(input.files||[])];input.remove();if(files.length)insertMobileNoteImages(files)};
+    input.addEventListener("cancel",()=>input.remove(),{once:true});
+    input.click()
+  }
+  async function insertMobileNoteImages(files){
+    const noteId=String(activeDocumentId||""),images=files.filter(file=>String(file?.type||"").startsWith("image/"));
+    if(!images.length){showSyncToast("이미지 파일을 선택해 주세요.");return}
+    noteImageInsertBusy=true;
+    showSyncToast(images.length>1?`이미지 ${images.length}개를 준비하고 있습니다.`:"이미지를 준비하고 있습니다.");
+    const added=[];let failed=0;
+    try{
+      for(const file of images){
+        try{const prepared=await prepareMobileImageAsset(file,`note:${noteId}`);added.push({...prepared,name:String(file.name||"").trim()||"이미지",type:String(prepared.blob.type||file.type||"image/*")})}
+        catch(error){failed++;logDiagnostic("error","ASSET",error?.message==="mobile-image-too-large"?"이미지가 너무 커서 추가하지 못했습니다.":"노트 이미지를 저장하지 못했습니다.",error)}
+      }
+      if(!added.length){showSyncToast("이미지를 추가하지 못했습니다.");return}
+      if(activeDocumentType!=="note"||String(activeDocumentId||"")!==noteId||!noteReaderContent.isConnected){showSyncToast("노트가 바뀌어 이미지를 넣지 못했습니다.");return}
+      const now=new Date().toISOString(),editorWidth=Math.max(1,noteReaderContent.clientWidth||1);
+      pendingNoteImageResources.set(noteId,[...(pendingNoteImageResources.get(noteId)||[]),...added.map(item=>({id:item.id,name:item.name,type:item.type,size:item.blob.size,description:"",favorite:false,addedAt:now,updatedAt:now,inline:true}))]);
+      const range=restoreMobileNoteSelection();
+      if(!range)return;
+      range.deleteContents();
+      for(const item of added){
+        const image=document.createElement("img"),percent=Math.round(Math.min(100,Math.max(10,(item.width||editorWidth)/editorWidth*100)));
+        image.dataset.noteImage=item.id;image.dataset.noteImageWidth=String(percent);image.style.width=`${percent}%`;image.alt=item.name;
+        range.insertNode(image);range.setStartAfter(image);range.collapse(true);
+        hydrateAssetImage(image,item.id)
+      }
+      const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+      noteSavedRange=range.cloneRange();
+      scheduleMobileNoteSave();
+      updateMobileNoteCharacterCount();
+      showSyncToast(failed?`이미지 ${added.length}개를 추가했고 ${failed}개는 실패했습니다.`:added.length>1?`이미지 ${added.length}개를 추가했습니다.`:"이미지를 추가했습니다.")
+    }finally{noteImageInsertBusy=false}
+  }
+
   function insertMobileNoteDivider(style="solid"){
     const editor=noteReaderContent,range=restoreMobileNoteSelection();
     if(!range)return;
@@ -3687,7 +3811,7 @@
       '<button type="button" data-note-line-height="1">100%</button><button type="button" data-note-line-height="1.4">140%</button><button type="button" data-note-line-height="1.6">160%</button><button type="button" data-note-line-height="1.8">180%</button><button type="button" data-note-line-height="2">200%</button></div>';
     return '<div class="note-format-panel-title">삽입</div><div class="note-format-grid">'+
       '<button type="button" class="note-format-action" data-note-insert="link"><i data-lucide="link"></i><span>링크</span></button>'+
-      '<button type="button" class="note-format-action" data-note-insert="image" disabled aria-disabled="true" title="모바일 이미지 저장 연결 후 지원"><i data-lucide="image-plus"></i><span>이미지</span></button>'+
+      '<button type="button" class="note-format-action" data-note-insert="image"><i data-lucide="image-plus"></i><span>이미지</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="fold"><i data-lucide="fold-vertical"></i><span>접기</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="solid"><span class="note-divider-preview"></span><span>실선</span></button>'+
       '<button type="button" class="note-format-action" data-note-insert="divider" data-note-divider="dotted"><span class="note-divider-preview dotted"></span><span>점선</span></button>'+
@@ -4249,7 +4373,10 @@
       syncEngine=syncEngineCore.createMobileSyncEngine({
         drive:googleDrive,syncModel,coordination:syncCoordination,metaStore:syncEngineCore.createIndexedDbMetaStore(),
         readLocal:()=>baseRepository.snapshot(),writeLocal:engineWriteLocal,displayName:mobileDeviceName(),
-        hooks:{flushPendingSaves:flushPendingMobileSaves,hasPendingSaves:hasPendingMobileSaves,ensureConnected:async()=>{await restoreGoogleConnection();return googleDrive?.status?.().connected===true},onStatus:handleSyncStatus},
+        hooks:{flushPendingSaves:flushPendingMobileSaves,hasPendingSaves:hasPendingMobileSaves,
+          beforeCommit:async({state})=>{if(assetUploader)await assetUploader.uploadReferenced(currentMobileAssetIds(state))},
+          afterSync:async({state})=>{if(assetUploader)await assetUploader.verifyRecent(currentMobileAssetIds(state))},
+          ensureConnected:async()=>{await restoreGoogleConnection();return googleDrive?.status?.().connected===true},onStatus:handleSyncStatus},
         log:(level,event,detail)=>{
           // Operational milestones make it possible to place failures between a pull and a push.
           if(level==="info"&&!["remote-applied","commit-uploaded","sync-resumed"].includes(event))return;
@@ -5011,6 +5138,7 @@
     const insertButton=event.target.closest("[data-note-insert]");
     if(!insertButton||insertButton.disabled)return;
     if(insertButton.dataset.noteInsert==="link")insertMobileNoteLink();
+    else if(insertButton.dataset.noteInsert==="image")pickMobileNoteImages();
     else if(insertButton.dataset.noteInsert==="fold")insertMobileNoteFold();
     else if(insertButton.dataset.noteInsert==="divider")insertMobileNoteDivider(insertButton.dataset.noteDivider||"solid")
   });

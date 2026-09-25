@@ -6504,7 +6504,7 @@ async function syncPresenceAfterLocalWrite(){
   // Only a write that follows the user's own input counts; automatic writes are committed without telling other devices to wait.
   if(!syncUserEditingNow())return false;
   const pending=await SyncRepository.listPending();
-  if(!pending.some(item=>item.entityType!=="work-tracking"))return false;
+  if(!pending.some(syncIsDocumentChange))return false;
   if(syncRemoteLease&&!syncOwnPresence)return false;
   await syncEnsurePresence("local-edit");syncStartPresenceTicker();return true
 }
@@ -6537,6 +6537,27 @@ function syncPresenceDecision({now=Date.now(),presence=null,dirty=false,lastEdit
   return "keep"
 }
 const SYNC_PRESENCE_INPUT_WINDOW_MS=5000;
+// Utilities, work tracking and the home workspace are desktop-only: the phone never syncs them. They
+// travel between PCs, but must never hold the phone read-only or crowd the commit history it follows.
+// A user-library change is document data only when tags or favorites changed.
+function syncIsDocumentChange(item){
+  const type=String(item?.entityType||"");
+  if(type==="work-tracking")return false;
+  if(type!=="user-library")return true;
+  try{
+    const next=JSON.parse(item.payloadJson||"null")||{},base=JSON.parse(item.basePayloadJson||"null")||{};
+    return JSON.stringify(next.tagLibrary??[])!==JSON.stringify(base.tagLibrary??[])||JSON.stringify(next.favorites??[])!==JSON.stringify(base.favorites??[])
+  }catch{return true}
+}
+// Desktop-only changes wait and go out together: at most every 10 minutes, when this window loses focus,
+// on exit or update, or along with the next document commit.
+const SYNC_DEVICE_DATA_PUBLISH_INTERVAL_MS=10*60*1000;
+let syncDeviceDataPublishedAt=Date.now();
+function syncShouldBatchDeviceData(pending,reason,now=Date.now()){
+  if(!pending.length||pending.some(syncIsDocumentChange))return false;
+  if(reason!=="scheduled"||!syncWindowFocused())return false;
+  return now-syncDeviceDataPublishedAt<SYNC_DEVICE_DATA_PUBLISH_INTERVAL_MS
+}
 function syncWindowFocused(){return !document.hidden&&document.hasFocus()}
 function syncUserEditingNow(now=Date.now()){return syncWindowFocused()&&now-syncLastEditInputAt<SYNC_PRESENCE_INPUT_WINDOW_MS}
 function syncInstallEditInputTracker(){
@@ -6545,7 +6566,7 @@ function syncInstallEditInputTracker(){
   for(const type of ["keydown","pointerdown","input","paste","cut","drop"])document.addEventListener(type,mark,{capture:true,passive:true})
 }
 // Unsent work-tracking seconds are device-generated, not an edit: they must not keep other devices read-only.
-async function syncLocalPendingForPresence(){return (await SyncRepository.listPending()).some(item=>item.entityType!=="work-tracking")}
+async function syncLocalPendingForPresence(){return (await SyncRepository.listPending()).some(syncIsDocumentChange)}
 async function syncPresenceTick(){
   if(!syncOwnPresence){if(!syncPresencePromise&&syncPresenceTimer){clearInterval(syncPresenceTimer);syncPresenceTimer=0}return "none"}
   // Unresolved conflicts or failing cycles: the edits will not arrive soon, so do not keep other devices read-only.
@@ -6692,6 +6713,7 @@ async function runAutomaticSync(reason="timer",{pullOnly=false}={}){
     if(pullOnly)return pending.length?{synced:true,pulled:true,pushDeferred:true,revision:runtime.baseRevision,retryInMs:SYNC_PUBLISH_DELAY_MS}:{synced:true,pulled:true,revision:runtime.baseRevision};
     const unresolved=await SyncRepository.listUnresolvedConflicts();
     if(unresolved.length){syncConflictBlocked=true;if(Date.now()-syncConflictNoticeAt>600000){syncConflictNoticeAt=Date.now();toast(`동기화 충돌 ${unresolved.length}건이 있습니다. 설정의 데이터 관리에서 확인해 주세요`)}return {blocked:"entity-conflict",conflicts:unresolved.length}}
+    if(syncShouldBatchDeviceData(pending,reason)){DiagnosticsLog.info("SYNC","device-data-publish-batched",{changes:pending.length,types:[...new Set(pending.map(item=>item.entityType))],nextInMs:Math.max(0,SYNC_DEVICE_DATA_PUBLISH_INTERVAL_MS-(Date.now()-syncDeviceDataPublishedAt))});return {synced:true,revision:runtime.baseRevision,changes:0,deferred:"device-data-batch"}}
     if(pending.length){if(!await syncEnsureLease(device,objects))return {skipped:"lease",retryInMs:1500};syncStartLeaseHeartbeat(device)}
     if(pending.length){const assetListing=await GoogleDriveService.listSyncObjects("assets");if(assetListing?.truncated)throw new Error("sync-asset-list-truncated");const assetSync=await syncUploadReferencedAssets(Array.isArray(assetListing?.objects)?assetListing.objects:[]);if(assetSync.failed)throw assetSync.error||new Error("sync-asset-upload-failed");if(assetSync.deferred)return {deferred:"asset-upload"}}
     if(!pending.length){
@@ -6702,7 +6724,7 @@ async function runAutomaticSync(reason="timer",{pullOnly=false}={}){
     const uploadedCommit=await GoogleDriveService.putObject({objectKey,mimeType:"application/json",kind:"sync",source:"value",value:commit,syncMetadata:{syncType:"commit",revision,baseRevision:runtime.baseRevision,deviceId:device.deviceId,clientProfile,createdAtMs:String(createdAtMs),expiresAtMs:"0",quality:imageQuality}});
     const verify=await GoogleDriveService.listSyncObjects("topology");if(verify?.truncated)throw new Error("sync-object-list-truncated");const siblings=(verify?.objects||[]).filter(item=>item.syncType==="commit"&&String(item.baseRevision||"")===runtime.baseRevision&&String(item.revision)!==revision);
     if(siblings.length){const listedOwn=(verify?.objects||[]).find(item=>item.syncType==="commit"&&String(item.revision)===revision),own=listedOwn||{revision,createdAtMs:String(createdAtMs),baseRevision:runtime.baseRevision},winner=SyncCoordination.siblingWinner([own,...siblings]);DiagnosticsLog.warn("SYNC","concurrent-commit-detected",{baseRevision:runtime.baseRevision,localRevision:revision,otherRevisions:siblings.map(item=>String(item.revision)),winner:String(winner?.revision||"")});if(String(winner?.revision||"")!==revision){try{await GoogleDriveService.deleteSyncObject({remoteObjectId:String(listedOwn?.remoteObjectId||uploadedCommit?.remoteObjectId||""),objectKey,contentSha256:String(listedOwn?.contentSha256||uploadedCommit?.contentSha256||""),byteSize:Number(listedOwn?.byteSize)||Number(uploadedCommit?.uploadByteSize)||0});DiagnosticsLog.info("SYNC","concurrent-commit-withdrawn",{revision,winner:String(winner?.revision||""),localChangesKept:true});return {deferred:"concurrent-commit-lost",retryInMs:1500}}catch(error){syncConflictBlocked=true;DiagnosticsLog.error("SYNC","concurrent-commit-withdraw-failed",{revision,error});return {blocked:"concurrent-commit"}}}}
-    const baseline=StateRepository.snapshot()||await StateRepository.read(),checkpointBase=runtime.baseState||syncEmptyRemoteState(baseline),checkpointState=SyncStateModel.applyCommitToCanonical(checkpointBase,commit),accepted=await SyncRepository.acceptBaseline(runtime.stateSequence,revision,baseline);DiagnosticsLog.info("SYNC","commit-uploaded",{reason,revision,baseRevision:runtime.baseRevision,changes:changes.length,stale:!!accepted?.stale});if(accepted?.stale)scheduleSyncOutboxPreparation(0);await syncReleaseOwnLease("commit-published").catch(error=>DiagnosticsLog.warn("SYNC","lease-release-unhandled",{error}));try{const checkpointResult=await syncPublishCheckpoint(revision,checkpointState,device,verify?.objects||[]);await syncCleanupRemoteStorage(checkpointState,verify?.objects||[],{reason:"after-commit",force:checkpointResult?.uploaded===true})}catch(error){DiagnosticsLog.warn("SYNC","checkpoint-or-cleanup-deferred",{stage:"after-commit",revision,error})}return {synced:true,revision,changes:changes.length,stale:!!accepted?.stale}
+    const baseline=StateRepository.snapshot()||await StateRepository.read(),checkpointBase=runtime.baseState||syncEmptyRemoteState(baseline),checkpointState=SyncStateModel.applyCommitToCanonical(checkpointBase,commit),accepted=await SyncRepository.acceptBaseline(runtime.stateSequence,revision,baseline);syncDeviceDataPublishedAt=Date.now();DiagnosticsLog.info("SYNC","commit-uploaded",{reason,revision,baseRevision:runtime.baseRevision,changes:changes.length,stale:!!accepted?.stale});if(accepted?.stale)scheduleSyncOutboxPreparation(0);await syncReleaseOwnLease("commit-published").catch(error=>DiagnosticsLog.warn("SYNC","lease-release-unhandled",{error}));try{const checkpointResult=await syncPublishCheckpoint(revision,checkpointState,device,verify?.objects||[]);await syncCleanupRemoteStorage(checkpointState,verify?.objects||[],{reason:"after-commit",force:checkpointResult?.uploaded===true})}catch(error){DiagnosticsLog.warn("SYNC","checkpoint-or-cleanup-deferred",{stage:"after-commit",revision,error})}return {synced:true,revision,changes:changes.length,stale:!!accepted?.stale}
   }finally{await syncReleaseOwnLease("automatic-cycle-finished").catch(error=>DiagnosticsLog.warn("SYNC","lease-release-unhandled",{error}))}});
   let retryDelay=SYNC_POLL_INTERVAL_MS;
   const shared=operation.then(result=>{if(result?.synced||result?.skipped==="disconnected")syncResetAutomaticBackoff(result?.synced?"success":"disconnected");if(result?.deferred==="active-editor"){retryDelay=Math.max(1000,Number(result.retryInMs)||5000)}else if(Number(result?.retryInMs)>0){retryDelay=Math.max(500,Number(result.retryInMs))}else if(result?.blocked&&result.blocked!=="entity-conflict"){retryDelay=300000;syncAutomaticRetryNotBefore=Date.now()+retryDelay}return result}).catch(error=>{const errorText=syncErrorText(error),localEditRace=/sync-local-state-changed-before-(?:native-)?apply/.test(errorText);if(localEditRace){retryDelay=5000;DiagnosticsLog.info("SYNC","automatic-sync-retry-local-edit",{stage:"remote-apply-guard",reason,retryInMs:retryDelay,localStatePreserved:true});return {deferred:"local-edit",retryInMs:retryDelay}}const kind=syncFailureKind(error),awaitingAssets=errorText.includes("sync-remote-assets-not-local");syncAutomaticFailureCount++;retryDelay=syncFailureRetryDelay(awaitingAssets?"network":kind,syncAutomaticFailureCount);syncAutomaticRetryNotBefore=Date.now()+retryDelay;syncNotifyFailure(kind);if(awaitingAssets||kind==="network"||kind==="rate-limit")DiagnosticsLog.warn("SYNC","automatic-sync-deferred",{stage:awaitingAssets?"await-assets":"drive-cycle",reason,failureKind:kind,attempt:syncAutomaticFailureCount,retryInMs:retryDelay,error});else DiagnosticsLog.error("SYNC","automatic-sync-failed",{stage:"drive-cycle",reason,failureKind:kind,attempt:syncAutomaticFailureCount,retryInMs:retryDelay,localStatePreserved:true,error});return awaitingAssets?{deferred:"assets",retryInMs:retryDelay}:{failed:true,failureKind:kind,retryInMs:retryDelay}}).finally(()=>{if(syncAutomaticPromise===shared)syncAutomaticPromise=null;const rerun=syncAutomaticRerunRequested;syncAutomaticRerunRequested=false;if(rerun)DiagnosticsLog.info("SYNC","automatic-sync-rerun",{reason,retryInMs:SYNC_PUBLISH_DELAY_MS});scheduleAutomaticSync(retryDelay===SYNC_POLL_INTERVAL_MS?(rerun?SYNC_PUBLISH_DELAY_MS:syncDesiredPollInterval()):retryDelay)});syncAutomaticPromise=shared;return shared

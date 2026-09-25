@@ -449,6 +449,31 @@ await check("return with another device's commit: the pull phase is announced on
   assert.equal(m.state.notes.find(n=>n.id==="r2").title,"PC에서 알린 변경")
 });
 
+await check("return after Windows committed only utilities, workspace and work tracking: the user is let in, nothing is announced",async()=>{
+  const {p,m}=await linkedPhone();let pulling=0;
+  await p.pull();
+  await p.commit([
+    {entityType:"user-library",entityId:"main",operation:"upsert",payload:{id:"main",tagLibrary:[],favorites:[],workspace:{newsReadIds:["news-1"],collapsedFolderIds:["f1"]},utilityLibrary:{pomodoroPreset:{focusMinutes:50}}}},
+    {entityType:"work-tracking",entityId:"main",operation:"upsert",payload:{id:"main",programs:[{name:"hamboard"}],daily:[{date:"2026-09-25",seconds:60}]}}
+  ]);
+  const before=clone(m.state),result=await m.engine.checkOnReturn({onPulling:()=>{pulling++}});
+  assert.equal(result.upToDate,true,"no gate for desktop-only data");assert.equal(pulling,0);assert.ok(result.irrelevantRemote>=1);
+  assert.deepEqual(m.state.notes,before.notes);
+  const after=await m.engine.sync("after-return");assert.equal(after.synced,true,"the desktop-only commit is still applied to the base quietly");
+  assert.equal(m.engine.pendingChanges().length,0)
+});
+
+await check("return after Windows edited a document: the pull is still announced and applied first",async()=>{
+  const {p,m}=await linkedPhone();let pulling=0;
+  await p.pull();
+  await p.commit([
+    {entityType:"work-tracking",entityId:"main",operation:"upsert",payload:{id:"main",programs:[],daily:[{date:"2026-09-25",seconds:120}]}},
+    {entityType:"note",entityId:"r1",operation:"upsert",payload:note("r1","PC 문서 편집")}
+  ]);
+  const result=await m.engine.checkOnReturn({onPulling:()=>{pulling++}});
+  assert.equal(pulling,1);assert.ok(result.synced);assert.equal(m.state.notes.find(n=>n.id==="r1").title,"PC 문서 편집")
+});
+
 await check("return while this phone's upload is still running: the check does not wait for it",async()=>{
   const {d,m}=await linkedPhone();
   m.edit(s=>{s.notes.find(n=>n.id==="r1").title="업로드 중인 편집"});

@@ -215,7 +215,17 @@
 
     // -- reading remote ------------------------------------------------------------------
     async function listTopology(){const listing=await drive.listSyncTopology();if(listing?.truncated)throw new Error("sync-object-list-truncated");return Array.isArray(listing?.objects)?listing.objects:[]}
+    // Commits are immutable per revision; the return check and the pull that follows read the same ones.
+    const commitCache=new Map();
     async function readCommit(object){
+      const cacheKey=`${text(object?.revision)}:${text(object?.remoteObjectId)}`;
+      if(commitCache.has(cacheKey))return clone(commitCache.get(cacheKey));
+      const commit=await fetchCommit(object);
+      commitCache.set(cacheKey,clone(commit));
+      while(commitCache.size>64)commitCache.delete(commitCache.keys().next().value);
+      return commit
+    }
+    async function fetchCommit(object){
       const commit=await drive.getSyncValue(object);
       if(commit?.format!=="hamboard-sync-commit"||commit?.formatVersion!==1||commit?.stateSchemaVersion!==1||text(commit.revision)!==text(object.revision)||text(commit.baseRevision)!==text(object.baseRevision)||!Array.isArray(commit.changes))throw new Error("sync-commit-header-invalid");
       const commitProfile=syncModel.clientProfileForCommit(commit),profileId=syncModel.clientProfileId(commitProfile);
@@ -414,7 +424,17 @@
       if(topo.error||topo.recoveredMissingBase)return {needsPull:true,why:topo.error||"base-missing"};
       // Commits after our base made by this device (an upload that is still finishing) are not news.
       const remoteCommits=(topo.path||[]).filter(item=>text(item.deviceId)!==deviceId()).length;
-      return remoteCommits?{needsPull:true,why:"remote-commits",remoteCommits}:{upToDate:true}
+      if(!remoteCommits)return {upToDate:true};
+      // Windows also commits utilities, work tracking and its home workspace, which this phone never keeps.
+      // Commits that change nothing here are applied quietly instead of holding the user at the gate.
+      if(topo.foundBase&&!topo.recoveredMissingBase&&meta.baseState){
+        try{
+          let state=clone(meta.baseState);
+          for(const commit of await readCommits(topo.path))state=syncModel.applyCommitToClientState(state,commit,profile).state;
+          if(same(state,meta.baseState))return {upToDate:true,irrelevantRemote:remoteCommits}
+        }catch(error){log("warn","return-probe-classify-failed",error)}
+      }
+      return {needsPull:true,why:"remote-commits",remoteCommits}
     }
     async function checkOnReturn({onWaiting=()=>{},onPulling=()=>{},maxWaitMs=coordination.PRESENCE_TTL_MS+5000,isCancelled=()=>false}={}){
       const started=now();
@@ -426,7 +446,7 @@
         if(probe.skipped)return probe;
         if(probe.remote){if(now()-started>maxWaitMs)return {waitingTimedOut:true};onWaiting(probe.remote);await sleep(POLL_READONLY_MS);continue}
         // Up to date: let the user in; anything this device has not uploaded goes in a normal cycle.
-        if(probe.upToDate){if(pendingChanges().length)schedulePush(0);return {synced:true,upToDate:true}}
+        if(probe.upToDate){if(probe.irrelevantRemote)schedulePoll(0);else if(pendingChanges().length)schedulePush(0);return {synced:true,upToDate:true,...(probe.irrelevantRemote?{irrelevantRemote:probe.irrelevantRemote}:{})}}
         // Another device changed something: apply it first (pull only, after any running cycle).
         onPulling(probe);
         if(running)await running;

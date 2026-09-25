@@ -4175,7 +4175,18 @@
     scheduleSyncAssetRefresh()
   }
 
-  function showMobileReturnGate({waiting=null,message=""}={}){
+  // Edits stay blocked while the return check runs, but the card is only shown when there is something
+  // to tell: remote changes being applied, another device still editing, a failure, or a slow check.
+  // An up-to-date check (the usual case) finishes without any visible popup.
+  const MOBILE_GATE_PULL_REVEAL_MS=700,MOBILE_GATE_SLOW_REVEAL_MS=5000;
+  let mobileGateRevealTimer=0,mobileDisconnectedNoticeShown=false;
+  function revealMobileReturnGate(delay=0){
+    const layer=document.getElementById("mobileSyncGate");if(!layer||layer.classList.contains("visible"))return;
+    if(mobileGateRevealTimer){clearTimeout(mobileGateRevealTimer);mobileGateRevealTimer=0}
+    if(delay<=0){layer.classList.add("visible");return}
+    mobileGateRevealTimer=setTimeout(()=>{mobileGateRevealTimer=0;if(layer.isConnected)layer.classList.add("visible")},delay)
+  }
+  function showMobileReturnGate({waiting=null,message="",pulling=false}={}){
     mobileReturnGateActive=true;
     let layer=document.getElementById("mobileSyncGate");
     if(!layer){
@@ -4190,25 +4201,36 @@
         else showSyncToast("최신 내용 확인 전에 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.");
         hideMobileReturnGate()
       };
-      setTimeout(()=>{if(layer.isConnected)layer.classList.add("visible")},700)
+      revealMobileReturnGate(MOBILE_GATE_SLOW_REVEAL_MS)
     }
-    layer.querySelector("strong").textContent=waiting?"다른 기기에서 수정 중":"최신 내용 확인 중";
-    layer.querySelector("p").textContent=message||(waiting?`${remoteDeviceText(waiting)}. 변경사항이 올라오면 자동으로 편집할 수 있습니다.`:"다른 기기의 변경사항을 확인하고 있습니다.");
+    layer.querySelector("strong").textContent=waiting?"다른 기기에서 수정 중":pulling?"변경사항 반영 중":"최신 내용 확인 중";
+    layer.querySelector("p").textContent=message||(waiting?`${remoteDeviceText(waiting)}. 변경사항이 올라오면 자동으로 편집할 수 있습니다.`:pulling?"다른 기기의 변경사항을 반영하고 있습니다.":"다른 기기의 변경사항을 확인하고 있습니다.");
     layer.querySelector("[data-sync-gate-skip]").textContent=waiting?"기다리지 않고 편집":"로컬에서 편집";
-    if(waiting||message)layer.classList.add("visible")
+    if(waiting||message)revealMobileReturnGate(0);
+    else if(pulling)revealMobileReturnGate(MOBILE_GATE_PULL_REVEAL_MS)
   }
-  function hideMobileReturnGate(){mobileReturnGateActive=false;document.getElementById("mobileSyncGate")?.remove()}
+  function hideMobileReturnGate(){
+    mobileReturnGateActive=false;
+    if(mobileGateRevealTimer){clearTimeout(mobileGateRevealTimer);mobileGateRevealTimer=0}
+    document.getElementById("mobileSyncGate")?.remove()
+  }
   async function runMobileReturnCheck({force=false}={}){
     const status=syncEngine?.status();
     if(!status?.linked||status.suspended)return null;
     if(!force&&mobileReturnGateActive)return null;
     const run=++mobileReturnRun;showMobileReturnGate();
     try{
-      const result=await syncEngine.checkOnReturn({isCancelled:()=>run!==mobileReturnRun,onWaiting:remote=>{if(run===mobileReturnRun)showMobileReturnGate({waiting:remote})}});
+      const result=await syncEngine.checkOnReturn({isCancelled:()=>run!==mobileReturnRun,onWaiting:remote=>{if(run===mobileReturnRun)showMobileReturnGate({waiting:remote})},onPulling:()=>{if(run===mobileReturnRun)showMobileReturnGate({pulling:true})}});
       if(run!==mobileReturnRun||result?.cancelled)return result;
-      if(result?.skipped==="offline"||result?.skipped==="disconnected"){hideMobileReturnGate();showSyncToast(result.skipped==="offline"?"오프라인이라 최신 내용을 확인하지 못했습니다.":"클라우드에 로그인되어 있지 않아 최신 내용을 확인하지 못했습니다.");return result}
+      if(result?.skipped==="offline"||result?.skipped==="disconnected"){
+        hideMobileReturnGate();
+        // Automatic checks report a missing connection once per app session; the account button keeps showing it.
+        if(force||!mobileDisconnectedNoticeShown){mobileDisconnectedNoticeShown=true;showSyncToast(result.skipped==="offline"?"오프라인이라 최신 내용을 확인하지 못했습니다.":"클라우드에 로그인되어 있지 않아 최신 내용을 확인하지 못했습니다.")}
+        return result
+      }
       if(result?.waitingTimedOut){showMobileReturnGate({message:"다른 기기의 변경사항이 아직 올라오지 않았습니다. 그 기기에서 햄보드를 열어 동기화하거나, 기다리지 않고 편집할 수 있습니다."});return result}
       if(result?.failed||result?.blocked){logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
+      mobileDisconnectedNoticeShown=false;
       hideMobileReturnGate();return result
     }catch(error){
       if(run===mobileReturnRun){logDiagnostic("error","SYNC","최신 내용 확인에 실패했습니다.",error);showMobileReturnGate({message:"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."})}

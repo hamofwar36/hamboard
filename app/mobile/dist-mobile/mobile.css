@@ -1649,9 +1649,9 @@ body[data-mode="dark"] .project-card{box-shadow:var(--soft-shadow)}
 .mobile-sync-gate{
   position:fixed;inset:0;z-index:160;display:grid;place-items:center;padding:20px;
   background:color-mix(in srgb,var(--ui-panel-bg) 72%,transparent);backdrop-filter:blur(3px);
-  opacity:0;transition:opacity .15s ease
+  opacity:0;pointer-events:none;transition:opacity .15s ease
 }
-.mobile-sync-gate.visible{opacity:1}
+.mobile-sync-gate.visible{opacity:1;pointer-events:auto}
 .mobile-sync-gate-card{
   width:min(380px,100%);padding:20px;border:1px solid var(--ui-border-default);border-radius:16px;
   background:var(--ui-panel-bg);color:var(--ui-content-default);text-align:center;line-height:1.55

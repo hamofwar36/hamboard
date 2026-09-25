@@ -435,6 +435,20 @@ await check("return with an unsent phone edit and nothing new remotely: the chec
   const pushed=await m.engine.sync("after-return");assert.ok(pushed.committed,"the edit is uploaded by the normal cycle afterwards")
 });
 
+await check("return with nothing new remotely: no visible pull phase is announced",async()=>{
+  const {m}=await linkedPhone();let pulling=0;
+  const result=await m.engine.checkOnReturn({onPulling:()=>{pulling++}});
+  assert.equal(result.upToDate,true);assert.equal(pulling,0,"an up-to-date check never reports a pull")
+});
+
+await check("return with another device's commit: the pull phase is announced once before applying",async()=>{
+  const {p,m}=await linkedPhone();let pulling=0;
+  await p.pull();await p.commit([{entityType:"note",entityId:"r2",operation:"upsert",payload:note("r2","PC에서 알린 변경")}]);
+  const result=await m.engine.checkOnReturn({onPulling:probe=>{pulling++;assert.equal(probe.needsPull,true)}});
+  assert.equal(result.synced,true);assert.equal(pulling,1);
+  assert.equal(m.state.notes.find(n=>n.id==="r2").title,"PC에서 알린 변경")
+});
+
 await check("return while this phone's upload is still running: the check does not wait for it",async()=>{
   const {d,m}=await linkedPhone();
   m.edit(s=>{s.notes.find(n=>n.id==="r1").title="업로드 중인 편집"});

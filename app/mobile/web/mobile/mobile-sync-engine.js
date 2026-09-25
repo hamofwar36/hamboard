@@ -401,7 +401,7 @@
       const remoteCommits=(topo.path||[]).filter(item=>text(item.deviceId)!==deviceId()).length;
       return remoteCommits?{needsPull:true,why:"remote-commits",remoteCommits}:{upToDate:true}
     }
-    async function checkOnReturn({onWaiting=()=>{},maxWaitMs=coordination.PRESENCE_TTL_MS+5000,isCancelled=()=>false}={}){
+    async function checkOnReturn({onWaiting=()=>{},onPulling=()=>{},maxWaitMs=coordination.PRESENCE_TTL_MS+5000,isCancelled=()=>false}={}){
       const started=now();
       for(;;){
         if(isCancelled())return {cancelled:true};
@@ -413,6 +413,7 @@
         // Up to date: let the user in; anything this device has not uploaded goes in a normal cycle.
         if(probe.upToDate){if(pendingChanges().length)schedulePush(0);return {synced:true,upToDate:true}}
         // Another device changed something: apply it first (pull only, after any running cycle).
+        onPulling(probe);
         if(running)await running;
         if(isCancelled())return {cancelled:true};
         const result=await sync("return",{pullOnly:true});

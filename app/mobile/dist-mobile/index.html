@@ -9,9 +9,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="햄보드">
   <title>햄보드</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=0.3.56">
+  <link rel="manifest" href="./manifest.webmanifest?v=0.3.57">
   <link rel="icon" href="./favicon.ico">
-  <link rel="stylesheet" href="./mobile.css?v=0.3.56">
+  <link rel="stylesheet" href="./mobile.css?v=0.3.57">
 </head>
 <body>
   <div class="mobile-app" id="mobileApp">
@@ -264,9 +264,10 @@
 
           <div class="diagnostics-panel">
             <div class="diagnostics-head">
-              <div class="settings-copy"><strong>진단 로그</strong><small>현재 실행 중 발생한 주요 오류와 연결 상태를 표시합니다.</small></div>
-              <button id="diagnosticsClear" type="button">지우기</button>
+              <div class="settings-copy"><strong>진단 로그</strong><small>이 실행의 오류, 동기화 단계와 연결 상태를 기록합니다. 공유하기 전 보고서 내용을 확인해 주세요.</small></div>
+              <div class="diagnostics-actions"><button id="diagnosticsCopy" type="button">복사</button><button id="diagnosticsDownload" type="button">저장</button><button id="diagnosticsClear" type="button">지우기</button></div>
             </div>
+            <p class="diagnostics-feedback" id="diagnosticsFeedback" role="status" aria-live="polite" hidden></p>
             <div class="diagnostics-log" id="diagnosticsLog"></div>
           </div>
         </section>
@@ -388,15 +389,15 @@
   </div>
 
   <input id="mobileDataFile" type="file" accept="application/json,.json" hidden>
-  <script src="./shared/sync-state-model.js?v=0.3.56"></script>
-  <script src="./shared/project-repository.js?v=0.3.56"></script>
-  <script src="./shared/cloud-payload.js?v=0.3.56"></script>
-  <script src="./shared/sync-coordination.js?v=0.3.56"></script>
-  <script src="./vendor/lucide/lucide.min.js?v=0.3.56"></script>
-  <script src="./mobile-config.js?v=0.3.56"></script>
-  <script src="./mobile-google-drive.js?v=0.3.56"></script>
-  <script src="./mobile-asset-repository.js?v=0.3.56"></script>
-  <script src="./mobile-sync-engine.js?v=0.3.56"></script>
-  <script src="./mobile-app.js?v=0.3.56"></script>
+  <script src="./shared/sync-state-model.js?v=0.3.57"></script>
+  <script src="./shared/project-repository.js?v=0.3.57"></script>
+  <script src="./shared/cloud-payload.js?v=0.3.57"></script>
+  <script src="./shared/sync-coordination.js?v=0.3.57"></script>
+  <script src="./vendor/lucide/lucide.min.js?v=0.3.57"></script>
+  <script src="./mobile-config.js?v=0.3.57"></script>
+  <script src="./mobile-google-drive.js?v=0.3.57"></script>
+  <script src="./mobile-asset-repository.js?v=0.3.57"></script>
+  <script src="./mobile-sync-engine.js?v=0.3.57"></script>
+  <script src="./mobile-app.js?v=0.3.57"></script>
 </body>
 </html>

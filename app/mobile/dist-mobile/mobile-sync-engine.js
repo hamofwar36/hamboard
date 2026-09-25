@@ -264,8 +264,12 @@
       try{await drive.deleteSyncObject(presence);log("info","presence-released",{reason});return true}catch(error){log("warn","presence-release-deferred",error);return false}
     }
     function dirty(){return writeSeq!==cleanSeq||!!pushTimer||!!hooks.hasPendingSaves?.()}
+    // Presence promises "my edits arrive shortly". While cycles fail or are blocked they will not,
+    // so do not keep the other device read-only on their account.
+    function uploadBlocked(){return !!(lastResult&&(lastResult.failed||lastResult.blocked))}
     async function presenceTick(){
       if(!ownPresence){if(!presenceBusy)stopPresenceTicker();return "none"}
+      if(uploadBlocked()){await releasePresence(lastResult.failed?"sync-failing":"sync-blocked");return "release"}
       const t=now();
       if(!dirty()&&t-lastLocalEditAt>=coordination.PRESENCE_IDLE_GRACE_MS){await releasePresence("quiet-and-published");return "release"}
       if(ownPresence.expiresAtMs-t<coordination.PRESENCE_RENEW_BEFORE_MS){await publishPresence("renew");return "renew"}
@@ -279,7 +283,7 @@
     function notifyLocalWrite(){
       if(!linked()||pauseRequested)return;
       writeSeq++;lastLocalEditAt=now();
-      if(!ownPresence&&!remoteBlocking&&connected()&&online())publishPresence("local-edit");
+      if(!ownPresence&&!remoteBlocking&&!uploadBlocked()&&connected()&&online())publishPresence("local-edit");
       schedulePush()
     }
     function schedulePush(delay=PUSH_DEBOUNCE_MS){
@@ -339,26 +343,35 @@
     }
 
     // -- cycle ----------------------------------------------------------------------------
-    async function cycle(reason){
-      if(pauseRequested)return {skipped:"suspended"};
-      if(!meta?.linked)return {skipped:"not-linked"};
-      if(meta.suspended)return {skipped:"suspended"};
-      if(!online())return {skipped:"offline"};
-      if(!connected()){const reconnected=await hooks.ensureConnected?.().catch(()=>false);if(!reconnected||!connected())return {skipped:"disconnected"}}
-      await hooks.flushPendingSaves?.();
-      for(let attempt=0;attempt<3;attempt++){
-        const objects=await listTopology();updateRemotePresence(objects);
-        const pulled=await pull(objects);if(pulled.blocked||pulled.deferred)return pulled;
-        const pushed=await push(objects);if(pushed.rerun)continue;
-        return {...pushed,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,reason}
+    async function cycle(reason,{pullOnly=false}={}){
+      let phase="preflight";
+      try{
+        if(pauseRequested)return {skipped:"suspended"};
+        if(!meta?.linked)return {skipped:"not-linked"};
+        if(meta.suspended)return {skipped:"suspended"};
+        if(!online())return {skipped:"offline"};
+        if(!connected()){phase="reconnect";const reconnected=await hooks.ensureConnected?.().catch(error=>{log("warn","reconnect-failed",{reason,error});return false});if(!reconnected||!connected())return {skipped:"disconnected"}}
+        phase="flush-local-saves";await hooks.flushPendingSaves?.();
+        for(let attempt=0;attempt<3;attempt++){
+          phase="list-remote";const objects=await listTopology();updateRemotePresence(objects);
+          phase="pull-remote";const pulled=await pull(objects);if(pulled.blocked||pulled.deferred)return {...pulled,phase};
+          // Return check: the latest remote state is applied; this device's own upload follows right after.
+          if(pullOnly){const pushDeferred=pendingChanges().length>0;return {synced:true,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,pushDeferred,reason,...(pushDeferred?{retryInMs:PUSH_DEBOUNCE_MS}:{})}}
+          phase="push-local";const pushed=await push(objects);if(pushed.rerun)continue;
+          return {...pushed,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,reason}
+        }
+        return {deferred:"remote-busy",retryInMs:1500,phase}
+      }catch(error){
+        log("error","sync-cycle-failed",{reason,phase,error});
+        // The public result retains the original message for existing UI error handling.
+        return {failed:true,error:text(error?.message||error),phase,reason}
       }
-      return {deferred:"remote-busy",retryInMs:1500}
     }
-    function sync(reason="manual"){
+    function sync(reason="manual",options={}){
       if(pauseRequested)return Promise.resolve({skipped:"suspended"});
       if(running){rerun=true;return running}
       rerun=false;
-      const operation=cycle(reason).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
+      const operation=cycle(reason,options).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
       running=operation.finally(()=>{running=null;const again=rerun;rerun=false;const retry=Number(lastResult?.retryInMs)||0;if(again)schedulePoll(250);else if(retry)schedulePoll(retry);else if(polling)schedulePoll(pollInterval())});
       return running
     }
@@ -371,12 +384,35 @@
 
     // Returning to the app: keep editing blocked until the latest remote state is applied, and
     // while another device is still editing, wait for it (onWaiting is called each round).
+    // Read-only check for the return gate: one listing, no waiting on a running cycle, no upload.
+    async function probeReturn(){
+      if(!meta?.linked)return {skipped:"not-linked"};
+      if(meta.suspended||pauseRequested)return {skipped:"suspended"};
+      if(!online())return {skipped:"offline"};
+      if(!connected()){const reconnected=await hooks.ensureConnected?.().catch(()=>false);if(!reconnected||!connected())return {skipped:"disconnected"}}
+      const objects=await listTopology();updateRemotePresence(objects);
+      if(isReadonly())return {remote:clone(remoteBlocking)};
+      const topo=topology(objects,meta.baseRevision);
+      if(topo.error||topo.recoveredMissingBase)return {needsPull:true,why:topo.error||"base-missing"};
+      // Commits after our base made by this device (an upload that is still finishing) are not news.
+      const remoteCommits=(topo.path||[]).filter(item=>text(item.deviceId)!==deviceId()).length;
+      return remoteCommits?{needsPull:true,why:"remote-commits",remoteCommits}:{upToDate:true}
+    }
     async function checkOnReturn({onWaiting=()=>{},maxWaitMs=coordination.PRESENCE_TTL_MS+5000,isCancelled=()=>false}={}){
       const started=now();
       for(;;){
+        if(isCancelled())return {cancelled:true};
+        let probe;
+        try{probe=await probeReturn()}catch(error){log("error","return-probe-failed",{error});return {failed:true,error:text(error?.message||error),phase:"return-probe"}}
+        if(isCancelled())return {cancelled:true};
+        if(probe.skipped)return probe;
+        if(probe.remote){if(now()-started>maxWaitMs)return {waitingTimedOut:true};onWaiting(probe.remote);await sleep(POLL_READONLY_MS);continue}
+        // Up to date: let the user in; anything this device has not uploaded goes in a normal cycle.
+        if(probe.upToDate){if(pendingChanges().length)schedulePush(0);return {synced:true,upToDate:true}}
+        // Another device changed something: apply it first (pull only, after any running cycle).
         if(running)await running;
         if(isCancelled())return {cancelled:true};
-        const result=await sync("return");
+        const result=await sync("return",{pullOnly:true});
         if(isCancelled())return {cancelled:true};
         if(result?.failed||["offline","disconnected","not-linked","suspended"].includes(result?.skipped)||result?.blocked)return result;
         if(isReadonly()){if(now()-started>maxWaitMs)return {...result,waitingTimedOut:true};onWaiting(clone(remoteBlocking));await sleep(POLL_READONLY_MS);continue}

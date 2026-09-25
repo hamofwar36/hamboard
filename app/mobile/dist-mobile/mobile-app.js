@@ -118,6 +118,9 @@
   const statusCloud=$("#statusCloud");
   const statusDocuments=$("#statusDocuments");
   const diagnosticsLog=$("#diagnosticsLog");
+  const diagnosticsCopy=$("#diagnosticsCopy");
+  const diagnosticsDownload=$("#diagnosticsDownload");
+  const diagnosticsFeedback=$("#diagnosticsFeedback");
   const diagnosticsClear=$("#diagnosticsClear");
   const cloudDisconnect=$("#cloudDisconnect");
   const cloudSourceStatus=$("#cloudSourceStatus");
@@ -129,6 +132,7 @@
   let activeDocumentType="";
   let activeDocumentId="";
   let activeEpisodeId="";
+  let activeFolderId="";
   let activeBlockEditor=null;
   let blockSaveTimer=0;
   let blockSaveChain=Promise.resolve();
@@ -165,6 +169,7 @@
   let noteHtmlDirty=false;
   let createColorExpanded=false;
   const diagnostics=[];
+  let diagnosticSequence=0;
   const CARD_COLORS=Object.freeze(["#FFB8AE","#FFA8B8","#FFCBA8","#FFB877","#F6D872","#D4E88A","#C8E0B0","#BDE7C4","#AEE9C8","#8FE0D2","#A0E4F0","#A9D6FF","#B0C4DE","#A9B4F2","#CBB8FF","#C9A0DE","#E0A0C8","#F2A6E0","#D2D2D2"]);
   const DEFAULT_STAGE_COLORS=Object.freeze([CARD_COLORS[11],CARD_COLORS[7],CARD_COLORS[4],CARD_COLORS[0]]);
   const MOBILE_SCRIPT_TYPES=Object.freeze({narration:"지문",dialogue:"대사",background:"배경",direction:"연출",page:"페이지",cut:"컷"});
@@ -187,6 +192,7 @@
     "butter-lilac":{name:"블루베리버터",a:"#F2DB8F",b:"#C6B2E8"}
   });
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const mapWithConcurrency=async(items,limit,worker)=>{
     const values=Array.from(items||[]),results=new Array(values.length);
     let cursor=0;
@@ -244,6 +250,43 @@
     return {stageDefs,stages}
   }
 
+  function moveMobileStoryItem(state,move){
+    const project=(state.projects||[]).find(item=>String(item?.id||"")===move.projectId);
+    if(!project)return false;
+    const unit=project.kind==="long"?(project.episodes||[]).find(item=>String(item?.id||"")===move.episodeId):project;
+    const insert=(source,destination,from,to)=>{
+      if(from<0||from>=source.length||to<0||to>destination.length)return false;
+      const index=source===destination&&from<to?to-1:to;
+      if(source===destination&&from===index)return false;
+      destination.splice(index,0,source.splice(from,1)[0]);
+      return true
+    };
+    let changed=false;
+    if(move.kind==="episode"){
+      if(project.kind!=="long")return false;
+      const list=project.episodes||[],from=list.findIndex(item=>String(item?.id||"")===move.sourceId),target=list.findIndex(item=>String(item?.id||"")===move.targetId);
+      if(target<0)return false;
+      const defaultTitles=new Set(list.filter((item,index)=>String(item?.title||"")===`${index+1}화`).map(item=>String(item.id)));
+      changed=insert(list,list,from,target+(move.after?1:0));
+      if(changed)list.forEach((item,index)=>{if(defaultTitles.has(String(item.id)))item.title=`${index+1}화`})
+    }else if(move.kind==="stage"){
+      if(!unit)return false;
+      const list=unit.stageDefs||[],from=list.findIndex(item=>String(item?.id||"")===move.sourceId),target=list.findIndex(item=>String(item?.id||"")===move.targetId);
+      if(target<0)return false;
+      changed=insert(list,list,from,target+(move.after?1:0))
+    }else if(move.kind==="block"){
+      if(!unit||!unit.stages||typeof unit.stages!=="object")return false;
+      const source=unit.stages[move.sourceStageId],destination=unit.stages[move.targetStageId];
+      if(!Array.isArray(source)||!Array.isArray(destination))return false;
+      const from=move.sourceId?source.findIndex(item=>String(item?.id||"")===move.sourceId):move.sourceIndex;
+      const target=move.targetId?destination.findIndex(item=>String(item?.id||"")===move.targetId):move.targetIndex;
+      if(target<0)return false;
+      changed=insert(source,destination,from,target+(move.after?1:0))
+    }
+    if(changed)project.updatedAt=new Date().toISOString();
+    return changed
+  }
+
   function orderedFolders(state=snapshot()){
     const folders=Array.isArray(state?.folders)?state.folders:[],children=new Map(),roots=[],seen=new Set();
     for(const folder of folders){
@@ -261,14 +304,14 @@
         const id=String(folder?.id||"");
         if(!id||seen.has(id))continue;
         seen.add(id);
-        rows.push({id,name:String(folder.name||"이름 없는 폴더"),depth});
+        rows.push({id,name:String(folder.name||"제목 없는 폴더"),depth});
         walk(children.get(id)||[],depth+1)
       }
     };
     walk(roots,0);
     for(const folder of folders){
       const id=String(folder?.id||"");
-      if(id&&!seen.has(id))rows.push({id,name:String(folder.name||"이름 없는 폴더"),depth:0})
+      if(id&&!seen.has(id))rows.push({id,name:String(folder.name||"제목 없는 폴더"),depth:0})
     }
     return rows
   }
@@ -360,21 +403,22 @@
     createActions.classList.remove("editing");
     createFormBack.textContent="이전";
     createSubmit.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>만들기</span>';
-    createTitleLabel.textContent=type==="folder"?"폴더 이름":"제목";
-    createSubtitleField.querySelector("span").innerHTML=type==="folder"?"부제 <small>· 선택</small>":"부제 <small>· 선택</small>";
+    createTitleLabel.textContent="제목";
+    createSubtitleField.querySelector("span").innerHTML="부제 <small>· 선택</small>";
     createFolderLabel.innerHTML=type==="folder"?"상위 폴더 <small>· 선택</small>":"폴더 <small>· 선택</small>";
     createFormKind.textContent=`새 ${config.label}`;
     createFormIcon.innerHTML=`<i data-lucide="${config.icon}" aria-hidden="true"></i>`;
     createSheet.classList.add("form-open");
     createTitleInput.value=config.defaultTitle;
     createSubtitleInput.value="";
-    createSubtitleInput.placeholder=type==="folder"?"폴더 설명":type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
+    createSubtitleInput.placeholder="부제 입력";
     createColorValue=randomCardColor();
     createColorCustom=false;
     createColorExpanded=false;
     createColorField.hidden=type==="folder";
     renderCreateColorOptions();
     fillCreateFolderOptions(type==="folder");
+    if(activeFolderId)createFolderSelect.value=activeFolderId;
     createFormStatus.hidden=true;
     createFormStatus.textContent="";
     createProjectKind.querySelectorAll("[data-project-kind]").forEach(button=>button.classList.toggle("active",button.dataset.projectKind==="short"));
@@ -405,7 +449,7 @@
     createSheet.classList.add("form-open");
     createTitleInput.value=String(item.title||"");
     createSubtitleInput.value=String(item.subtitle||"");
-    createSubtitleInput.placeholder=type==="project"?"작품 설명":type==="note"?"노트 설명":"마인드맵 설명";
+    createSubtitleInput.placeholder="부제 입력";
     createColorValue=safeColor(item.color,randomCardColor());
     createColorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===createColorValue.toLowerCase());
     createColorExpanded=false;
@@ -537,11 +581,7 @@
       closeBottomSheet(createSheet);
       resetCreateSheet();
       if(createdType)openDocument(createdType,createdId);
-      else{
-        renderHome();
-        setStatus("새 폴더를 만들었습니다.");
-        setTimeout(()=>{if(!libraryScreen.hidden)renderLibrary()},1600)
-      }
+      else openFolder(createdId)
     }catch(error){
       logDiagnostic("error","REPOSITORY",`${config.label} 저장에 실패했습니다.`,error);
       createFormStatus.textContent="저장하지 못했습니다. 다시 시도해 주세요.";
@@ -551,16 +591,61 @@
     }
   }
 
+  // The report is session-only. Keep diagnostic codes and source locations; avoid document bodies,
+  // account IDs, URLs with credentials, and raw remote response payloads.
+  function diagnosticText(value){
+    return String(value??"").replace(/\b(google-drive-http-\d+):[^\n]*/gi,"$1")
+      .replace(/https?:\/\/[^\s<>"']+/gi,"[URL]")
+      .replace(/\bBearer\s+[^\s,;]+/gi,"Bearer [비공개]")
+      .replace(/\b(?:access_token|refresh_token|authorization|code|client_secret|id_token)\s*[:=]\s*[^\s,;]+/gi,"[인증 정보]")
+      .replace(/\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?\b/g,"[인증 정보]")
+      .slice(0,400)
+  }
+  function diagnosticStack(error){
+    return String(error?.stack||"").split("\n").slice(1,9).map(line=>{
+      const location=line.match(/([\w.-]+\.(?:js|mjs|html)):(\d+)(?::(\d+))?/);
+      return location?`${location[1]}:${location[2]}:${location[3]||"0"}`:""
+    }).filter(Boolean).join(" ← ")
+  }
+  function diagnosticFailure(value,depth=0){
+    if(!value)return null;
+    if(value instanceof Error||typeof value==="object"&&typeof value.message==="string"){
+      const result={name:diagnosticText(value.name||"Error"),message:diagnosticText(value.message),stack:diagnosticStack(value)};
+      if(Number.isFinite(Number(value.status)))result.status=Number(value.status);
+      if(depth<2&&value.cause&&value.cause!==value)result.cause=diagnosticFailure(value.cause,depth+1);
+      return result
+    }
+    return {message:diagnosticText(value)}
+  }
+  function diagnosticDetail(value){
+    if(!value)return null;
+    if(value instanceof Error||typeof value!=="object"||typeof value.message==="string")return diagnosticFailure(value);
+    // Sync engine details are structured; only these known operational fields may leave the app.
+    const detail={};
+    for(const key of ["reason","phase","event","code","status","failed","blocked","skipped","deferred","retryInMs","changes","conflicts","pulled","hasPending","wasPolling"]){
+      const item=value[key];
+      if(typeof item==="boolean"||typeof item==="number"&&Number.isFinite(item))detail[key]=item;
+      else if(typeof item==="string")detail[key]=diagnosticText(item)
+    }
+    if(value.error)detail.error=diagnosticFailure(value.error);
+    if(!Object.keys(detail).length)detail.type=Array.isArray(value)?"Array":"Object";
+    return detail
+  }
+  function diagnosticEnvironment(){
+    const cloud=googleDrive?.status?.()||{},sync=syncEngine?.status?.()||{};
+    return {screen:currentScreen?.id||"unknown",online:navigator.onLine!==false,cloudConnected:!!cloud.connected,cloudAuthorized:!!cloud.authorized,syncLinked:!!sync.linked,syncPaused:!!sync.suspended,syncDirty:!!sync.dirty,syncBusy:!!sync.busy}
+  }
   function logDiagnostic(level,area,message,error=null){
-    diagnostics.unshift({
-      time:new Date().toISOString(),
-      level:String(level||"info"),
-      area:String(area||"APP"),
-      message:String(message||""),
-      detail:error?String(error?.message||error):""
-    });
-    if(diagnostics.length>80)diagnostics.length=80;
+    const time=new Date().toISOString(),detail=diagnosticDetail(error);
+    const entry={id:++diagnosticSequence,time,level:["info","warn","error"].includes(level)?level:"info",area:diagnosticText(area||"APP"),message:diagnosticText(message),detail,context:diagnosticEnvironment(),count:1};
+    const latest=diagnostics[0];
+    if(entry.level!=="info"&&latest?.level===entry.level&&latest.area===entry.area&&latest.message===entry.message&&JSON.stringify(latest.detail)===JSON.stringify(entry.detail)&&Date.now()-Date.parse(latest.time)<30000){latest.count++;latest.time=time;latest.context=entry.context}
+    else{diagnostics.unshift(entry);if(diagnostics.length>160)diagnostics.length=160}
     if(settingsScreen&&!settingsScreen.hidden)renderDiagnostics()
+  }
+
+  function diagnosticReport(){
+    return JSON.stringify({format:"hamboard-mobile-diagnostics-v1",createdAt:new Date().toISOString(),version:diagnosticText(window.HAMBOARD_MOBILE_CONFIG?.version||"unknown"),browser:diagnosticText(navigator.userAgent),environment:diagnosticEnvironment(),events:[...diagnostics].reverse()},null,2)
   }
 
   function renderDiagnostics(){
@@ -574,11 +659,15 @@
       const row=element("div",`diagnostics-entry diagnostics-${entry.level}`);
       const head=element("div","diagnostics-entry-head");
       head.append(
-        element("strong","",entry.area),
+        element("strong","",`${entry.level.toUpperCase()} · ${entry.area} #${entry.id}${entry.count>1?` (×${entry.count})`:""}`),
         element("time","",new Intl.DateTimeFormat("ko-KR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(entry.time)))
       );
       row.append(head,element("div","diagnostics-entry-message",entry.message));
-      if(entry.detail)row.append(element("div","diagnostics-entry-detail",entry.detail));
+      row.append(element("div","diagnostics-entry-meta",`${entry.context.screen} · ${entry.context.online?"온라인":"오프라인"} · 클라우드 ${entry.context.cloudConnected?"연결":"미연결"} · 동기화 ${entry.context.syncPaused?"중지":entry.context.syncLinked?"연결":"미연결"}`));
+      if(entry.detail){
+        const details=element("details"),summary=element("summary","","오류 정보와 발생 위치"),body=element("pre","",JSON.stringify(entry.detail,null,2));
+        details.append(summary,body);row.append(details)
+      }
       diagnosticsLog.append(row)
     }
   }
@@ -669,7 +758,7 @@
   function setIndicator(state,text){indicator.dataset.state=state;indicator.textContent=text}
   function setStatus(message,{action="",run=null}={}){
     const status=$("#libraryStatus");
-    status.replaceChildren(document.createTextNode(message));
+    status.replaceChildren(element("p","",message));
     if(action&&run){const button=element("button","",action);button.type="button";button.onclick=run;status.append(button)}
     status.hidden=false
   }
@@ -680,7 +769,9 @@
   }
   const appBaseUrl=()=>location.pathname+location.search;
   function appRouteUrl(route){
-    return route?.view==="document"&&route.type&&route.id?`${appBaseUrl()}#${route.type}/${encodeURIComponent(route.id)}`:appBaseUrl()
+    if(route?.view==="document"&&route.type&&route.id)return `${appBaseUrl()}#${route.type}/${encodeURIComponent(route.id)}`;
+    if(route?.view==="folder"&&route.id)return `${appBaseUrl()}#folder/${encodeURIComponent(route.id)}`;
+    return appBaseUrl()
   }
   function writeRoute(route,{replace=false}={}){
     const state={hamboard:true,...route};
@@ -1042,23 +1133,49 @@
 
   function renderLibrary(){
     const state=snapshot(),query=librarySearch.value.trim().toLocaleLowerCase("ko"),allDocuments=libraryDocuments(state);
-    const documents=query?allDocuments.filter(({type,item})=>{
+    const folderIds=new Set((state.folders||[]).map(folder=>String(folder.id||"")));
+    const folderLocation=id=>folderIds.has(String(id||""))?String(id):"";
+    const folders=(state.folders||[]).filter(folder=>{
+      if(activeFolderId&&folderLocation(folder.parentId)!==activeFolderId)return false;
+      if(query)return `${folder.name||""} ${folder.subtitle||""}`.toLocaleLowerCase("ko").includes(query);
+      return folderLocation(folder.parentId)===activeFolderId
+    });
+    const scopedDocuments=query&&!activeFolderId?allDocuments:allDocuments.filter(({item})=>folderLocation(item.folderId)===activeFolderId);
+    const documents=scopedDocuments.filter(({type,item})=>{
+      if(!query)return true;
       const descriptor=documentDescriptor(type,item,state);
       const extra=type==="note"?stripHtml(item.content||""):type==="mindmap"?(item.nodes||[]).map(node=>`${node.title||""} ${node.text||""}`).join(" "):"";
       return `${item.title||""} ${descriptor.subtitle} ${descriptor.folder} ${extra}`.toLocaleLowerCase("ko").includes(query)
-    }):allDocuments;
+    });
     const host=$("#libraryList");
     host.replaceChildren();
-    if(!allDocuments.length){
+    if(!allDocuments.length&&!(state.folders||[]).length){
       setStatus("동기화된 작품, 노트 또는 마인드맵이 아직 없습니다.",{action:"데이터 파일 불러오기",run:()=>fileInput.click()});
       refreshLucideIcons();
       return
     }
-    if(query&&!documents.length){
-      setStatus("검색 결과가 없습니다.");
+    if(!documents.length&&!folders.length){
+      setStatus(query?"검색 결과가 없습니다.":activeFolderId?"이 폴더는 비어 있습니다.":"홈에 표시할 항목이 없습니다.");
       return
     }
     hideStatus();
+    for(const folder of folders){
+      const id=String(folder.id||""),card=element("article","folder-card");
+      card.dataset.folderId=id;
+      const count=(state.folders||[]).filter(item=>String(item.parentId||"")===id).length+
+        allDocuments.filter(({item})=>String(item.folderId||"")===id).length;
+      const icon=element("span","folder-card-icon");
+      icon.innerHTML='<i data-lucide="folder" aria-hidden="true"></i>';
+      const label=element("span","folder-card-label","폴더");
+      const name=element("strong","folder-card-title",folder.name||"제목 없는 폴더");
+      const meta=element("span","folder-card-meta",`${count}개 항목`);
+      const open=element("button","folder-card-open");
+      open.type="button";
+      open.setAttribute("aria-label",(folder.name||"제목 없는 폴더")+" 폴더 열기");
+      open.onclick=()=>openFolder(id);
+      card.append(icon,label,name,meta,open);
+      host.append(card)
+    }
     for(const entry of documents){
       const {type,item}=entry,descriptor=documentDescriptor(type,item,state),card=element("article",`project-card ${type==="project"?"story-card":type==="note"?"note-card":"mindmap-card"}`);
       card.dataset.documentType=type;
@@ -1126,7 +1243,8 @@
 
   function blockElement(block,{compact=false,stageId="",blockIndex=-1}={}){
     const editable=Boolean(stageId);
-    const card=element("article","block-card"+(block.type==="script"?" script-block-card":"")+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
+    const card=element("article","block-card"+(compact?" compact-block-card":"")+(editable?" editable-block-card":""));
+    if(editable){card.dataset.stageId=String(stageId);card.dataset.blockId=String(block.id||"");card.dataset.blockIndex=String(blockIndex)}
     const titleText=String(block.title||"").trim();
     if(editable){
       card.setAttribute("role","button");
@@ -1251,6 +1369,8 @@
       copy.append(element("h3","",title));
       if(message)copy.append(element("p","",message));
       const actions=element("div","mobile-confirm-actions");
+      if(Array.from(confirmLabel).length>8)actions.classList.add("wide-submit");
+      else if(Array.from(cancelLabel).length>8)actions.classList.add("wide-cancel");
       const cancel=element("button","mobile-confirm-cancel",cancelLabel),confirm=element("button","mobile-confirm-submit"+(destructive?" destructive":""),confirmLabel);
       cancel.type="button";
       confirm.type="button";
@@ -1302,7 +1422,7 @@
     panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="layout-list" aria-hidden="true"></i></span><strong>'+(existing?"파트 편집":"새 파트 추가")+'</strong></div><button type="button" class="sheet-close" data-project-stage-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-project-stage-title maxlength="120" placeholder="예: 만남, 동행, 균열, 이별"></label>'+
-      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트의 간단한 설명"></label>'+
+      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-project-stage-subtitle maxlength="240" placeholder="파트 부제"></label>'+
       '<fieldset class="create-color-field project-stage-color-field">'+
       '<legend>색상</legend>'+
       '<button class="create-color-toggle" type="button" data-project-stage-color-toggle aria-expanded="false">'+
@@ -1437,7 +1557,7 @@
       deleteButton.disabled=true;
       setStatus("");
       try{
-        pushMobileTrash(current.state,"stage",target?.name||"이름 없는 파트",{stageDef:target,blocks},{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,index});
+        pushMobileTrash(current.state,"stage",target?.name||"제목 없는 파트",{stageDef:target,blocks},{projectId:current.project.id,episodeId:current.project.kind==="long"?current.unit.id:null,index});
         defs.splice(index,1);
         if(current.unit.stages&&typeof current.unit.stages==="object")delete current.unit.stages[stageId];
         current.project.updatedAt=new Date().toISOString();
@@ -2055,6 +2175,34 @@
     releaseMobileInputFocus()
   }
 
+  function openMobileBlockTypeChooser(stageId){
+    document.querySelector("[data-block-type-chooser]")?.remove();
+    const backdrop=element("div","nav-sheet-backdrop"),panel=element("section","nav-sheet block-type-panel"),heading=element("div","block-type-heading"),options=element("div","block-type-options");
+    backdrop.dataset.blockTypeChooser="";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-modal","true");
+    panel.setAttribute("aria-label","새 블록 종류 선택");
+    const close=element("button","sheet-close","");
+    close.type="button";
+    close.setAttribute("aria-label","닫기");
+    close.innerHTML='<i data-lucide="x" aria-hidden="true"></i>';
+    close.onclick=()=>backdrop.remove();
+    heading.append(element("strong","","새 블록 추가"),close);
+    for(const [type,label,icon] of [["detail","일반 블록","file-text"],["script","스크립트 블록","clapperboard"]]){
+      const button=element("button","","");
+      button.type="button";
+      button.innerHTML=`<i data-lucide="${icon}" aria-hidden="true"></i>`;
+      button.append(element("span","",label));
+      button.onclick=()=>{backdrop.remove();openMobileBlockEditor(stageId,-1,type)};
+      options.append(button)
+    }
+    panel.append(heading,options);
+    backdrop.append(panel);
+    backdrop.onclick=event=>{if(event.target===backdrop)backdrop.remove()};
+    document.body.append(backdrop);
+    refreshLucideIcons()
+  }
+
   async function deleteMobileBlock(){
     const edit=activeBlockEditor;
     if(!edit||edit.creating)return;
@@ -2135,6 +2283,8 @@
     const carousel=element("div","stage-carousel"),sections=[];
     for(const stage of stageDefs){
       const section=element("section","stage-section"),stageHead=element("header","stage-heading"),stripe=element("span","stage-color"),copy=element("div",""),stageColor=safeColor(stage.color,"#A9D6FF");
+      section.dataset.stageId=String(stage.id);
+      stageHead.dataset.stageId=String(stage.id);
       section.style.setProperty("--stage-color",stageColor);
       stripe.style.setProperty("--stage-color",stageColor);
       copy.append(element("h4","",stage.name||"파트"));
@@ -2151,15 +2301,9 @@
       else blocks.append(element("div","empty-stage","등록된 블록이 없습니다."));
       const addBlock=element("button","stage-add-block","");
       addBlock.type="button";
-      addBlock.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>일반 블록 추가</span>';
-      addBlock.onclick=()=>openMobileBlockEditor(stage.id);
-      const addScript=element("button","stage-add-block","");
-      addScript.type="button";
-      addScript.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>스크립트 블록 추가</span>';
-      addScript.onclick=()=>openMobileBlockEditor(stage.id,-1,"script");
-      const addActions=element("div","stage-add-actions");
-      addActions.append(addBlock,addScript);
-      section.append(stageHead,blocks,addActions);
+      addBlock.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>새 블록 추가</span>';
+      addBlock.onclick=()=>openMobileBlockTypeChooser(stage.id);
+      section.append(stageHead,blocks,addBlock);
       carousel.append(section);
       sections.push(section)
     }
@@ -2218,24 +2362,24 @@
     document.querySelector("[data-episode-editor]")?.remove()
   }
 
-  function openMobileEpisodeEditor(episodeId){
+  function openMobileEpisodeEditor(episodeId=""){
     const projectId=String(activeDocumentId||""),state=snapshot();
     const project=(state.projects||[]).find(item=>String(item?.id||"")===projectId);
     if(!project||project.kind!=="long")return;
-    const episode=(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||""));
-    if(!episode)return;
-    let selectedColor=safeColor(episode.color||randomCardColor(),randomCardColor()),colorsOpen=false;
+    const isNew=!episodeId,episode=isNew?null:(project.episodes||[]).find(item=>String(item?.id||"")===String(episodeId));
+    if(!isNew&&!episode)return;
+    let selectedColor=safeColor(episode?.color||randomCardColor(),CARD_COLORS[0]),colorsOpen=false;
     let colorCustom=!CARD_COLORS.some(color=>color.toLowerCase()===selectedColor.toLowerCase());
     closeMobileEpisodeEditor();
     const wrap=element("div","nav-sheet-backdrop project-stage-backdrop"),panel=element("section","nav-sheet project-stage-panel");
     wrap.dataset.episodeEditor="1";
     panel.setAttribute("role","dialog");
     panel.setAttribute("aria-modal","true");
-    panel.setAttribute("aria-label","화 편집");
-    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="files" aria-hidden="true"></i></span><strong>화 편집</strong></div><button type="button" class="sheet-close" data-episode-editor-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
+    panel.setAttribute("aria-label",isNew?"새 화 추가":"화 편집");
+    panel.innerHTML='<div class="project-stage-editor-head"><div class="create-form-kind"><span class="create-form-kind-icon"><i data-lucide="files" aria-hidden="true"></i></span><strong>'+(isNew?"새 화 추가":"화 편집")+'</strong></div><button type="button" class="sheet-close" data-episode-editor-close aria-label="닫기"><i data-lucide="x" aria-hidden="true"></i></button></div>'+
       '<div class="project-stage-editor-body">'+
       '<label class="create-field"><span>제목</span><input type="text" data-episode-title maxlength="120" autocomplete="off"></label>'+
-      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-episode-subtitle maxlength="240" autocomplete="off" placeholder="이번 화의 핵심"></label>'+
+      '<label class="create-field"><span>부제 <small>· 선택</small></span><input type="text" data-episode-subtitle maxlength="240" autocomplete="off" placeholder="화 부제"></label>'+
       '<fieldset class="create-color-field project-stage-color-field">'+
       '<legend>색상</legend>'+
       '<button class="create-color-toggle" type="button" data-episode-color-toggle aria-expanded="false">'+
@@ -2249,7 +2393,7 @@
       '<input type="text" data-episode-color-hex maxlength="7" spellcheck="false" autocomplete="off" aria-label="HEX 색상">'+
       '</div></div></fieldset>'+
       '<p class="project-stage-editor-status" data-episode-status hidden></p>'+
-      '<div class="note-sheet-actions"><button type="button" class="secondary" data-episode-editor-close>취소</button><button type="button" class="primary" data-episode-save>저장</button></div>'+
+      '<div class="note-sheet-actions"><button type="button" class="secondary" data-episode-editor-close>취소</button><button type="button" class="primary" data-episode-save>'+(isNew?"추가":"저장")+'</button></div>'+
       '</div>';
     wrap.append(panel);
     document.body.append(wrap);
@@ -2259,8 +2403,8 @@
     const colorOptions=panel.querySelector("[data-episode-color-options]"),colorGrid=panel.querySelector("[data-episode-color-grid]");
     const colorEditor=panel.querySelector("[data-episode-color-editor]"),colorPicker=panel.querySelector("[data-episode-color-picker]");
     const colorHex=panel.querySelector("[data-episode-color-hex]"),status=panel.querySelector("[data-episode-status]"),save=panel.querySelector("[data-episode-save]");
-    title.value=String(episode.title||"");
-    subtitle.value=String(episode.subtitle||"");
+    title.value=String(episode?.title||(project.episodes||[]).length+1+"화");
+    subtitle.value=String(episode?.subtitle||"");
     const syncColor=()=>{
       selectedColor=safeColor(selectedColor,CARD_COLORS[0]);
       colorPreview.style.setProperty("--swatch",selectedColor);
@@ -2337,14 +2481,16 @@
     wrap.onclick=event=>{if(event.target===wrap)closeMobileEpisodeEditor()};
     save.onclick=async()=>{
       const current=snapshot(),targetProject=(current.projects||[]).find(item=>String(item?.id||"")===projectId);
-      const target=targetProject?.kind==="long"?(targetProject.episodes||[]).find(item=>String(item?.id||"")===String(episodeId||"")):null;
-      if(!targetProject||!target){
-        setStatus("편집할 화를 찾지 못했습니다.");
+      const target=targetProject?.kind==="long"&&!isNew?(targetProject.episodes||[]).find(item=>String(item?.id||"")===String(episodeId)):null;
+      if(targetProject?.kind!=="long"||(!isNew&&!target)){
+        setStatus(isNew?"작품을 찾지 못했습니다.":"편집할 화를 찾지 못했습니다.");
         return
       }
-      target.title=title.value.trim()||"제목 없는 화";
-      target.subtitle=subtitle.value.trim();
-      target.color=selectedColor;
+      const next=target||{id:uid(),...defaultStoryStages()};
+      next.title=title.value.trim()||"제목 없는 화";
+      next.subtitle=subtitle.value.trim();
+      next.color=selectedColor;
+      if(isNew){targetProject.episodes=Array.isArray(targetProject.episodes)?targetProject.episodes:[];targetProject.episodes.push(next)}
       targetProject.updatedAt=new Date().toISOString();
       save.disabled=true;
       setStatus("");
@@ -2356,8 +2502,8 @@
           renderProject(targetProject)
         }
       }catch(error){
-        console.error("모바일 화 정보 저장 실패",error);
-        logDiagnostic("error","REPOSITORY","화 정보 저장에 실패했습니다.",error);
+        console.error(isNew?"모바일 화 추가 실패":"모바일 화 정보 저장 실패",error);
+        logDiagnostic("error","REPOSITORY",isNew?"화를 추가하지 못했습니다.":"화 정보 저장에 실패했습니다.",error);
         save.disabled=false;
         setStatus("저장하지 못했습니다. 다시 시도해 주세요.")
       }
@@ -2378,18 +2524,20 @@
 
     if(project.kind==="long"){
       const list=project.episodes||[];
-      if(!list.length){
-        content.replaceChildren(element("div","status-card","등록된 화가 없습니다."));
-        return
-      }
-
       const activeIndex=list.findIndex(item=>String(item.id)===activeEpisodeId);
       if(activeIndex<0){
         activeEpisodeId="";
         content.replaceChildren();
+        const addEpisode=element("button","episode-add-button","");
+        addEpisode.type="button";
+        addEpisode.innerHTML='<i data-lucide="plus" aria-hidden="true"></i><span>새 화 추가</span>';
+        addEpisode.onclick=()=>openMobileEpisodeEditor();
+        episodes.append(addEpisode);
+        if(!list.length)content.replaceChildren(element("div","status-card","등록된 화가 없습니다."));
         const showCompletion=snapshot().settings?.completionEnabled!==false;
         list.forEach((episode,index)=>{
           const card=element("article","episode-button");
+          card.dataset.episodeId=String(episode.id);
           const episodeColor=safeColor(episode.color,"#A9D6FF"),cardInk=cardForeground(episodeColor);
           card.style.setProperty("--card-color",episodeColor);
           card.style.setProperty("--custom-on",cardInk);
@@ -2422,6 +2570,7 @@
           card.append(open,menu);
           episodes.append(card)
         });
+        refreshLucideIcons();
         return
       }
 
@@ -2442,6 +2591,187 @@
     activeEpisodeId="";
     renderUnit(project,0,{showHeading:false,compactBlocks:true})
   }
+
+  // Long-press sorting keeps scrolling and ordinary taps available until the hold completes.
+  let mobileSort=null,mobileSortBusy=false,suppressSortClickUntil=0;
+  function mobileSortSource(target){
+    if(!(target instanceof Element)||target.closest(".episode-card-menu,.stage-edit-button,input,textarea,[contenteditable]"))return null;
+    const episode=target.closest(".episode-button");
+    if(episode&&projectReaderScreen.contains(episode))return {kind:"episode",element:episode,sourceId:episode.dataset.episodeId};
+    if(target.closest("button"))return null;
+    const heading=target.closest(".stage-heading");
+    if(heading&&projectReaderScreen.contains(heading))return {kind:"stage",element:heading.closest(".stage-section"),sourceId:heading.dataset.stageId};
+    const block=target.closest(".editable-block-card");
+    if(block&&projectReaderScreen.contains(block))return {kind:"block",element:block,sourceId:block.dataset.blockId,sourceIndex:Number(block.dataset.blockIndex),sourceStageId:block.dataset.stageId};
+    return null
+  }
+  function clearMobileSortMarker(sort){
+    sort.markerElement?.classList.remove("mobile-sort-before","mobile-sort-after");
+    sort.markerList?.classList.remove("mobile-sort-before","mobile-sort-after","mobile-sort-empty");
+    sort.markerElement=null;sort.markerList=null;sort.target=null
+  }
+  function closestMobileSortItem(items,x,y){
+    return items.reduce((best,item)=>{
+      const rect=item.getBoundingClientRect(),dx=Math.max(rect.left-x,0,x-rect.right),dy=Math.max(rect.top-y,0,y-rect.bottom),distance=dx*dx+dy*dy;
+      return !best||distance<best.distance?{item,distance}:best
+    },null)?.item||null
+  }
+  function updateMobileSortTarget(sort){
+    clearMobileSortMarker(sort);
+    const {x,y}=sort;
+    if(sort.kind==="episode"){
+      const list=$("#episodeList"),rect=list.getBoundingClientRect();
+      if(x<rect.left-24||x>rect.right+24||y<rect.top-24||y>rect.bottom+24)return;
+      const cards=[...list.querySelectorAll(".episode-button")],card=closestMobileSortItem(cards,x,y);
+      if(!card)return;
+      const bounds=card.getBoundingClientRect(),after=x>bounds.left+bounds.width/2;
+      if(card.dataset.episodeId===sort.sourceId)return;
+      card.classList.add(after?"mobile-sort-after":"mobile-sort-before");
+      sort.markerElement=card;sort.target={targetId:card.dataset.episodeId,after};
+      return
+    }
+    const carousel=$("#projectContent .stage-carousel");
+    if(!carousel)return;
+    const rect=carousel.getBoundingClientRect();
+    if(x<rect.left-24||x>rect.right+24||y<rect.top-32||y>rect.bottom+32)return;
+    const sections=[...carousel.querySelectorAll(".stage-section")];
+    const under=document.elementFromPoint(x,y)?.closest(".stage-section");
+    const section=under&&carousel.contains(under)?under:closestMobileSortItem(sections,x,y);
+    if(!section)return;
+    const bounds=section.getBoundingClientRect();
+    if(sort.kind==="stage"){
+      const after=x>bounds.left+bounds.width/2;
+      if(section.dataset.stageId===sort.sourceId)return;
+      section.classList.add(after?"mobile-sort-after":"mobile-sort-before");
+      sort.markerElement=section;sort.target={targetId:section.dataset.stageId,after};
+      return
+    }
+    const list=section.querySelector(".block-list"),blocks=[...list.querySelectorAll(":scope > .editable-block-card")];
+    const card=closestMobileSortItem(blocks,x,y);
+    if(card){
+      const cardRect=card.getBoundingClientRect(),after=y>cardRect.top+cardRect.height/2;
+      if(section.dataset.stageId===sort.sourceStageId&&card.dataset.blockId===sort.sourceId)return;
+      card.classList.add(after?"mobile-sort-after":"mobile-sort-before");
+      sort.markerList=card;
+      sort.target={targetStageId:section.dataset.stageId,targetId:card.dataset.blockId,targetIndex:Number(card.dataset.blockIndex),after}
+    }else{
+      list.classList.add("mobile-sort-empty");sort.markerList=list;
+      sort.target={targetStageId:section.dataset.stageId,targetId:"",targetIndex:0,after:false}
+    }
+  }
+  function moveMobileSortPreview(sort){
+    sort.preview.style.left=`${Math.max(8,Math.min(sort.x+14,window.innerWidth-230))}px`;
+    sort.preview.style.top=`${Math.max(8,Math.min(sort.y-80,window.innerHeight-100))}px`;
+    updateMobileSortTarget(sort)
+  }
+  function scrollMobileSort(sort){
+    if(mobileSort!==sort||!sort.active)return;
+    let moved=false;
+    const carousel=$("#projectContent .stage-carousel");
+    if(sort.kind!=="episode"&&carousel){
+      const rect=carousel.getBoundingClientRect();
+      if(sort.y>=rect.top-35&&sort.y<=rect.bottom+35){
+        const speed=sort.x<rect.left+58?-14:sort.x>rect.right-58?14:0;
+        if(speed){const before=carousel.scrollLeft;carousel.scrollLeft+=speed;moved=carousel.scrollLeft!==before}
+      }
+    }
+    const viewport=mobileScroll.getBoundingClientRect(),vertical=sort.y<viewport.top+70?-12:sort.y>viewport.bottom-70?12:0;
+    if(vertical){const before=mobileScroll.scrollTop;mobileScroll.scrollTop+=vertical;moved=mobileScroll.scrollTop!==before||moved}
+    if(moved)updateMobileSortTarget(sort);
+    sort.scrollFrame=requestAnimationFrame(()=>scrollMobileSort(sort))
+  }
+  function activateMobileSort(sort){
+    if(mobileSort!==sort||!sort.element.isConnected)return;
+    sort.active=true;
+    sort.element.classList.add("mobile-sort-source");
+    const preview=element("div","mobile-sort-preview",sort.element.querySelector(".episode-title,.stage-heading h4,.block-head h5")?.textContent?.trim()||sort.element.textContent.trim().slice(0,60)||"블록");
+    preview.setAttribute("aria-hidden","true");sort.preview=preview;
+    document.body.append(preview);
+    document.body.classList.add("mobile-sorting");
+    const carousel=$("#projectContent .stage-carousel");
+    if(carousel&&sort.kind!=="episode"){sort.carousel=carousel;carousel.style.scrollSnapType="none"}
+    moveMobileSortPreview(sort);
+    sort.scrollFrame=requestAnimationFrame(()=>scrollMobileSort(sort))
+  }
+  function cancelMobileSort(){
+    const sort=mobileSort;
+    if(!sort)return;
+    clearTimeout(sort.holdTimer);
+    if(sort.scrollFrame)cancelAnimationFrame(sort.scrollFrame);
+    clearMobileSortMarker(sort);
+    sort.element.classList.remove("mobile-sort-source");
+    sort.preview?.remove();sort.carousel?.style.removeProperty("scroll-snap-type");
+    document.body.classList.remove("mobile-sorting");
+    mobileSort=null
+  }
+  async function finishMobileSort(){
+    const sort=mobileSort;if(!sort)return;
+    const move=sort.active&&sort.target?{
+      ...sort.target,kind:sort.kind,projectId:sort.projectId,episodeId:sort.episodeId,
+      sourceId:sort.sourceId,sourceIndex:sort.sourceIndex,sourceStageId:sort.sourceStageId
+    }:null;
+    if(sort.active)suppressSortClickUntil=Date.now()+250;
+    cancelMobileSort();
+    if(!move||mobileSortBusy||activeDocumentId!==move.projectId||activeEpisodeId!==move.episodeId)return;
+    const state=snapshot();
+    if(!moveMobileStoryItem(state,move))return;
+    mobileSortBusy=true;
+    try{
+      await repository.replaceState(state);
+      const project=(snapshot().projects||[]).find(item=>String(item?.id||"")===move.projectId);
+      if(project&&activeDocumentId===move.projectId)renderProject(project)
+    }catch(error){
+      logDiagnostic("error","REPOSITORY","드래그로 변경한 순서를 저장하지 못했습니다.",error);
+      showSyncToast("순서를 저장하지 못했습니다. 다시 시도해 주세요.")
+    }finally{mobileSortBusy=false}
+  }
+  function beginMobileSort(target,x,y,input,id){
+    if(mobileSortBusy||mobileSort||projectReaderScreen.hidden)return;
+    const source=mobileSortSource(target);
+    if(!source)return;
+    const sort={...source,projectId:String(activeDocumentId||""),episodeId:String(activeEpisodeId||""),input,id,x,y,startX:x,startY:y,active:false};
+    mobileSort=sort;
+    sort.holdTimer=setTimeout(()=>activateMobileSort(sort),380)
+  }
+  function trackMobileSort(x,y,event){
+    const sort=mobileSort;if(!sort)return;
+    sort.x=x;sort.y=y;
+    if(!sort.active){if(Math.hypot(x-sort.startX,y-sort.startY)>9)cancelMobileSort();return}
+    event?.preventDefault();
+    moveMobileSortPreview(sort)
+  }
+  projectReaderScreen.addEventListener("touchstart",event=>{
+    if(event.touches.length!==1)return;
+    const touch=event.changedTouches[0];beginMobileSort(event.target,touch.clientX,touch.clientY,"touch",touch.identifier)
+  },{passive:true});
+  document.addEventListener("touchmove",event=>{
+    const sort=mobileSort;if(!sort||sort.input!=="touch")return;
+    if(event.touches.length!==1){cancelMobileSort();return}
+    const touch=[...event.touches].find(item=>item.identifier===sort.id);
+    if(touch)trackMobileSort(touch.clientX,touch.clientY,event)
+  },{passive:false});
+  document.addEventListener("touchend",event=>{
+    const sort=mobileSort;
+    if(sort?.input==="touch"&&[...event.changedTouches].some(item=>item.identifier===sort.id))finishMobileSort()
+  });
+  document.addEventListener("touchcancel",()=>{if(mobileSort?.input==="touch")cancelMobileSort()});
+  projectReaderScreen.addEventListener("pointerdown",event=>{
+    if(event.pointerType==="touch"||event.button!==0)return;
+    beginMobileSort(event.target,event.clientX,event.clientY,"pointer",event.pointerId)
+  });
+  document.addEventListener("pointermove",event=>{
+    if(mobileSort?.input==="pointer"&&mobileSort.id===event.pointerId)trackMobileSort(event.clientX,event.clientY,event)
+  });
+  document.addEventListener("pointerup",event=>{
+    if(mobileSort?.input==="pointer"&&mobileSort.id===event.pointerId)finishMobileSort()
+  });
+  document.addEventListener("pointercancel",event=>{if(mobileSort?.input==="pointer"&&mobileSort.id===event.pointerId)cancelMobileSort()});
+  projectReaderScreen.addEventListener("click",event=>{
+    if(Date.now()>suppressSortClickUntil)return;
+    event.preventDefault();event.stopImmediatePropagation()
+  },true);
+  projectReaderScreen.addEventListener("contextmenu",event=>{if(mobileSort){event.preventDefault();event.stopPropagation()}});
+  window.addEventListener("blur",cancelMobileSort);
 
   function sanitizedNoteHtml(value){
     const template=document.createElement("template");
@@ -2759,7 +3089,7 @@
     if(!noteReaderContent)return;
     const style=note?.defaultStyle&&typeof note.defaultStyle==="object"?note.defaultStyle:{};
     const font=normalizeMobileNoteFont(style.fontFamily);
-    noteReaderContent.style.fontFamily=font==="__default__"?"":font;
+    noteReaderContent.style.fontFamily=font==="__default__"||font===MOBILE_NOTE_FONT_SYSTEM?"":font;
     noteReaderContent.style.textAlign=["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left";
     noteReaderContent.style.setProperty("--note-first-line-indent",style.firstLineIndent===true?"1em":"0");
     noteReaderContent.style.setProperty("--note-paragraph-spacing",style.paragraphSpacing===true?"1.6em":".25em")
@@ -2794,8 +3124,9 @@
         return {font:String(style.fontFamily||"__default__").trim()||"__default__",align:["left","center","right","justify"].includes(style.textAlign)?style.textAlign:"left",indent:style.firstLineIndent===true,spacing:style.paragraphSpacing===true}
       })();
       current.font=normalizeMobileNoteFont(current.font);
-      const standard=new Set(["__default__",MOBILE_NOTE_FONT_PRETENDARD,MOBILE_NOTE_FONT_SERIF,MOBILE_NOTE_FONT_SYSTEM]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
-      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">기본 글꼴</option><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option><option value="system-ui">시스템</option>'+extra+'</select></label>'+
+      if(current.font===MOBILE_NOTE_FONT_PRETENDARD||current.font===MOBILE_NOTE_FONT_SYSTEM)current.font="__default__";
+      const standard=new Set(["__default__",MOBILE_NOTE_FONT_SERIF]),extra=standard.has(current.font)?"":'<option value="'+esc(current.font)+'">현재 설정 · '+esc(current.font)+'</option>';
+      body.innerHTML='<label class="note-style-row"><span>글꼴</span><select data-note-default-font><option value="__default__">프리텐다드</option><option value="Source Han Serif KR">본명조</option>'+extra+'</select></label>'+
         '<div class="note-style-row"><span>글 정렬</span><div class="note-style-align" data-note-default-align><button type="button" value="left" aria-label="왼쪽 정렬"><i data-lucide="align-left"></i></button><button type="button" value="center" aria-label="가운데 정렬"><i data-lucide="align-center"></i></button><button type="button" value="right" aria-label="오른쪽 정렬"><i data-lucide="align-right"></i></button><button type="button" value="justify" aria-label="양쪽 정렬"><i data-lucide="align-justify"></i></button></div></div>'+
         '<label class="note-style-row"><span>들여쓰기</span><select data-note-default-indent><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
         '<label class="note-style-row"><span>문단 사이 여백 주기</span><select data-note-default-spacing><option value="off">사용 안 함</option><option value="on">사용함</option></select></label>'+
@@ -3330,7 +3661,7 @@
       '<button type="button" class="note-format-action" data-note-command="strikeThrough"><i data-lucide="strikethrough"></i><span>취소선</span></button>'+
       '</div>';
     if(key==="decorate")return '<div class="note-format-panel-title">글자 꾸미기</div>'+
-      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="inherit">기본</option><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option><option value="system-ui">시스템</option></select></label>'+
+      '<label class="note-format-select"><i data-lucide="type"></i><span>글꼴</span><select data-note-font><option value="Pretendard">프리텐다드</option><option value="Source Han Serif KR">본명조</option></select></label>'+
       '<div class="note-format-grid">'+
       '<label class="note-format-action note-color-action"><i data-lucide="paintbrush"></i><span>글자색</span><input type="color" value="#292B38" data-note-color="foreColor" aria-label="글자색"></label>'+
       '<label class="note-format-action note-color-action"><i data-lucide="paint-bucket"></i><span>배경색</span><input type="color" value="#F6D872" data-note-color="hiliteColor" aria-label="배경색"></label>'+
@@ -3518,7 +3849,7 @@
     }
   }
 
-  function renderDocument(type,id){
+  function renderDocument(type,id,returnFolderId=""){
     const state=snapshot(),key=String(id||"");
     const item=type==="project"?(state.projects||[]).find(entry=>String(entry?.id||"")===key):type==="note"?(state.notes||[]).find(entry=>String(entry?.id||"")===key):(state.mindmaps||[]).find(entry=>String(entry?.id||"")===key);
     if(!item){renderHome();return}
@@ -3527,30 +3858,52 @@
     activeEpisodeId="";
     activeBlockEditor=null;
     const screen=documentScreen(type);
-    showScreen(screen,{heading:"홈",back:true,account:false,nav:"library"});
+    showScreen(screen,{heading:folderName(returnFolderId,state)||"홈",back:true,account:false,nav:"library"});
     if(type==="project")renderProject(item);
     else if(type==="note")renderNote(item);
     else renderMindmap(item)
   }
 
-  function renderHome(){
+  function renderHome({query=null}={}){
+    activeFolderId="";
     activeDocumentType="";
     activeDocumentId="";
     activeEpisodeId="";
     activeBlockEditor=null;
+    if(query!==null)librarySearch.value=query;
     showScreen(libraryScreen,{heading:"홈",back:false,account:true,nav:"library"});
     renderAccountButton();
     restoreGoogleConnection();
     renderLibrary()
   }
 
+  function renderFolder(id,query=""){
+    const folder=(snapshot().folders||[]).find(item=>String(item.id||"")===String(id||""));
+    if(!folder){renderHome();return false}
+    activeFolderId=String(folder.id);
+    activeDocumentType="";
+    activeDocumentId="";
+    activeEpisodeId="";
+    activeBlockEditor=null;
+    librarySearch.value=query;
+    showScreen(libraryScreen,{heading:folder.name||"제목 없는 폴더",back:true,account:true,nav:"library"});
+    renderAccountButton();
+    renderLibrary();
+    return true
+  }
+
+  function openFolder(id,{replace=false}={}){
+    if(renderFolder(id))writeRoute({view:"folder",id:String(id)},{replace})
+  }
+
   function openDocument(type,id,{replace=false}={}){
-    renderDocument(type,id);
-    writeRoute({view:"document",type,id:String(id||"")},{replace})
+    const returnFolderId=!libraryScreen.hidden?activeFolderId:"";
+    renderDocument(type,id,returnFolderId);
+    writeRoute({view:"document",type,id:String(id||""),returnFolderId},{replace})
   }
 
   function openLibrary({replace=false}={}){
-    renderHome();
+    renderHome({query:""});
     writeRoute({view:"home"},{replace})
   }
 
@@ -3713,7 +4066,7 @@
         else showSyncToast("최신 내용 확인 전에 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.");
         hideMobileReturnGate()
       };
-      setTimeout(()=>{if(layer.isConnected)layer.classList.add("visible")},350)
+      setTimeout(()=>{if(layer.isConnected)layer.classList.add("visible")},700)
     }
     layer.querySelector("strong").textContent=waiting?"다른 기기에서 수정 중":"최신 내용 확인 중";
     layer.querySelector("p").textContent=message||(waiting?`${remoteDeviceText(waiting)}. 변경사항이 올라오면 자동으로 편집할 수 있습니다.`:"다른 기기의 변경사항을 확인하고 있습니다.");
@@ -3731,7 +4084,7 @@
       if(run!==mobileReturnRun||result?.cancelled)return result;
       if(result?.skipped==="offline"||result?.skipped==="disconnected"){hideMobileReturnGate();showSyncToast(result.skipped==="offline"?"오프라인이라 최신 내용을 확인하지 못했습니다.":"클라우드에 로그인되어 있지 않아 최신 내용을 확인하지 못했습니다.");return result}
       if(result?.waitingTimedOut){showMobileReturnGate({message:"다른 기기의 변경사항이 아직 올라오지 않았습니다. 그 기기에서 햄보드를 열어 동기화하거나, 기다리지 않고 편집할 수 있습니다."});return result}
-      if(result?.failed||result?.blocked){showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
+      if(result?.failed||result?.blocked){logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
       hideMobileReturnGate();return result
     }catch(error){
       if(run===mobileReturnRun){logDiagnostic("error","SYNC","최신 내용 확인에 실패했습니다.",error);showMobileReturnGate({message:"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."})}
@@ -3778,7 +4131,7 @@
     if(name==="result"&&googleDrive?.status?.().connected&&navigator.onLine!==false){
       const status=syncEngine?.status();
       if(status?.suspended)setIndicator("local","동기화 멈춤");
-      else if(detail?.failed||detail?.blocked){setIndicator("error","동기화 보류");if(detail?.error)logDiagnostic("warn","SYNC",`자동 동기화 보류: ${detail.error}`)}
+      else if(detail?.failed||detail?.blocked){setIndicator("error","동기화 보류");logDiagnostic("warn","SYNC","자동 동기화가 보류되었습니다.",detail)}
       else if(status?.linked&&(detail?.synced||detail?.skipped==="lease"))setIndicator("connected",detail?.committed?"올림 완료":"동기화됨")
     }
   }
@@ -3824,12 +4177,12 @@
     // Folders that differed follow the cloud; keep the phone's previous names findable.
     const folders=Array.isArray(result.foldersFollowedCloud)?result.foldersFollowedCloud:[];
     const renamed=folders.filter(item=>item.localName&&item.localName!==item.cloudName);
-    for(const item of renamed)logDiagnostic("info","SYNC",`폴더 이름을 클라우드 기준으로 맞췄습니다: 이 기기 '${item.localName}' → 클라우드 '${item.cloudName}'`);
+    if(renamed.length)logDiagnostic("info","SYNC",`폴더 이름 ${renamed.length}개를 클라우드 기준으로 맞췄습니다.`);
     if(folders.length>renamed.length)logDiagnostic("info","SYNC",`이름 외 설정이 달랐던 폴더 ${folders.length-renamed.length}개를 클라우드 기준으로 맞췄습니다.`);
     // link() returns the first sync's result: only claim success when that sync actually finished.
     const finished=result?.synced===true,pendingUpload=!!syncEngine.status().dirty;
     if(!finished)logDiagnostic("warn","SYNC",`자동 동기화를 연결했지만 첫 동기화를 마치지 못했습니다: ${result?.error||result?.blocked||result?.skipped||result?.deferred||"unknown"}`);
-    const folderNote=renamed.length?` 이름이 달랐던 폴더 ${renamed.length}개는 클라우드 이름을 따랐고, 이 기기의 이전 이름은 진단 기록에 남겼습니다.`:"";
+    const folderNote=renamed.length?` 이름이 달랐던 폴더 ${renamed.length}개는 클라우드 이름을 따랐습니다.`:"";
     const message=finished?`자동 동기화를 시작했습니다.${folderNote}`:pendingUpload?`자동 동기화를 연결했지만 이 기기의 변경사항을 아직 올리지 못했습니다. 자동으로 다시 시도합니다.${folderNote}`:`자동 동기화를 연결했지만 최신 상태 확인을 마치지 못했습니다. 자동으로 다시 시도합니다.${folderNote}`;
     showSyncToast(message);
     result.linkMessage=message;
@@ -3897,7 +4250,11 @@
         drive:googleDrive,syncModel,coordination:syncCoordination,metaStore:syncEngineCore.createIndexedDbMetaStore(),
         readLocal:()=>baseRepository.snapshot(),writeLocal:engineWriteLocal,displayName:mobileDeviceName(),
         hooks:{flushPendingSaves:flushPendingMobileSaves,hasPendingSaves:hasPendingMobileSaves,ensureConnected:async()=>{await restoreGoogleConnection();return googleDrive?.status?.().connected===true},onStatus:handleSyncStatus},
-        log:(level,event,detail)=>{if(level!=="info")logDiagnostic(level==="error"?"error":"warn","SYNC",String(event),detail instanceof Error?detail:null)}
+        log:(level,event,detail)=>{
+          // Operational milestones make it possible to place failures between a pull and a push.
+          if(level==="info"&&!["remote-applied","commit-uploaded","sync-resumed"].includes(event))return;
+          logDiagnostic(level==="error"?"error":level==="warn"?"warn":"info","SYNC",`동기화: ${event}`,detail)
+        }
       });
       const status=await syncEngine.init();installMobileSyncGuards();
       if(status.linked&&!status.suspended)runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}));
@@ -4275,7 +4632,8 @@
 
   function renderRoute(route){
     if(!route||route.hamboard!==true){renderHome();return}
-    if(route.view==="document"){renderDocument(route.type,route.id);return}
+    if(route.view==="document"){renderDocument(route.type,route.id,route.returnFolderId);return}
+    if(route.view==="folder"){renderFolder(route.id,route.query||"");return}
     if(route.view==="menu"){renderMenu();return}
     if(route.view==="trash"){renderTrashScreen();return}
     if(route.view==="settings"){renderSettingsScreen(route.section==="info"?"info":"display");return}
@@ -4286,7 +4644,7 @@
       else cloudReturnView==="menu"?renderMenu():renderHome();
       return
     }
-    renderHome()
+    renderHome({query:route.query||""})
   }
 
   function handleBack(){
@@ -4311,11 +4669,15 @@
       applyMobileTheme();
       logDiagnostic("info","APP","모바일 저장소를 열었습니다.");
       const authResult=consumeMobileAuthResult();
-      const match=location.hash.match(/^#(project|note|mindmap)\/(.+)$/);
+      const match=location.hash.match(/^#(project|note|mindmap|folder)\/(.+)$/);
       history.replaceState({hamboard:true,view:"home"},"",appBaseUrl());
       renderHome();
       installNoteViewportTracking();
-      if(match)openDocument(match[1],decodeURIComponent(match[2]));
+      if(match){
+        const id=decodeURIComponent(match[2]);
+        if(match[1]==="folder")openFolder(id);
+        else openDocument(match[1],id)
+      }
       refreshLucideIcons();
       registerMobileServiceWorker();
       renderInstallAction();
@@ -4335,7 +4697,7 @@
       if(saved)closeMobileGeneralBlockEditor();
       return
     }
-    if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}openLibrary({replace:true})}
+    if(activeDocumentType){if(activeDocumentType==="note"){flushMobileNoteSave();flushMobileNoteHtmlSave()}handleBack()}
     else handleBack()
   };
   blockEditorTitle.addEventListener("input",scheduleMobileGeneralBlockSave);
@@ -4513,7 +4875,7 @@
     scheduleMobileGeneralBlockSave()
   };
   blockEditorDelete.onclick=deleteMobileBlock;
-  libraryNav.onclick=()=>{if(history.state?.view!=="home")openLibrary()};
+  libraryNav.onclick=()=>{if(history.state?.view!=="home"){librarySearch.value="";openLibrary()}};
   createNav.onclick=()=>{resetCreateSheet();openBottomSheet(createSheet)};
   menuNav.onclick=()=>{if(history.state?.view!=="menu")openMenu()};
   createFormClose.onclick=()=>{closeBottomSheet(createSheet);resetCreateSheet()};
@@ -4703,7 +5065,12 @@
     }
   });
   window.addEventListener("pagehide",()=>{flushMobileNoteSave();flushMobileNoteHtmlSave();if(activeBlockEditor)flushMobileGeneralBlockSave()});
-  librarySearch.addEventListener("input",renderLibrary);
+  librarySearch.addEventListener("input",()=>{
+    if(history.state?.hamboard&&["home","folder"].includes(history.state.view)){
+      history.replaceState({...history.state,query:librarySearch.value},"",location.href)
+    }
+    renderLibrary()
+  });
   menuCloud.onclick=()=>openCloudSources("menu");
   menuDisplay.onclick=()=>openSettings("display");
   menuAppInfo.onclick=()=>openSettings("info");
@@ -4730,7 +5097,20 @@
   themeSecondaryColor.oninput=()=>saveThemeSettings({theme:"custom",themeCustomB:safeColor(themeSecondaryColor.value,"#FFD0AE")});
   themeSwapButton.onclick=()=>saveThemeSettings({theme:"custom",themeCustomA:themeSecondaryColor.value,themeCustomB:themePrimaryColor.value});
   themePairSwap.onclick=()=>saveThemeSettings({themeSwapped:!normalizedThemeSettings().themeSwapped});
-  diagnosticsClear.onclick=()=>{diagnostics.length=0;renderDiagnostics()};
+  diagnosticsClear.onclick=()=>{diagnostics.length=0;diagnosticsFeedback.hidden=false;diagnosticsFeedback.textContent="현재 실행의 로그를 지웠습니다.";renderDiagnostics()};
+  diagnosticsCopy.onclick=async()=>{
+    try{await navigator.clipboard.writeText(diagnosticReport());diagnosticsFeedback.textContent="진단 보고서를 복사했습니다."}
+    catch(error){diagnosticsFeedback.textContent="복사할 수 없습니다. 저장 버튼으로 파일을 내려받아 주세요.";logDiagnostic("warn","CLIPBOARD","진단 보고서 복사에 실패했습니다.",error)}
+    diagnosticsFeedback.hidden=false
+  };
+  diagnosticsDownload.onclick=()=>{
+    try{
+      const link=document.createElement("a"),url=URL.createObjectURL(new Blob([diagnosticReport()],{type:"application/json;charset=utf-8"}));
+      link.href=url;link.download=`hamboard-mobile-diagnostics-${new Date().toISOString().slice(0,10)}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+      diagnosticsFeedback.textContent="진단 보고서를 저장했습니다. 공유하기 전 내용을 확인해 주세요."
+    }catch(error){diagnosticsFeedback.textContent="보고서를 저장하지 못했습니다.";logDiagnostic("warn","DOWNLOAD","진단 보고서 저장에 실패했습니다.",error)}
+    diagnosticsFeedback.hidden=false
+  };
   indicator.onclick=()=>openCloudSources("library");
   loadSyncSource.onclick=loadSelectedSync;
   cloudDisconnect.onclick=async()=>{
@@ -4784,7 +5164,17 @@
     logDiagnostic("warn","NETWORK","오프라인 상태로 전환되었습니다.");
     renderAccountButton()
   });
-  window.addEventListener("error",event=>logDiagnostic("error","RUNTIME","실행 오류",event.error||event.message));
+  window.addEventListener("error",event=>{
+    if(event.target!==window){
+      const resource=event.target?.localName||"resource";
+      logDiagnostic("error","RESOURCE",`${resource} 파일을 불러오지 못했습니다.`,{phase:"load",event:resource});
+      return
+    }
+    logDiagnostic("error","RUNTIME","실행 오류",{
+      phase:event.filename?`${String(event.filename).split("/").pop().split("?")[0]}:${event.lineno||0}:${event.colno||0}`:"runtime",
+      error:event.error||event.message||"Unknown script error"
+    })
+  },true);
   window.addEventListener("unhandledrejection",event=>logDiagnostic("error","RUNTIME","처리되지 않은 비동기 오류",event.reason));
   fileInput.onchange=async()=>{
     const file=fileInput.files?.[0];fileInput.value="";

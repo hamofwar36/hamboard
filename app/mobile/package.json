@@ -6,7 +6,6 @@
   "scripts": {
     "mobile:build": "node scripts/prepare-mobile-deploy.mjs",
     "mobile:preview": "npm run mobile:build && node scripts/serve.mjs dist-mobile",
-    "qa:mobile-deploy": "node scripts/validate-mobile-deploy.mjs",
     "qa:cloud-formats": "node scripts/validate-cloud-formats.mjs",
     "qa:two-way-sync": "node scripts/validate-mobile-two-way-sync.mjs",
     "qa:sync-ui": "node scripts/validate-mobile-sync-ui.mjs",

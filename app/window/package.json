@@ -12,7 +12,7 @@
     "qa:mobile-project-app": "node scripts/validate-mobile-project-app.mjs",
     "qa:mobile-cloud-sync": "node scripts/validate-mobile-cloud-sync.mjs",
     "qa:editor-widgets": "node scripts/validate-editor-widgets.mjs",
-    "qa": "npm run qa:sync && npm run qa:device-handoff && npm run qa:mobile-sync && npm run qa:project-repository && npm run qa:mobile-project-app && npm run qa:mobile-cloud-sync && npm run qa:editor-widgets && npm run qa:theme && npm run qa:six-colors",
+    "qa": "npm run qa:sync && npm run qa:device-handoff && npm run qa:return-gate && npm run qa:sync-conflicts && npm run qa:mobile-sync && npm run qa:project-repository && npm run qa:mobile-project-app && npm run qa:mobile-cloud-sync && npm run qa:editor-widgets && npm run qa:theme && npm run qa:six-colors",
     "dev": "tauri dev",
     "build": "tauri build",
     "qa:theme": "node scripts/validate-theme.mjs",
@@ -23,7 +23,9 @@
     "qa:paged-backup": "node scripts/validate-paged-backup.mjs",
     "qa:sync-pages": "node scripts/validate-sync-pages.mjs",
     "qa:native-windows": "powershell -NoProfile -File scripts/check-windows-native.ps1",
-    "qa:device-handoff": "node scripts/validate-device-handoff.mjs"
+    "qa:device-handoff": "node scripts/validate-device-handoff.mjs",
+    "qa:return-gate": "node scripts/validate-return-gate.mjs",
+    "qa:sync-conflicts": "node scripts/validate-sync-conflicts.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",

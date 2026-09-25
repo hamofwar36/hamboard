@@ -90,7 +90,7 @@ await check('actual automatic sync retains lock until lease release; backup and 
   const connection=gate(),lease=gate(),backup=gate(),events=[];
   const ctx=context({navigator:{onLine:true},
     DataTransferCoordinator:safety.createCoordinator(),
-    syncAutomaticPromise:null,syncManualImportPromise:null,syncReconnectImportPending:false,cloudBackupUploadPromise:null,
+    syncAppUpdateInProgress:false,syncAutomaticPromise:null,syncManualImportPromise:null,syncReconnectImportPending:false,cloudBackupUploadPromise:null,
     SYNC_POLL_INTERVAL_MS:30000,syncAutomaticFailureCount:0,syncAutomaticRetryNotBefore:0,
     GoogleDriveService:{status:async()=>{events.push('sync-start');await connection.promise;return {connected:false}}},
     syncSetReadonly(){},syncReleaseOwnLease:async()=>{events.push('lease-release');await lease.promise},

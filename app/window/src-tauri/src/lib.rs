@@ -274,35 +274,37 @@ impl NotificationAudioService {
         {
             let (sender, receiver) = mpsc::channel::<Option<NotificationAudioRequest>>();
             let worker = thread::spawn(move || {
-                let output = OutputStream::try_default()
-                    .map_err(|error| format!("notification-audio-output-unavailable: {error}"));
-                let mut current_sink: Option<Sink> = None;
+                // The Windows default audio device can be recreated while the PC sleeps.
+                // Keep the stream alive only for the current playback and acquire a fresh
+                // default output stream for every notification/preview request so a stale
+                // pre-sleep audio session is never reused after resume.
+                let mut current_playback: Option<(OutputStream, Sink)> = None;
                 while let Ok(request) = receiver.recv() {
                     let Some(request) = request else {
                         break;
                     };
                     let result = (|| -> Result<(), String> {
-                        if let Some(sink) = current_sink.take() {
+                        if let Some((_, sink)) = current_playback.take() {
                             sink.stop();
                         }
                         if request.volume <= 0.0 {
                             return Ok(());
                         }
-                        let (_, stream_handle) = output
-                            .as_ref()
-                            .map_err(|error| error.to_string())?;
+                        let (stream, stream_handle) = OutputStream::try_default().map_err(|error| {
+                            format!("notification-audio-output-unavailable: {error}")
+                        })?;
                         let file = File::open(&request.path).map_err(|error| {
                             format!("notification-audio-file-open-failed: {error}")
                         })?;
                         let source = Decoder::new(BufReader::new(file)).map_err(|error| {
                             format!("notification-audio-decode-failed: {error}")
                         })?;
-                        let sink = Sink::try_new(stream_handle).map_err(|error| {
+                        let sink = Sink::try_new(&stream_handle).map_err(|error| {
                             format!("notification-audio-sink-failed: {error}")
                         })?;
                         sink.set_volume(request.volume);
                         sink.append(source);
-                        current_sink = Some(sink);
+                        current_playback = Some((stream, sink));
                         Ok(())
                     })();
                     let _ = request.response.send(result);

@@ -70,14 +70,17 @@ await check("commit lease handling never toggles read-only and settles before ch
   const active=functionSource("syncActiveLeases");assert.match(active,/SyncCoordination\.activeCommitLeases/);assert.match(active,/SyncCoordination\.expiredLeaseObjects/)
 });
 
-await check("return gate waits for the other device and lifts automatically",async()=>{
-  let cycles=0,gate=null,hidden=false;
+await check("return gate waits for the other device with read-only checks and lifts automatically",async()=>{
+  let probes=0,cycles=0,gate=null,hidden=false,nudged=false;
   const remote={deviceId:"mobile-phone",displayName:"iPhone",expiresAtMs:String(Date.now()+40000),createdAtMs:String(Date.now())};
-  const ctx=context({DiagnosticsLog:log,safeRunAsync:(label,task)=>task(),syncShowReturnGate:(message,options)=>{gate={message,waiting:!!options?.waiting}},syncHideReturnGate:()=>{hidden=true},$:()=>null,runAutomaticSync:async()=>{cycles++;if(cycles>=3)vm.runInContext("syncRemoteLease=null",ctx);return {synced:true}}},["syncCheckOnReturn"]);
-  vm.runInContext("var syncWindowWasAway=true,syncReturnGate=false,syncCloudKnownConnected=true,syncReturnGateRun=0,syncAutomaticPromise=null,SYNC_READONLY_POLL_INTERVAL_MS=20",ctx);ctx.syncRemoteLease=remote;
+  const ctx=context({DiagnosticsLog:log,safeRunAsync:(label,task)=>task(),syncShowReturnGate:(message,options)=>{gate={message,waiting:!!options?.waiting}},syncHideReturnGate:()=>{hidden=true},$:()=>null,
+    syncReturnProbe:async()=>{probes++;return probes<3?{remote}:{upToDate:true}},
+    runAutomaticSync:async()=>{cycles++;return {synced:true}},scheduleAutomaticSync:()=>{nudged=true}},["syncCheckOnReturn"]);
+  vm.runInContext("var syncWindowWasAway=true,syncReturnGate=false,syncCloudKnownConnected=true,syncReturnGateRun=0,syncAutomaticPromise=null,syncRemoteLease=null,SYNC_READONLY_POLL_INTERVAL_MS=20",ctx);
   ctx.syncCheckOnReturn();
   for(let i=0;i<200&&!hidden;i++)await tick(10);
-  assert.equal(cycles,3);assert.equal(hidden,true);assert.ok(gate?.waiting,"showed the waiting message");assert.match(gate.message,/iPhone에서 수정 중입니다/)
+  assert.equal(probes,3);assert.equal(hidden,true);assert.ok(gate?.waiting,"showed the waiting message");assert.match(gate.message,/iPhone에서 수정 중입니다/);
+  assert.equal(cycles,0,"nothing new from the other device: no sync cycle inside the gate");assert.equal(nudged,true,"a normal cycle is scheduled after the gate")
 });
 
 await check("sibling commits: loser withdraws; young forks retry in seconds instead of minutes",async()=>{
@@ -93,6 +96,23 @@ await check("leaving the window publishes immediately; exit pushes before quitti
   assert.match(functionSource("closeWindowAfterStateFlush"),/await syncFinalPushBeforeExit\(\);await syncReleaseOwnLease\("app-exit"\);await syncReleasePresence\("app-exit"\)/);
   assert.match(functionSource("syncCaptureWorkTracking"),/syncInternalStateWrite=true;try\{StateRepository\.write\(state\)\}finally\{syncInternalStateWrite=false\}/);
   assert.match(html,/<script src="\.\/shared\/sync-coordination\.js"><\/script>/)
+});
+
+await check("switching windows (Alt+Tab) still runs the return check; returning resets the idle timer",async()=>{
+  const startup=functionSource("startAutomaticSync");
+  assert.match(startup,/window\.addEventListener\("blur",\(\)=>syncMarkAway\("blur"\)\)/,"blur marks the window as away");
+  assert.match(startup,/window\.addEventListener\("focus",\(\)=>\{syncLastUserInputAt=Date\.now\(\);/,"focus counts as input");
+  assert.match(startup,/else\{syncLastUserInputAt=Date\.now\(\);syncHandleReturn\(\)\}/,"becoming visible counts as input")
+});
+
+await check("app update publishes, freezes automatic sync, and releases lease/presence before installer restart",async()=>{
+  const prepare=functionSource("syncPrepareForAppUpdate"),install=functionSource("installAppUpdate"),schedule=functionSource("scheduleAutomaticSync"),automatic=functionSource("runAutomaticSync");
+  assert.match(prepare,/await syncFinalPushBeforeExit\("app-update"\)/);assert.match(prepare,/syncAppUpdateInProgress=true/);assert.match(prepare,/await syncReleaseOwnLease\("app-update"\)/);assert.match(prepare,/await syncReleasePresence\("app-update"\)/);
+  assert.match(prepare,/Promise\.race\(\[syncAutomaticPromise\.catch/,"does not wait unboundedly for a running cycle");
+  assert.match(install,/await syncPrepareForAppUpdate\(\);await update\.downloadAndInstall/);assert.match(install,/syncResumeAfterAppUpdateFailure\(\)/);
+  assert.match(schedule,/if\(syncAppUpdateInProgress\)return/);assert.match(automatic,/if\(syncAppUpdateInProgress\)return \{skipped:"app-update"\}/);
+  assert.match(functionSource("syncWorkTrackingCaptureDue"),/reason==="app-update"/,"the update captures the latest work-tracking seconds");
+  assert.match(functionSource("syncPresenceAfterLocalWrite"),/syncAppUpdateInProgress\|\|/,"no new presence while updating")
 });
 
 await check("Windows topology (shared) sends a device whose base was GC'd to the checkpoint rebaseline, never to a partial replay",async()=>{

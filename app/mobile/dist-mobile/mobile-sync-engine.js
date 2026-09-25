@@ -179,7 +179,7 @@
 
   // ---- engine ----------------------------------------------------------------------------
 
-  function createMobileSyncEngine({drive,syncModel,coordination,metaStore,readLocal,writeLocal,hooks={},displayName="모바일",now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timers={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},online=()=>root.navigator?.onLine!==false,log=()=>{}}={}){
+  function createMobileSyncEngine({drive,syncModel,coordination,metaStore,readLocal,writeLocal,hooks={},displayName="모바일",now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timers={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},online=()=>root.navigator?.onLine!==false,log=()=>{},exclusive=run=>run(),writerId="page"}={}){
     if(!drive||!syncModel||!coordination||!metaStore||!readLocal||!writeLocal)throw new Error("mobile-sync-engine-dependencies-missing");
     const profile=syncModel.CLIENT_PROFILES.mobileCore,desktop=syncModel.CLIENT_PROFILES.desktop;
     let meta=null,running=null,rerun=false,pollTimer=0,pushTimer=0,pushFirstAt=0,presenceTimer=0,presenceBusy=null,ownPresence=null,remoteBlocking=null,override=null,lastLocalEditAt=0,writeSeq=0,cleanSeq=0,polling=false,lastResult=null,pauseRequested=false,suspendPromise=null;
@@ -197,6 +197,17 @@
       // Edits made before a reload or while the tab was frozen are still pending.
       if(linked()&&pendingChanges().length){writeSeq=1;cleanSeq=0}
       return status()
+    }
+    // The page and the service worker (background publish) run separate engines over the same stores.
+    // `exclusive` (a Web Lock) keeps them from syncing at the same time; each section starts from what
+    // the other one saved, and a local-state write by the other side is reloaded before continuing.
+    async function refreshFromStore(){
+      const stored=await metaStore.read();
+      if(!stored||stored.version!==META_VERSION||!meta||text(stored.deviceId)!==deviceId())return false;
+      const otherWrote=text(stored.localWriter)&&text(stored.localWriter)!==writerId&&Number(stored.localWriteAt||0)!==Number(meta.localWriteAt||0);
+      meta=stored;
+      if(otherWrote){await hooks.reloadLocal?.();log("info","local-reloaded",{writer:text(stored.localWriter)})}
+      return otherWrote
     }
     function status(){return {linked:!!meta?.linked,suspended:text(meta?.suspended)||(pauseRequested?"pausing":""),deviceId:deviceId(),baseRevision:text(meta?.baseRevision),lastSyncAtMs:Number(meta?.lastSyncAtMs)||0,readonly:isReadonly()?clone(remoteBlocking):null,dirty:linked()&&(writeSeq!==cleanSeq||!!pushTimer),busy:!!running,ownPresence:!!ownPresence}}
     function isReadonly(){return !!remoteBlocking&&linked()}
@@ -251,6 +262,7 @@
           const sessionStartedAtMs=ownPresence?.sessionStartedAtMs||now(),record=coordination.presenceRecord({deviceId:deviceId(),displayName,clientProfile:"mobile-core",sessionStartedAtMs,expiresAtMs:now()+coordination.PRESENCE_TTL_MS,baseRevision:text(meta?.baseRevision)});
           const uploaded=await drive.putSyncText({objectKey:record.objectKey,content:record.content,syncMetadata:record.syncMetadata});
           const previous=ownPresence;ownPresence={...uploaded,sessionStartedAtMs,expiresAtMs:Number(record.syncMetadata.expiresAtMs)};
+          if(meta){meta.presence=clone(ownPresence);await saveMeta().catch(()=>{})}
           if(previous?.remoteObjectId)drive.deleteSyncObject(previous).catch(error=>log("warn","presence-previous-delete-deferred",error));
           log("info","presence-published",{reason});startPresenceTicker();return ownPresence
         }catch(error){log("warn","presence-publish-failed",error);return null}
@@ -261,6 +273,7 @@
     async function releasePresence(reason){
       if(presenceBusy)await presenceBusy;
       const presence=ownPresence;ownPresence=null;if(!presence)return false;
+      if(meta?.presence){meta.presence=null;await saveMeta().catch(()=>{})}
       try{await drive.deleteSyncObject(presence);log("info","presence-released",{reason});return true}catch(error){log("warn","presence-release-deferred",error);return false}
     }
     function dirty(){return writeSeq!==cleanSeq||!!pushTimer||!!hooks.hasPendingSaves?.()}
@@ -302,7 +315,7 @@
       const result=mergeStates({syncModel,profile,base:meta.baseState,remote:remote.state,local,now:now()});
       if(writeSeq!==localSeq)return {deferred:"local-edit",retryInMs:400};
       const changed=!same(result.merged,local);
-      if(changed)await writeLocal(result.merged,{reason:"remote-apply",remoteApplied:result.remoteApplied,conflicts:result.conflicts});
+      if(changed){await writeLocal(result.merged,{reason:"remote-apply",remoteApplied:result.remoteApplied,conflicts:result.conflicts});meta.localWriter=writerId;meta.localWriteAt=now()}
       meta.baseRevision=text(topo.head.revision);meta.baseState=remote.state;meta.lastSyncAtMs=now();await saveMeta();
       if(result.conflicts.length)emit("conflicts",result.conflicts);
       log("info","remote-applied",{revision:meta.baseRevision,rebuilt:remote.rebuilt,conflicts:result.conflicts.length});
@@ -323,6 +336,7 @@
       const snapshot=readLocal(),seq=writeSeq,changes=pendingChanges(snapshot);
       if(!changes.length){cleanSeq=seq;return {synced:true,changes:0}}
       // Images this state references must be on Drive before a commit that points at them is published.
+      emit("pushing",{changes:changes.length});
       await hooks.beforeCommit?.({state:snapshot,changes});
       const held=await acquireLease(objects);if(!held)return {skipped:"lease",retryInMs:1500};
       try{
@@ -360,7 +374,7 @@
           // Return check: the latest remote state is applied; this device's own upload follows right after.
           if(pullOnly){const pushDeferred=pendingChanges().length>0;return {synced:true,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,pushDeferred,reason,...(pushDeferred?{retryInMs:PUSH_DEBOUNCE_MS}:{})}}
           phase="push-local";const pushed=await push(objects);if(pushed.rerun)continue;
-          if(pushed.synced&&hooks.afterSync){phase="after-sync";await Promise.resolve(hooks.afterSync({state:readLocal()})).catch(error=>log("warn","after-sync-hook-failed",{reason,error}))}
+          if(pushed.synced&&hooks.afterSync){phase="after-sync";await Promise.resolve(hooks.afterSync({state:readLocal(),pushed})).catch(error=>log("warn","after-sync-hook-failed",{reason,error}))}
           return {...pushed,pulled:pulled.changed===true,conflicts:pulled.conflicts||0,reason}
         }
         return {deferred:"remote-busy",retryInMs:1500,phase}
@@ -374,7 +388,7 @@
       if(pauseRequested)return Promise.resolve({skipped:"suspended"});
       if(running){rerun=true;return running}
       rerun=false;
-      const operation=cycle(reason,options).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
+      const operation=exclusive(async()=>{await refreshFromStore();return cycle(reason,options)}).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
       running=operation.finally(()=>{running=null;const again=rerun;rerun=false;const retry=Number(lastResult?.retryInMs)||0;if(again)schedulePoll(250);else if(retry)schedulePoll(retry);else if(polling)schedulePoll(pollInterval())});
       return running
     }
@@ -406,7 +420,7 @@
       for(;;){
         if(isCancelled())return {cancelled:true};
         let probe;
-        try{probe=await probeReturn()}catch(error){log("error","return-probe-failed",{error});return {failed:true,error:text(error?.message||error),phase:"return-probe"}}
+        try{probe=await exclusive(async()=>{await refreshFromStore();return probeReturn()})}catch(error){log("error","return-probe-failed",{error});return {failed:true,error:text(error?.message||error),phase:"return-probe"}}
         if(isCancelled())return {cancelled:true};
         if(probe.skipped)return probe;
         if(probe.remote){if(now()-started>maxWaitMs)return {waitingTimedOut:true};onWaiting(probe.remote);await sleep(POLL_READONLY_MS);continue}
@@ -422,6 +436,14 @@
         if(isReadonly()){if(now()-started>maxWaitMs)return {...result,waitingTimedOut:true};onWaiting(clone(remoteBlocking));await sleep(POLL_READONLY_MS);continue}
         return result
       }
+    }
+    // Background publisher: once everything is uploaded, withdraw the editing presence the page left
+    // behind so other devices do not keep waiting for its time-out.
+    async function releaseStoredPresence(reason="background-published"){
+      const presence=meta?.presence;if(!presence?.remoteObjectId)return false;
+      if(pendingChanges().length)return false;
+      try{await drive.deleteSyncObject(presence);meta.presence=null;await saveMeta();log("info","presence-released",{reason});return true}
+      catch(error){log("warn","presence-release-deferred",error);return false}
     }
     function overrideRemote(){if(!remoteBlocking)return false;override={deviceId:text(remoteBlocking.deviceId),sessionStartedAtMs:Number(remoteBlocking.createdAtMs)||0};remoteBlocking=null;emit("readonly",null);return true}
 
@@ -518,7 +540,7 @@
     }
     async function unlink(){stopPolling();if(pushTimer){timers.clearTimeout(pushTimer);pushTimer=0;pushFirstAt=0}await releasePresence("unlink");meta={...meta,linked:false,suspended:"",baseRevision:"",baseState:null};remoteBlocking=null;await saveMeta();pauseRequested=false;emit("readonly",null);return status()}
 
-    return Object.freeze({init,status,isReadonly,pendingChanges,notifyLocalWrite,sync,startPolling,stopPolling,checkOnReturn,overrideRemote,leave,link,resetFromCloud,suspend,resume,unlink,releasePresence,_presenceTick:presenceTick,_readonly:()=>clone(remoteBlocking)})
+    return Object.freeze({init,status,isReadonly,pendingChanges,notifyLocalWrite,sync,startPolling,stopPolling,checkOnReturn,overrideRemote,leave,link,resetFromCloud,suspend,resume,unlink,releasePresence,releaseStoredPresence,_presenceTick:presenceTick,_readonly:()=>clone(remoteBlocking)})
   }
 
   root.HamboardMobileSyncEngine=Object.freeze({createMobileSyncEngine,createIndexedDbMetaStore,createMemoryMetaStore,mergeStates,topology,entityRows});

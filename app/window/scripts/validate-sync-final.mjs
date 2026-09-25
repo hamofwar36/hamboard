@@ -315,6 +315,12 @@ check(
     && cleanupSource.includes("staleCheckpoints=syncCheckpointCandidates"),
 );
 check(
+  "sync cleanup keeps young unreferenced descriptors another device uploaded before its commit",
+  cleanupSource.includes("inFlight=!referenced&&now-(Number(row.object.createdAtMs)||0)<SYNC_ASSET_DESCRIPTOR_GRACE_MS")
+    && cleanupSource.includes("row===preferred||inFlight?kept:stale")
+    && /const SYNC_ASSET_DESCRIPTOR_GRACE_MS=24\*60\*60\*1000;/.test(html),
+);
+check(
   "sync cleanup retains one descriptor for the active image quality",
   cleanupSource.includes('candidates.find(row=>String(row.descriptor?.quality||row.object.quality||"")===quality)||candidates[0]'),
 );

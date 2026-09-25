@@ -31,6 +31,58 @@ const cacheablePaths=new Set([
   "/vendor/lucide/lucide.min.js","/mobile-config.js","/mobile-google-drive.js","/mobile-asset-repository.js","/mobile-sync-engine.js","/mobile-app.js"
 ]);
 
+// Background publish. When the app is left with unsent edits, the page registers a one-off
+// Background Sync ("hamboard-publish"). The browser runs it here even after the page is frozen or
+// the screen is off, and retries it when the network returns. The page and this worker share the
+// same IndexedDB state and sync bookkeeping; a Web Lock keeps them from syncing at the same time.
+const PUBLISH_TAG="hamboard-publish",SYNC_LOCK="hamboard-mobile-sync",LOCK_WAIT_MS=45000,PUBLISH_ATTEMPTS=6;
+let backgroundPublishReady=false;
+try{
+  self.window=self; // mobile-config.js assigns window.HAMBOARD_MOBILE_CONFIG
+  importScripts(...[
+    "./shared/sync-state-model.js","./shared/cloud-payload.js","./shared/project-repository.js","./shared/sync-coordination.js",
+    "./mobile-config.js","./mobile-google-drive.js","./mobile-asset-repository.js","./mobile-sync-engine.js"
+  ].map(path=>`${path}${versionTag}`));
+  backgroundPublishReady=!!(self.HamboardMobileSyncEngine&&self.HamboardMobileGoogleDrive&&self.HamboardProjectRepository&&self.HamboardMobileAssetRepository&&self.navigator?.locks?.request);
+}catch(error){backgroundPublishReady=false}
+
+async function backgroundPublish(){
+  if(!backgroundPublishReady)return {skipped:"unsupported"};
+  // An app window in front syncs by itself.
+  const windows=await self.clients.matchAll({type:"window",includeUncontrolled:true});
+  if(windows.some(client=>client.visibilityState==="visible"))return {skipped:"app-visible"};
+  const drive=self.HamboardMobileGoogleDrive,engineCore=self.HamboardMobileSyncEngine,assets=self.HamboardMobileAssetRepository;
+  const storage=self.HamboardProjectRepository.createIndexedDbStateStorage({databaseName:"hamboard-mobile",storeName:"state",stateKey:"mobile-core"});
+  const assetRepository=assets.createIndexedDbAssetRepository({databaseName:"hamboard-mobile-assets",storeName:"assets"});
+  const uploader=assets.createMobileAssetUploader({drive,assetRepository,sha256Hex:bytes=>drive.sha256Hex(bytes)});
+  let state=await storage.read();
+  const engine=engineCore.createMobileSyncEngine({
+    drive,syncModel:self.HamboardSyncStateModel,coordination:self.HamboardSyncCoordination,metaStore:engineCore.createIndexedDbMetaStore(),
+    readLocal:()=>state,writeLocal:async next=>{state=next;await storage.write(next)},
+    writerId:"worker",exclusive:run=>self.navigator.locks.request(SYNC_LOCK,{signal:AbortSignal.timeout(LOCK_WAIT_MS)},run),
+    displayName:"모바일",
+    hooks:{
+      reloadLocal:async()=>{state=await storage.read()},
+      ensureConnected:async()=>{await drive.reconnectSilently().catch(()=>null);return drive.status().connected===true},
+      beforeCommit:async({state:value})=>{await uploader.uploadReferenced(assets.collectStateAssetIds(value))},
+      afterSync:async({pushed})=>{if(pushed?.committed)await uploader.markCommitted()}
+    }
+  });
+  try{
+    const status=await engine.init();
+    if(!status.linked||status.suspended)return {skipped:"not-linked"};
+    for(let attempt=0;attempt<PUBLISH_ATTEMPTS;attempt++){
+      const result=await engine.sync("background");
+      if(result?.synced&&!engine.pendingChanges().length){await engine.releaseStoredPresence();return result}
+      // Throwing hands the job back to the browser, which retries later (e.g. when the network returns).
+      if(result?.failed||result?.blocked||["offline","disconnected"].includes(result?.skipped))throw new Error(`background-publish-${result?.error||result?.blocked||result?.skipped}`);
+      await new Promise(resolve=>setTimeout(resolve,Math.min(5000,Math.max(500,Number(result?.retryInMs)||1500))))
+    }
+    throw new Error("background-publish-incomplete")
+  }finally{engine.stopPolling()}
+}
+self.addEventListener("sync",event=>{if(event.tag===PUBLISH_TAG)event.waitUntil(backgroundPublish())});
+
 self.addEventListener("install",event=>{
   event.waitUntil(caches.open(cacheName).then(cache=>cache.addAll(core)).then(()=>self.skipWaiting()))
 });

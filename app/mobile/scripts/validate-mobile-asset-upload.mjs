@@ -151,6 +151,32 @@ await check("verified uploads stop being rechecked after the window",async()=>{
   const again=await uploader.verifyRecent(["img-a"]);assert.equal(again.checked,0);assert.equal(again.restored,0)
 });
 
+await check("right before a commit, a descriptor removed by an older Windows cleanup is put back",async()=>{
+  await addLocal("img-late",image([3,1,4,1,5]));await uploader.uploadReferenced(["img-late"]);
+  for(const [id,file] of server.files)if(file.appProperties.hamboardAssetId==="img-late")server.files.delete(id);
+  const result=await uploader.uploadReferenced(["img-late"]);
+  assert.equal(result.restored,1,"restored before the commit, not minutes later");
+  assert.deepEqual([...(await desktopDownload("img-late")).bytes],[3,1,4,1,5])
+});
+
+await check("once the referencing commit is published, images are not rechecked before every commit",async()=>{
+  await uploader.markCommitted();
+  assert.ok(store.rows.get("img-late").committedAtMs>0);
+  let queries=0;const list=drive.listSyncAssetDescriptors;
+  const counting=assets.createMobileAssetUploader({drive:{...drive,listSyncAssetDescriptors:async id=>{queries++;return list(id)}},assetRepository:store,sha256Hex:bytes=>drive.sha256Hex(bytes),now:()=>clock});
+  await counting.uploadReferenced(["img-late"]);assert.equal(queries,0)
+});
+
+await check("the service worker's background publisher imports only files the deployment ships",async()=>{
+  const worker=await readFile(new URL("web/mobile/service-worker.js",root),"utf8"),block=/importScripts\(\.\.\.\[([\s\S]*?)\]/.exec(worker);
+  assert.ok(block,"importScripts list found");
+  const paths=[...block[1].matchAll(/"\.\/([^"]+)"/g)].map(match=>match[1]);
+  assert.ok(paths.includes("mobile-sync-engine.js")&&paths.includes("mobile-asset-repository.js"));
+  for(const path of paths)await readFile(new URL(`dist-mobile/${path}`,root));
+  assert.match(worker,/addEventListener\("sync",event=>\{if\(event\.tag===PUBLISH_TAG\)event\.waitUntil\(backgroundPublish\(\)\)\}\)/);
+  assert.match(worker,/navigator\.locks\.request\(SYNC_LOCK/)
+});
+
 // --- engine ordering: uploads finish before the commit, failures keep the commit back --------------
 for(const file of [new URL("sync-state-model.js",shared),new URL("sync-coordination.js",shared),new URL("web/mobile/mobile-sync-engine.js",root)])vm.runInThisContext(await readFile(file,"utf8"),{filename:file.pathname});
 const Engine=globalThis.HamboardMobileSyncEngine,model=globalThis.HamboardSyncStateModel,coord=globalThis.HamboardSyncCoordination;

@@ -954,57 +954,8 @@
     return set
   }
 
-  function collectDocumentAssetIds(type,documentValue,set=new Set()){
-    if(!documentValue)return set;
-    const add=value=>{const id=String(value||"");if(id)set.add(id)};
-    add(documentValue.cardImageAssetId);
-    if(type==="project"||type==="note"){
-      for(const resource of documentValue.resources||[]){
-        const mime=String(resource?.type||"");
-        if(resource?.inline===true||!mime||mime.startsWith("image/"))add(resource?.id)
-      }
-      for(const character of documentValue.characters||[]){
-        add(character?.avatarAssetId);
-        for(const id of character?.imageAssetIds||[])add(id)
-      }
-    }
-    if(type==="note")collectNoteHtmlAssetIds(documentValue.content,set);
-    if(type==="mindmap")for(const node of documentValue.nodes||[])if(node?.type==="image"&&node.assetId)add(node.assetId);
-    return set
-  }
-
-  function collectMobileTrashAssetIds(item,set=new Set()){
-    if(!item)return set;
-    const payload=item.payload;
-    if(item.type==="project")collectDocumentAssetIds("project",payload,set);
-    else if(item.type==="note")collectDocumentAssetIds("note",payload,set);
-    else if(item.type==="mindmap")collectDocumentAssetIds("mindmap",payload,set);
-    else if(item.type==="resource"&&payload?.id)set.add(String(payload.id));
-    else if(item.type==="quickMemo")for(const id of payload?.imageAssetIds||[])if(id)set.add(String(id));
-    else if(item.type==="character"){
-      if(payload?.avatarAssetId)set.add(String(payload.avatarAssetId));
-      for(const id of payload?.imageAssetIds||[])if(id)set.add(String(id))
-    }else if(item.type==="folder"){
-      for(const row of payload?.projects||[])collectDocumentAssetIds("project",row?.data,set);
-      for(const row of payload?.notes||[])collectDocumentAssetIds("note",row?.data,set);
-      for(const row of payload?.mindmaps||[])collectDocumentAssetIds("mindmap",row?.data,set)
-    }
-    return set
-  }
-
-  function currentMobileAssetIds(stateValue=snapshot()){
-    const ids=new Set();
-    for(const project of stateValue.projects||[])collectDocumentAssetIds("project",project,ids);
-    for(const note of stateValue.notes||[])collectDocumentAssetIds("note",note,ids);
-    for(const mindmap of stateValue.mindmaps||[])collectDocumentAssetIds("mindmap",mindmap,ids);
-    for(const character of stateValue.characterRepository||[]){
-      if(character?.avatarAssetId)ids.add(String(character.avatarAssetId));
-      for(const id of character?.imageAssetIds||[])if(id)ids.add(String(id))
-    }
-    for(const memo of stateValue.quickMemos||[])for(const id of memo?.imageAssetIds||[])if(id)ids.add(String(id));
-    for(const item of stateValue.trash||[])collectMobileTrashAssetIds(item,ids);
-    return ids
-  }
+  // Same rules as the service worker's background publisher (mobile-asset-repository.js).
+  function currentMobileAssetIds(stateValue=snapshot()){return assetRepositoryCore.collectStateAssetIds(stateValue)}
 
   async function hydrateAssetImage(image,assetId){
     const id=String(assetId||"");
@@ -3607,6 +3558,8 @@
       noteSavedRange=range.cloneRange();
       scheduleMobileNoteSave();
       updateMobileNoteCharacterCount();
+      // Publish now instead of waiting for the edit debounce: the image upload is the slow part.
+      flushMobileNoteSave();noteSaveChain.then(()=>{if(syncEngine?.status().linked)syncEngine.sync("image-insert")});
       showSyncToast(failed?`이미지 ${added.length}개를 추가했고 ${failed}개는 실패했습니다.`:added.length>1?`이미지 ${added.length}개를 추가했습니다.`:"이미지를 추가했습니다.")
     }finally{noteImageInsertBusy=false}
   }
@@ -4092,6 +4045,9 @@
   // ---- two-way cloud sync -------------------------------------------------------------
   // The engine (mobile-sync-engine.js) owns pull/merge/push. This block connects it to the UI:
   // write guard, read-only banner, return gate, lifecycle events and the cloud screen.
+  // True while the service worker may be writing local state for a background publish; cleared once the
+  // page has taken the sync lock again and reloaded whatever the worker wrote.
+  let backgroundPublishPending=false;
   let mobileReturnGateActive=false,mobileReturnRun=0,mobileHiddenAt=0,syncToastTimer=0,syncNoticeAt=0,assetRefreshTimer=0;
   const MOBILE_SHORT_AWAY_MS=3000;
 
@@ -4155,6 +4111,7 @@
   async function guardedReplaceState(value,options={}){
     if(options?.markBaseline)return baseRepository.replaceState(value,options);
     if(syncEngine?.isReadonly()){noticeReadonly();setTimeout(()=>rerenderCurrentView(new Set(["*"])),0);throw new Error("mobile-sync-readonly")}
+    if(backgroundPublishPending&&mobileReturnGateActive){noticeReadonly();setTimeout(()=>rerenderCurrentView(new Set(["*"])),0);throw new Error("mobile-sync-background-publish")}
     const generation=value&&typeof value==="object"?snapshotGenerations.get(value):undefined;
     let next=value;
     if(generation!==undefined&&generation<stateGeneration){
@@ -4220,8 +4177,11 @@
     if(!force&&mobileReturnGateActive)return null;
     const run=++mobileReturnRun;showMobileReturnGate();
     try{
+      const pendingBefore=backgroundPublishPending;
       const result=await syncEngine.checkOnReturn({isCancelled:()=>run!==mobileReturnRun,onWaiting:remote=>{if(run===mobileReturnRun)showMobileReturnGate({waiting:remote})},onPulling:()=>{if(run===mobileReturnRun)showMobileReturnGate({pulling:true})}});
       if(run!==mobileReturnRun||result?.cancelled)return result;
+      // The probe ran under the sync lock and reloaded anything the background publisher wrote.
+      if(pendingBefore)backgroundPublishPending=false;
       if(result?.skipped==="offline"||result?.skipped==="disconnected"){
         hideMobileReturnGate();
         // Automatic checks report a missing connection once per app session; the account button keeps showing it.
@@ -4250,21 +4210,22 @@
       if(!syncEngine)return;
       if(document.hidden){
         mobileHiddenAt=Date.now();syncEngine.stopPolling();
-        flushPendingMobileSaves().then(()=>syncEngine.leave()).catch(error=>logDiagnostic("warn","SYNC","화면 전환 전 업로드를 미뤘습니다.",error))
+        flushPendingMobileSaves().then(async()=>{await requestBackgroundPublish("hidden");return syncEngine.leave()}).catch(error=>logDiagnostic("warn","SYNC","화면 전환 전 업로드를 미뤘습니다.",error))
       }else returnToMobileApp()
     });
-    window.addEventListener("pagehide",()=>{if(syncEngine)flushPendingMobileSaves().then(()=>syncEngine.leave()).catch(()=>{})});
+    window.addEventListener("pagehide",()=>{if(syncEngine)flushPendingMobileSaves().then(async()=>{await requestBackgroundPublish("pagehide");return syncEngine.leave()}).catch(()=>{})});
     window.addEventListener("pageshow",event=>{if(event.persisted)returnToMobileApp()});
     window.addEventListener("online",()=>{if(syncEngine?.status().linked)syncEngine.sync("online")})
   }
   function returnToMobileApp(){
     if(!syncEngine)return;
     const away=mobileHiddenAt?Date.now()-mobileHiddenAt:Infinity;mobileHiddenAt=0;
-    if(away<MOBILE_SHORT_AWAY_MS){syncEngine.startPolling();return}
+    if(away<MOBILE_SHORT_AWAY_MS&&!backgroundPublishPending){syncEngine.startPolling();return}
     runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}))
   }
   function handleSyncStatus(name,detail){
     if(name==="readonly"){renderSyncReadonly(detail);return}
+    if(name==="pushing"){if(googleDrive?.status?.().connected)setIndicator("connected","올리는 중…");return}
     if(name==="conflicts"){
       const rows=Array.isArray(detail)?detail:[];if(!rows.length)return;
       const copied=rows.filter(item=>/copy/.test(String(item?.kind||""))).length,merged=rows.filter(item=>["field-merged","initial-merged"].includes(String(item?.kind||""))).length,remoteKept=rows.filter(item=>/remote-kept|local-deleted-remote-modified/.test(String(item?.kind||""))).length,parts=[];
@@ -4389,15 +4350,53 @@
     }
   }
 
+  // The page and the service worker's background publisher never sync at the same time.
+  const MOBILE_SYNC_LOCK="hamboard-mobile-sync";
+  function mobileSyncExclusive(run){return navigator.locks?.request?navigator.locks.request(MOBILE_SYNC_LOCK,run):run()}
+  // The background publisher applied remote changes to local storage while this page was hidden.
+  async function reloadLocalAfterBackgroundPublish(){
+    const next=await storage.read();
+    preApplyStates.set(stateGeneration,baseRepository.snapshot());
+    for(const key of [...preApplyStates.keys()])if(key<stateGeneration-1)preApplyStates.delete(key);
+    stateGeneration++;
+    baseRepository.adopt(next);
+    applyMobileTheme();renderAccountButton();
+    rerenderCurrentView(new Set(["*"]));
+    scheduleSyncAssetRefresh();
+    logDiagnostic("info","SYNC","백그라운드에서 반영된 내용을 불러왔습니다.")
+  }
+  // Leaving the app with unsent edits: hand them to a one-off Background Sync. The browser runs it in
+  // the service worker even after this page is frozen, and retries it once the network is back.
+  async function backgroundPublishMayBeRunning(){
+    try{
+      const locks=await navigator.locks?.query?.();
+      if((locks?.held||[]).some(lock=>lock.name===MOBILE_SYNC_LOCK))return true;
+      const registration=await navigator.serviceWorker?.getRegistration?.();
+      return !!(await registration?.sync?.getTags?.())?.includes("hamboard-publish")
+    }catch{return false}
+  }
+  async function requestBackgroundPublish(reason){
+    try{
+      const status=syncEngine?.status();
+      if(!status?.linked||status.suspended||!navigator.locks?.request||!syncEngine.pendingChanges().length)return false;
+      const registration=await navigator.serviceWorker?.ready;
+      if(!registration?.sync?.register)return false;
+      await registration.sync.register("hamboard-publish");backgroundPublishPending=true;
+      logDiagnostic("info","SYNC","백그라운드 올리기를 예약했습니다.",{reason,changes:syncEngine.pendingChanges().length});
+      return true
+    }catch(error){logDiagnostic("warn","SYNC","백그라운드 올리기를 예약하지 못했습니다.",error);return false}
+  }
   async function initMobileSync({justConnected=false}={}){
     if(!googleDrive?.listSyncTopology)return;
     try{
       syncEngine=syncEngineCore.createMobileSyncEngine({
         drive:googleDrive,syncModel,coordination:syncCoordination,metaStore:syncEngineCore.createIndexedDbMetaStore(),
         readLocal:()=>baseRepository.snapshot(),writeLocal:engineWriteLocal,displayName:mobileDeviceName(),
+        writerId:"page",exclusive:mobileSyncExclusive,
         hooks:{flushPendingSaves:flushPendingMobileSaves,hasPendingSaves:hasPendingMobileSaves,
           beforeCommit:async({state})=>{if(assetUploader)await assetUploader.uploadReferenced(currentMobileAssetIds(state))},
-          afterSync:async({state})=>{if(assetUploader)await assetUploader.verifyRecent(currentMobileAssetIds(state))},
+          afterSync:async({state,pushed})=>{if(!assetUploader)return;if(pushed?.committed)await assetUploader.markCommitted();await assetUploader.verifyRecent(currentMobileAssetIds(state))},
+          reloadLocal:reloadLocalAfterBackgroundPublish,
           ensureConnected:async()=>{await restoreGoogleConnection();return googleDrive?.status?.().connected===true},onStatus:handleSyncStatus},
         log:(level,event,detail)=>{
           // Operational milestones make it possible to place failures between a pull and a push.
@@ -4406,6 +4405,7 @@
         }
       });
       const status=await syncEngine.init();installMobileSyncGuards();
+      backgroundPublishPending=await backgroundPublishMayBeRunning();
       if(status.linked&&!status.suspended)runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}));
       else if(!status.linked)justConnected?askMobileSyncImportAfterConnect():maybeStartMobileLink();
       else setIndicator("local","동기화 멈춤")

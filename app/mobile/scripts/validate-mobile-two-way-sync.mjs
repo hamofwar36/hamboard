@@ -488,4 +488,76 @@ await check("while uploads fail, the phone does not keep Windows read-only",asyn
   d.putSyncValue=value;assert.ok((await m.engine.sync("recovered")).committed)
 });
 
+// --- background publish: the service worker finishes what a backgrounded page could not -------------
+// Page and worker engines share one meta store, one local-state store and one lock, as in the app.
+function createLock(){let tail=Promise.resolve(),held=0;return {get held(){return held},run(fn){const result=tail.then(async()=>{held++;try{return await fn()}finally{held--}});tail=result.catch(()=>{});return result}}}
+function createSharedPhone(drive){
+  const lock=createLock(),metaStore=Engine.createMemoryMetaStore(null),stored={state:{schemaVersion:1,projects:[],notes:[]}};let pageState=clone(stored.state),reloads=0;
+  const page=Engine.createMobileSyncEngine({drive,syncModel:model,coordination:coord,metaStore,readLocal:()=>clone(pageState),writeLocal:async next=>{pageState=clone(next);stored.state=clone(next)},writerId:"page",exclusive:fn=>lock.run(fn),hooks:{reloadLocal:async()=>{reloads++;pageState=clone(stored.state)}},now});
+  const worker=()=>{let workerState=clone(stored.state);return Engine.createMobileSyncEngine({drive,syncModel:model,coordination:coord,metaStore,readLocal:()=>clone(workerState),writeLocal:async next=>{workerState=clone(next);stored.state=clone(next)},writerId:"worker",exclusive:fn=>lock.run(fn),hooks:{reloadLocal:async()=>{workerState=clone(stored.state)}},now})};
+  return {page,worker,lock,stored,get pageState(){return pageState},get reloads(){return reloads},edit(fn){fn(pageState);stored.state=clone(pageState);page.notifyLocalWrite()}}
+}
+async function sharedLinked(){
+  const d=createDrive(),p=createDesktop(d);await p.commit([{entityType:"note",entityId:"b1",operation:"upsert",payload:note("b1","원본")}]);
+  const phone=createSharedPhone(d);sharedPhones.push(phone);await phone.page.init();await phone.page.link();return {d,p,phone}
+}
+const sharedPhones=[];
+
+await check("background publish: a push the backgrounded page could not finish is published by the worker",async()=>{
+  const {d,p,phone}=await sharedLinked();
+  const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new TypeError("Failed to fetch");return value(request)};
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="폰에서 바로 내려놓음"});
+  assert.equal((await phone.page.sync("leave")).failed,true,"the page lost the network while leaving");
+  d.putSyncValue=value;
+  const worker=phone.worker();await worker.init();
+  const result=await worker.sync("background");
+  assert.ok(result.committed,"the worker publishes the pending edit");assert.equal(worker.pendingChanges().length,0);
+  await p.pull();assert.equal(p.state.notes.find(n=>n.id==="b1").title,"폰에서 바로 내려놓음","Windows sees the edit without the phone being reopened")
+});
+
+await check("background publish: the returning page adopts the worker's base and does not publish the edit twice",async()=>{
+  const {d,phone}=await sharedLinked();
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="워커가 올림"});
+  const worker=phone.worker();await worker.init();assert.ok((await worker.sync("background")).committed);
+  const before=mobileCommits(d),result=await phone.page.sync("return");
+  assert.equal(result.synced,true);assert.equal(mobileCommits(d),before,"no second commit for the same edit");
+  assert.equal(phone.page.pendingChanges().length,0)
+});
+
+await check("background publish: remote changes the worker merged are reloaded into the page before it continues",async()=>{
+  const {p,phone}=await sharedLinked();
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="폰 편집"});
+  await p.pull();await p.commit([{entityType:"note",entityId:"b2",operation:"upsert",payload:note("b2","PC가 그 사이 추가")}]);
+  const worker=phone.worker();await worker.init();assert.ok((await worker.sync("background")).committed);
+  const probe=await phone.page.checkOnReturn();
+  assert.ok(phone.reloads>=1,"the page reloads what the worker wrote");assert.ok(probe.synced||probe.upToDate);
+  assert.equal(phone.pageState.notes.find(n=>n.id==="b2")?.title,"PC가 그 사이 추가");
+  assert.equal(phone.pageState.notes.find(n=>n.id==="b1").title,"폰 편집")
+});
+
+await check("background publish: page and worker never run a sync cycle at the same time",async()=>{
+  const {d,phone}=await sharedLinked();
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="동시 실행 방지"});
+  let release;const hold=new Promise(resolve=>{release=resolve});const value=d.putSyncValue.bind(d);let inside=0,maxInside=0;
+  d.putSyncValue=async request=>{inside++;maxInside=Math.max(maxInside,phone.lock.held);if(request.syncMetadata.syncType==="commit")await hold;const out=await value(request);inside--;return out};
+  const pagePush=phone.page.sync("leave");await new Promise(resolve=>setTimeout(resolve,5));
+  const worker=phone.worker();await worker.init();const workerRun=worker.sync("background");
+  await new Promise(resolve=>setTimeout(resolve,5));assert.equal(phone.lock.held,1,"the worker waits for the page's lock");
+  release();const [pageResult,workerResult]=await Promise.all([pagePush,workerRun]);
+  assert.ok(pageResult.committed);assert.equal(workerResult.changes,0,"the worker finds nothing left to publish");assert.equal(maxInside,1);
+  d.putSyncValue=value
+});
+
+await check("background publish: the worker withdraws the page's editing presence once everything is published",async()=>{
+  const {d,phone}=await sharedLinked();
+  const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new TypeError("Failed to fetch");return value(request)};
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="편집 중 표시 남김"});await new Promise(resolve=>setTimeout(resolve,5));
+  await phone.page.sync("leave");d.putSyncValue=value;
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,1,"the page left its presence behind");
+  const worker=phone.worker();await worker.init();assert.ok((await worker.sync("background")).committed);
+  assert.equal(await worker.releaseStoredPresence(),true);
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0,"Windows no longer waits for the phone")
+});
+
+for(const phone of sharedPhones){phone.page.stopPolling();await phone.page.releasePresence("qa-done").catch(()=>{})}
 console.log(`Mobile two-way sync QA passed (${checks.length} checks).`);

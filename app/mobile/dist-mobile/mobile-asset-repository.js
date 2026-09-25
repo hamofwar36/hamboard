@@ -37,6 +37,7 @@
         uploadState:["pending","uploaded","verified"].includes(record.uploadState)?record.uploadState:"",
         uploadedAtMs:Math.max(0,Number(record.uploadedAtMs)||0),
         verifiedAtMs:Math.max(0,Number(record.verifiedAtMs)||0),
+        committedAtMs:Math.max(0,Number(record.committedAtMs)||0),
         thumbnail:record.thumbnail?.blob instanceof Blob?{blob:record.thumbnail.blob,mimeType:String(record.thumbnail.mimeType||record.thumbnail.blob.type||"application/octet-stream"),byteSize:Math.max(0,Number(record.thumbnail.byteSize)||Number(record.thumbnail.blob.size)||0),contentSha256:String(record.thumbnail.contentSha256||"")}:null,
         descriptor:record.descriptor&&typeof record.descriptor==="object"?record.descriptor:null,
         updatedAtMs:Date.now()
@@ -117,6 +118,50 @@
     })
   }
 
+  // Image ids a state references, without a DOM so the service worker can use it too.
+  // Mirrors the Windows syncStateAssetIds rules for the collections the phone syncs.
+  function collectNoteHtmlAssetIds(html,set=new Set()){
+    const decode=value=>String(value).replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
+    for(const match of String(html||"").matchAll(/<img\b[^>]*?\sdata-note-image\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/gi)){const id=decode(match[1]??match[2]??match[3]??"").trim();if(id)set.add(id)}
+    return set
+  }
+  function collectDocumentAssetIds(type,documentValue,set=new Set()){
+    if(!documentValue)return set;
+    const add=value=>{const id=String(value||"");if(id)set.add(id)};
+    add(documentValue.cardImageAssetId);
+    if(type==="project"||type==="note"){
+      for(const resource of documentValue.resources||[]){const mime=String(resource?.type||"");if(resource?.inline===true||!mime||mime.startsWith("image/"))add(resource?.id)}
+      for(const character of documentValue.characters||[]){add(character?.avatarAssetId);for(const id of character?.imageAssetIds||[])add(id)}
+    }
+    if(type==="note")collectNoteHtmlAssetIds(documentValue.content,set);
+    if(type==="mindmap")for(const node of documentValue.nodes||[])if(node?.type==="image"&&node.assetId)add(node.assetId);
+    return set
+  }
+  function collectTrashAssetIds(item,set=new Set()){
+    if(!item)return set;
+    const payload=item.payload;
+    if(["project","note","mindmap"].includes(item.type))collectDocumentAssetIds(item.type,payload,set);
+    else if(item.type==="resource"&&payload?.id)set.add(String(payload.id));
+    else if(item.type==="quickMemo")for(const id of payload?.imageAssetIds||[])if(id)set.add(String(id));
+    else if(item.type==="character"){if(payload?.avatarAssetId)set.add(String(payload.avatarAssetId));for(const id of payload?.imageAssetIds||[])if(id)set.add(String(id))}
+    else if(item.type==="folder"){
+      for(const row of payload?.projects||[])collectDocumentAssetIds("project",row?.data,set);
+      for(const row of payload?.notes||[])collectDocumentAssetIds("note",row?.data,set);
+      for(const row of payload?.mindmaps||[])collectDocumentAssetIds("mindmap",row?.data,set)
+    }
+    return set
+  }
+  function collectStateAssetIds(state){
+    const ids=new Set();if(!state||typeof state!=="object")return ids;
+    for(const project of state.projects||[])collectDocumentAssetIds("project",project,ids);
+    for(const note of state.notes||[])collectDocumentAssetIds("note",note,ids);
+    for(const mindmap of state.mindmaps||[])collectDocumentAssetIds("mindmap",mindmap,ids);
+    for(const character of state.characterRepository||[]){if(character?.avatarAssetId)ids.add(String(character.avatarAssetId));for(const id of character?.imageAssetIds||[])if(id)ids.add(String(id))}
+    for(const memo of state.quickMemos||[])for(const id of memo?.imageAssetIds||[])if(id)ids.add(String(id));
+    for(const item of state.trash||[])collectTrashAssetIds(item,ids);
+    return ids
+  }
+
   // Uploads images added on this phone in the exact layout the Windows app writes and reads:
   // the bytes go to objects/content-v1/<sha256> and a descriptor sync/assets/<sha256(id:quality)>.json
   // names them. Descriptors must exist before a commit that references the image is published.
@@ -127,7 +172,7 @@
     const textSha=value=>sha256Hex(new TextEncoder().encode(String(value)));
     const blobSha=async blob=>sha256Hex(await blob.arrayBuffer());
     const lastChecked=new Map();
-    let recentUploads=true; // unknown after a reload; cleared once a scan finds nothing left to verify
+    let recentUploads=true,awaitingCommit=new Set(); // unknown after a reload; cleared once a scan finds nothing left to verify
 
     async function putDescriptor(descriptor){
       const identity=await textSha(`${descriptor.assetId}:${descriptor.quality}`),content=JSON.stringify(descriptor);
@@ -140,12 +185,13 @@
     async function uploadOne(record){
       const assetId=String(record.id),sourceSha256=await blobSha(record.blob);
       if(record.sourceSha256&&record.sourceSha256!==sourceSha256)throw new Error("mobile-asset-changed-before-upload");
-      const main=await drive.putAssetObject({blob:record.blob,contentSha256:sourceSha256,byteSize:record.blob.size,mimeType:record.mimeType||record.blob.type});
-      let thumbnail=String(record.mimeType||record.blob.type||"").startsWith("image/")?main:null;
-      if(record.thumbnail?.blob){
-        const thumbSha=await blobSha(record.thumbnail.blob);
-        thumbnail=await drive.putAssetObject({blob:record.thumbnail.blob,contentSha256:thumbSha,byteSize:record.thumbnail.blob.size,mimeType:record.thumbnail.mimeType||record.thumbnail.blob.type})
-      }
+      // Main image and thumbnail go up side by side: every sequential round trip is time the phone may not have.
+      const thumbBlob=record.thumbnail?.blob||null;
+      const [main,uploadedThumbnail]=await Promise.all([
+        drive.putAssetObject({blob:record.blob,contentSha256:sourceSha256,byteSize:record.blob.size,mimeType:record.mimeType||record.blob.type}),
+        thumbBlob?blobSha(thumbBlob).then(thumbSha=>drive.putAssetObject({blob:thumbBlob,contentSha256:thumbSha,byteSize:thumbBlob.size,mimeType:record.thumbnail.mimeType||thumbBlob.type})):null
+      ]);
+      const thumbnail=uploadedThumbnail||(String(record.mimeType||record.blob.type||"").startsWith("image/")?main:null);
       const pick=object=>({objectKey:object.objectKey,contentSha256:object.contentSha256,byteSize:object.byteSize,mimeType:object.mimeType});
       const descriptor={format:"hamboard-sync-asset",formatVersion:1,assetId,ownerId:String(record.ownerId||""),sourceSha256,quality:SYNC_ASSET_QUALITY,createdAtMs:now(),width:Number(record.width)||0,height:Number(record.height)||0,main:pick(main),thumbnail:thumbnail?pick(thumbnail):null};
       await putDescriptor(descriptor);
@@ -158,9 +204,27 @@
     // A failure throws so the commit is not published with a dangling image reference.
     async function uploadReferenced(referencedIds){
       const wanted=new Set([...(referencedIds||[])].map(String));
-      const pending=(await assetRepository.listPendingUploads()).filter(record=>record.uploadState==="pending"&&wanted.has(String(record.id)));
+      const rows=(await assetRepository.listPendingUploads()).filter(record=>wanted.has(String(record.id)));
+      const pending=rows.filter(record=>record.uploadState==="pending");
       for(const record of pending)await uploadOne(record);
-      return {uploaded:pending.length}
+      // Uploaded earlier but not yet part of a published commit: make sure the descriptor is still
+      // on Drive right before the commit that will point at it (older Windows cleanup drops it).
+      let restored=0;
+      for(const record of rows.filter(row=>row.uploadState==="uploaded"&&!row.committedAtMs)){
+        const assetId=String(record.id);
+        if(await hasDescriptor(assetId))continue;
+        if(!record.descriptor){await uploadOne({...record,uploadState:"pending"});continue}
+        await putDescriptor({...record.descriptor,createdAtMs:now()});restored++;
+        log("warn","asset-descriptor-restored",{assetId,stage:"before-commit"})
+      }
+      awaitingCommit=new Set(rows.map(record=>String(record.id)));
+      return {uploaded:pending.length,restored}
+    }
+    // The commit that references these images is published; from now on the reference itself protects them.
+    async function markCommitted(){
+      const ids=[...awaitingCommit];awaitingCommit=new Set();
+      for(const id of ids){const record=await assetRepository.get(id);if(record&&record.uploadState!=="pending"&&!record.committedAtMs)await assetRepository.update(id,{committedAtMs:now()})}
+      return {committed:ids.length}
     }
 
     // Windows cleanup drops descriptors of images its state does not reference yet, so a descriptor
@@ -186,8 +250,8 @@
       }
       return {checked:recent.length,restored}
     }
-    return Object.freeze({uploadReferenced,verifyRecent,quality:SYNC_ASSET_QUALITY})
+    return Object.freeze({uploadReferenced,markCommitted,verifyRecent,quality:SYNC_ASSET_QUALITY})
   }
 
-  root.HamboardMobileAssetRepository=Object.freeze({createIndexedDbAssetRepository,createMobileAssetUploader});
+  root.HamboardMobileAssetRepository=Object.freeze({createIndexedDbAssetRepository,createMobileAssetUploader,collectStateAssetIds,collectDocumentAssetIds,collectNoteHtmlAssetIds});
 })(typeof globalThis!=="undefined"?globalThis:this);

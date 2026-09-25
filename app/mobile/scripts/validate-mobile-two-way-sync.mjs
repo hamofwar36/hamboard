@@ -417,4 +417,61 @@ await check("simultaneous edits to the same project or mindmap still preserve mo
   assert.equal(merged.merged.mindmaps.find(item=>item.id!=="m").nodes[0].id,"mobile-node")
 });
 
+// --- return check: read-only probe first, pull only when another device changed something ---------
+function countWrites(drive){const counts={text:0,value:0};const text=drive.putSyncText.bind(drive),value=drive.putSyncValue.bind(drive);drive.putSyncText=async request=>{counts.text++;return text(request)};drive.putSyncValue=async request=>{counts.value++;return value(request)};return counts}
+const mobileCommits=drive=>[...drive.files.values()].filter(file=>file.meta.syncType==="commit"&&file.meta.clientProfile==="mobile-core").length;
+async function linkedPhone(){
+  const d=createDrive(),p=createDesktop(d);await p.commit([{entityType:"note",entityId:"r1",operation:"upsert",payload:note("r1","원본")},{entityType:"note",entityId:"r2",operation:"upsert",payload:note("r2","다른 노트")}]);
+  const m=createMobile(d);await m.engine.init();await m.engine.link();return {d,p,m}
+}
+
+await check("return with an unsent phone edit and nothing new remotely: the check lets the user in without uploading",async()=>{
+  const {d,m}=await linkedPhone();
+  m.edit(s=>{s.notes.find(n=>n.id==="r1").title="숨기기 직전 편집"});
+  const writes=countWrites(d);
+  const result=await m.engine.checkOnReturn();
+  assert.equal(result.upToDate,true);assert.equal(writes.text+writes.value,0,"no lease, presence or commit during the check");
+  assert.equal(mobileCommits(d),0);
+  const pushed=await m.engine.sync("after-return");assert.ok(pushed.committed,"the edit is uploaded by the normal cycle afterwards")
+});
+
+await check("return while this phone's upload is still running: the check does not wait for it",async()=>{
+  const {d,m}=await linkedPhone();
+  m.edit(s=>{s.notes.find(n=>n.id==="r1").title="업로드 중인 편집"});
+  let release;const hold=new Promise(resolve=>{release=resolve});const value=d.putSyncValue.bind(d);
+  d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")await hold;return value(request)};
+  const upload=m.engine.sync("push");await Promise.resolve();
+  let settled=false;const check=m.engine.checkOnReturn().then(result=>{settled=true;return result});
+  for(let i=0;i<50&&!settled;i++)await new Promise(resolve=>setTimeout(resolve,2));
+  assert.equal(settled,true,"the return check finished while the upload was held");
+  assert.equal((await check).upToDate,true);
+  release();assert.ok((await upload).committed)
+});
+
+await check("return with another device's commit: it is applied before the check returns, and nothing is uploaded meanwhile",async()=>{
+  const {d,p,m}=await linkedPhone();
+  m.edit(s=>{s.notes.find(n=>n.id==="r1").title="폰에서 고친 r1"});
+  await p.pull();await p.commit([{entityType:"note",entityId:"r2",operation:"upsert",payload:note("r2","PC에서 고친 r2")}]);
+  const writes=countWrites(d);
+  const result=await m.engine.checkOnReturn();
+  assert.equal(result.synced,true);assert.equal(result.pushDeferred,true);
+  assert.equal(m.state.notes.find(n=>n.id==="r2").title,"PC에서 고친 r2","remote change applied");
+  assert.equal(m.state.notes.find(n=>n.id==="r1").title,"폰에서 고친 r1","local edit kept");
+  assert.equal(writes.text+writes.value,0,"pull only");
+  assert.ok((await m.engine.sync("after-return")).committed)
+});
+
+await check("while uploads fail, the phone does not keep Windows read-only",async()=>{
+  const {d,m}=await linkedPhone();
+  m.edit(s=>{s.notes.find(n=>n.id==="r1").title="올라가지 못하는 편집"});
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,1,"presence published on edit");
+  const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new Error("google-drive-http-500");return value(request)};
+  const failed=await m.engine.sync("push");assert.equal(failed.failed,true);
+  assert.equal(await m.engine._presenceTick(),"release");
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0,"presence withdrawn");
+  m.edit(s=>{s.notes.find(n=>n.id==="r1").title="실패 중 추가 편집"});
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0,"no new presence while failing");
+  d.putSyncValue=value;assert.ok((await m.engine.sync("recovered")).committed)
+});
+
 console.log(`Mobile two-way sync QA passed (${checks.length} checks).`);

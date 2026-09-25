@@ -177,6 +177,17 @@ await check("a backup restore that fails after the write started stays paused an
   assert.equal([...files.values()].filter(f=>f.meta.syncType==="commit").length,commitsBefore,"nothing was pushed")
 });
 
+await check("a note whose default font came from Windows opens its style sheet (esc was undefined)",async()=>{
+  await until(()=>!app.syncStatus().busy&&!app.syncStatus().readonly,"idle");
+  const state=app.snapshot(),target=state.notes[0];target.defaultStyle={fontFamily:'나눔"고딕'};await app.repository.replaceState(state);
+  app.openDocument("note",target.id);await sleep(50);
+  doc.querySelector('[data-note-menu-action="style"]').click();await sleep(20);
+  const options=[...doc.querySelectorAll("select[data-note-default-font] option")].map(option=>option.value);
+  assert.ok(options.includes('나눔"고딕'),`custom font listed (${options.join(" | ")})`);
+  assert.ok(!runtimeErrors.some(line=>/esc is not defined/.test(line)),"no ReferenceError");
+  doc.querySelector("[data-note-sheet-close]")?.click();app.openLibrary()
+});
+
 await check("no uncaught runtime errors during the run",async()=>assert.deepEqual(runtimeErrors.filter(line=>!/mobile-sync-readonly|simulated-network-drop|simulated-disk-full/.test(line)),[]));
 setHidden(true);await sleep(100);dom.window.close();
 console.log(`Mobile sync UI QA passed (${checks.length} checks).`);

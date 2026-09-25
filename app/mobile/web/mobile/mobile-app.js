@@ -192,6 +192,7 @@
     "butter-lilac":{name:"블루베리버터",a:"#F2DB8F",b:"#C6B2E8"}
   });
   const clone=value=>typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
   const mapWithConcurrency=async(items,limit,worker)=>{
     const values=Array.from(items||[]),results=new Array(values.length);
     let cursor=0;
@@ -4065,7 +4066,7 @@
         else showSyncToast("최신 내용 확인 전에 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.");
         hideMobileReturnGate()
       };
-      setTimeout(()=>{if(layer.isConnected)layer.classList.add("visible")},350)
+      setTimeout(()=>{if(layer.isConnected)layer.classList.add("visible")},700)
     }
     layer.querySelector("strong").textContent=waiting?"다른 기기에서 수정 중":"최신 내용 확인 중";
     layer.querySelector("p").textContent=message||(waiting?`${remoteDeviceText(waiting)}. 변경사항이 올라오면 자동으로 편집할 수 있습니다.`:"다른 기기의 변경사항을 확인하고 있습니다.");

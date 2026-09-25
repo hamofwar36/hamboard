@@ -22,7 +22,7 @@ assert.ok(constantsLine,"sync constants line");
 
 const LATENCY=40,LEASE_MS=100,CLEANUP_MS=800;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const REAL=["runAutomaticSync","syncCheckOnReturn","syncReturnProbe","syncCaptureWorkTracking","syncWorkTrackingCaptureDue","normalizeSyncWorkTracking","dataRecords","syncUpdateRemotePresence","syncCommitTopology","syncUserIdle","syncDesiredPollInterval","scheduleAutomaticSync","syncHideReturnGate","syncErrorText","syncFailureKind","syncFailureRetryDelay","syncPresenceDecision","syncPresenceTick","syncLocalPendingForPresence","startAutomaticSync","syncInstallIdleReturnGuard","syncMarkAway","syncHandleReturn","syncFinalPushBeforeExit","syncPrepareForAppUpdate","syncResumeAfterAppUpdateFailure","syncPreserveConflict","syncConflictJson","syncConflictMergeWorkTracking","syncUploadBlocked","syncPresenceAfterLocalWrite"];
+const REAL=["runAutomaticSync","syncCheckOnReturn","syncReturnProbe","syncCaptureWorkTracking","syncWorkTrackingCaptureDue","normalizeSyncWorkTracking","dataRecords","syncUpdateRemotePresence","syncCommitTopology","syncUserIdle","syncDesiredPollInterval","scheduleAutomaticSync","syncHideReturnGate","syncErrorText","syncFailureKind","syncFailureRetryDelay","syncPresenceDecision","syncPresenceTick","syncLocalPendingForPresence","startAutomaticSync","syncInstallIdleReturnGuard","syncMarkAway","syncHandleReturn","syncFinalPushBeforeExit","syncPrepareForAppUpdate","syncResumeAfterAppUpdateFailure","syncPreserveConflict","syncConflictJson","syncConflictMergeWorkTracking","syncUploadBlocked","syncPresenceAfterLocalWrite","syncWindowFocused","syncUserEditingNow","syncInstallEditInputTracker"];
 
 function createWorld(){
   const world={conflicts:[],objects:[{syncType:"commit",objectKey:"sync/commits/rev-0.json",revision:"rev-0",baseRevision:"",deviceId:"device-me",createdAtMs:"1",remoteObjectId:"f0"}],baseRevision:"rev-0",pending:[],events:[],gate:[],remoteApplied:false,seq:0,errors:[],workStart:Date.now(),checkpointUploads:true};
@@ -76,7 +76,7 @@ function createWorld(){
   vm.runInContext(safetySource,ctx);vm.runInContext(modelSource,ctx);vm.runInContext(coordinationSource,ctx);
   vm.runInContext("var TransferSafety=HamboardTransferSafety,DataTransferCoordinator=TransferSafety.createCoordinator(),SyncStateModel=HamboardSyncStateModel,SyncCoordination=HamboardSyncCoordination,SYNC_CLIENT_PROFILES=SyncStateModel.CLIENT_PROFILES",ctx);
   vm.runInContext(constantsLine.replace(/^const /,"var "),ctx);
-  vm.runInContext("var syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,cloudBackupUploadPromise=null,syncRemoteLease=null,syncConflictBlocked=false,syncInternalStateWrite=false,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=true,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncReadonlyOverride=null,syncLastUserInputAt=Date.now(),syncWorkTrackingCapturedAt=0,syncOutboxTimer=0,syncLastLocalWriteAt=0,syncPresenceTimer=0,syncPresencePromise=null,syncAppUpdateInProgress=false,syncAwaySince=0,syncOutboxFirstRequestAt=0,syncLocalWriteSincePrepare=false,syncOwnLease=null,syncConflictNoticeAt=0,SYNC_RETURN_GATE_SHORT_AWAY_MS=3000",ctx);
+  vm.runInContext("var syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,cloudBackupUploadPromise=null,syncRemoteLease=null,syncConflictBlocked=false,syncInternalStateWrite=false,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=true,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncReadonlyOverride=null,syncLastUserInputAt=Date.now(),syncLastEditInputAt=0,SYNC_PRESENCE_INPUT_WINDOW_MS=5000,syncWorkTrackingCapturedAt=0,syncOutboxTimer=0,syncLastLocalWriteAt=0,syncPresenceTimer=0,syncPresencePromise=null,syncAppUpdateInProgress=false,syncAwaySince=0,syncOutboxFirstRequestAt=0,syncLocalWriteSincePrepare=false,syncOwnLease=null,syncConflictNoticeAt=0,SYNC_RETURN_GATE_SHORT_AWAY_MS=3000",ctx);
   for(const name of REAL){const source=functionSource(name);if(source)vm.runInContext(source,ctx)}
   ctx.SYNC_READONLY_POLL_INTERVAL_MS=30;
   return {world,ctx}
@@ -166,12 +166,29 @@ await check("an editing presence is released even while work-tracking changes ke
   const {world,ctx}=createWorld();
   await ctx.syncCaptureWorkTracking();
   ctx.syncOwnPresence={objectKey:"sync/leases/presence-me.json",expiresAtMs:Date.now()+40000,sessionStartedAtMs:Date.now()-10000};
-  ctx.syncLastLocalWriteAt=Date.now()-10000;
+  ctx.syncLastEditInputAt=Date.now()-10000;
   let released=false;ctx.syncReleasePresence=async()=>{released=true;ctx.syncOwnPresence=null};ctx.syncEnsurePresence=async()=>ctx.syncOwnPresence;
   assert.equal(await ctx.syncPresenceTick(),"release","work-tracking alone is not 'editing'");assert.equal(released,true);
   world.pending.push({entityType:"note",entityId:"n1",operation:"upsert",payloadJson:"{}",payloadSha256:"0".repeat(64)});
   ctx.syncOwnPresence={objectKey:"sync/leases/presence-me.json",expiresAtMs:Date.now()+40000,sessionStartedAtMs:Date.now()-10000};
   assert.equal(await ctx.syncPresenceTick(),"keep","an unsent document edit keeps the presence")
+});
+
+await check("background writes never mark this device as editing; typing does, and leaving the window releases it",async()=>{
+  const {world,ctx}=createWorld();let published=0,released=[];
+  ctx.syncEnsurePresence=async()=>{published++;ctx.syncOwnPresence={objectKey:"sync/leases/presence-me.json",expiresAtMs:Date.now()+40000,sessionStartedAtMs:Date.now()};return ctx.syncOwnPresence};
+  ctx.syncStartPresenceTicker=()=>{};ctx.syncReleasePresence=async reason=>{released.push(reason);ctx.syncOwnPresence=null};
+  world.pending.push({entityType:"user-library",entityId:"main",operation:"upsert",payloadJson:"{}",payloadSha256:"0".repeat(64)});
+  ctx.syncLastEditInputAt=Date.now()-60000;
+  assert.equal(await ctx.syncPresenceAfterLocalWrite(),false,"a reminder/widget write with nobody typing");assert.equal(published,0);
+  ctx.syncLastEditInputAt=Date.now();
+  assert.equal(await ctx.syncPresenceAfterLocalWrite(),true,"a write right after typing");assert.equal(published,1);
+  world.pending.length=0;ctx.document.hasFocus=()=>false;
+  assert.equal(await ctx.syncPresenceTick(),"release","alt-tab away with everything committed releases at once");
+  ctx.document.hasFocus=()=>true;
+  const now=1_000_000;
+  assert.equal(ctx.syncPresenceDecision({now,presence:{expiresAtMs:now+5000},dirty:true,lastEditAt:now-60000,focused:true}),"keep","background dirtiness alone does not renew");
+  assert.equal(ctx.syncPresenceDecision({now,presence:{expiresAtMs:now+5000},dirty:true,lastEditAt:now-1000,focused:false}),"keep","out of focus never renews")
 });
 
 await check("device-generated writes do not trigger the fast re-publish loop",async()=>{

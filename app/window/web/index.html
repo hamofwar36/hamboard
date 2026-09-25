@@ -6250,7 +6250,7 @@ function scheduleSyncOutboxPreparation(delay=SYNC_OUTBOX_DEBOUNCE_MS){const now=
 function syncMarkLocalWrite(){if(syncInternalStateWrite)return false;syncLocalWriteSincePrepare=true;syncLastLocalWriteAt=Date.now();return true}
 const SYNC_ASSET_DESCRIPTOR_GRACE_MS=24*60*60*1000;
 const SYNC_PROTOCOL_VERSION=1,SYNC_POLL_INTERVAL_MS=10000,SYNC_BACKGROUND_POLL_INTERVAL_MS=5000,SYNC_READONLY_POLL_INTERVAL_MS=2000,SYNC_IDLE_AWAY_MS=20000,SYNC_OUTBOX_DEBOUNCE_MS=350,SYNC_OUTBOX_MAX_WAIT_MS=2500,SYNC_PUBLISH_DELAY_MS=250,SYNC_LEASE_SETTLE_MS=600,SYNC_EXIT_PUSH_TIMEOUT_MS=8000,SYNC_WORK_TRACKING_CAPTURE_INTERVAL_MS=60000,SYNC_LEASE_DURATION_MS=90000,SYNC_LEASE_RENEW_MS=30000,SYNC_CHECKPOINT_INTERVAL_COMMITS=8,SYNC_CLEANUP_INTERVAL_MS=30*60*1000,SYNC_CLEANUP_DELETE_BUDGET=200;
-let syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,syncRemoteLease=null,syncOwnLease=null,syncConflictBlocked=false,syncConflictResolutionWrite=false,syncInternalStateWrite=false,syncPointerInteraction=null,syncConflictNoticeAt=0,syncReadonlyNoticeAt=0,syncLeaseCleanupAt=0,syncLeaseHeartbeatTimer=0,syncLeaseHeartbeatPromise=null,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncRemoteCleanupAt=0,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=null,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncPresencePromise=null,syncPresenceTimer=0,syncPresenceTickPromise=null,syncReadonlyOverride=null,syncLastUserInputAt=Date.now(),syncWorkTrackingCapturedAt=0,syncAppUpdateInProgress=false;
+let syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,syncRemoteLease=null,syncOwnLease=null,syncConflictBlocked=false,syncConflictResolutionWrite=false,syncInternalStateWrite=false,syncPointerInteraction=null,syncConflictNoticeAt=0,syncReadonlyNoticeAt=0,syncLeaseCleanupAt=0,syncLeaseHeartbeatTimer=0,syncLeaseHeartbeatPromise=null,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncRemoteCleanupAt=0,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=null,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncPresencePromise=null,syncPresenceTimer=0,syncPresenceTickPromise=null,syncReadonlyOverride=null,syncLastUserInputAt=Date.now(),syncLastEditInputAt=0,syncWorkTrackingCapturedAt=0,syncAppUpdateInProgress=false;
 const syncFailureNotices=new Map();
 function syncErrorText(error){return String(error?.message||error||"")}
 function syncFailureKind(error){const text=syncErrorText(error);if(/sync-history-incomplete/.test(text))return "incomplete-history";if(/google-drive-reconnect-required|google-drive-not-connected|oauth-token-refresh.*invalid_grant/i.test(text))return "auth";if(/google-drive-quota-or-permission/i.test(text))return "quota-or-permission";if(/google-drive-rate-limited/i.test(text))return "rate-limit";if(/network-failed|server-unavailable|timed?out|connection|offline/i.test(text))return "network";if(/cloud-(?:payload|envelope|json-integrity)|sync-pages?-|json-tree-|sync-commit-(?:json|header|payload|client-profile)|download-integrity-mismatch|sync-change-(?:invalid|payload-invalid|not-writable-by-client)|sync-client-profile-unsupported|sync-entity-type-unsupported|sync-user-library-invalid/i.test(text))return "remote-integrity";return "other"}
@@ -6501,6 +6501,8 @@ async function syncEnsureLease(device,objects){const active=syncActiveLeases(obj
 function syncUploadBlocked(){return syncConflictBlocked||syncAutomaticFailureCount>0}
 async function syncPresenceAfterLocalWrite(){
   if(syncAppUpdateInProgress||syncUploadBlocked()||syncCloudKnownConnected!==true||navigator.onLine===false)return false;
+  // Only a write that follows the user's own input counts; automatic writes are committed without telling other devices to wait.
+  if(!syncUserEditingNow())return false;
   const pending=await SyncRepository.listPending();
   if(!pending.some(item=>item.entityType!=="work-tracking"))return false;
   if(syncRemoteLease&&!syncOwnPresence)return false;
@@ -6524,11 +6526,23 @@ async function syncReleasePresence(reason="quiet"){
   const presence=syncOwnPresence;syncOwnPresence=null;if(!presence)return false;
   try{await GoogleDriveService.deleteSyncObject(syncRemoteObjectRequest(presence));DiagnosticsLog.info("SYNC","presence-released",{reason});return true}catch(error){DiagnosticsLog.warn("SYNC","presence-release-deferred",{reason,expiresAtMs:Number(presence.expiresAtMs)||0,error});return false}
 }
-function syncPresenceDecision({now=Date.now(),presence=null,dirty=false,lastEditAt=0}={}){
+// Presence means "someone is typing here": lastEditAt is the last edit input (keys, pointer, paste), not
+// the last state write, so background writes (reminders, widgets, view restore) never keep other devices
+// read-only. Out of focus it is released as soon as everything is committed and never renewed.
+function syncPresenceDecision({now=Date.now(),presence=null,dirty=false,lastEditAt=0,focused=true}={}){
   if(!presence)return "none";
-  if(!dirty&&now-Number(lastEditAt||0)>=SyncCoordination.PRESENCE_IDLE_GRACE_MS)return "release";
-  if(Number(presence.expiresAtMs)-now<SyncCoordination.PRESENCE_RENEW_BEFORE_MS)return "renew";
+  const sinceEdit=now-Number(lastEditAt||0);
+  if(!dirty&&(!focused||sinceEdit>=SyncCoordination.PRESENCE_IDLE_GRACE_MS))return "release";
+  if(Number(presence.expiresAtMs)-now<SyncCoordination.PRESENCE_RENEW_BEFORE_MS&&focused&&sinceEdit<SyncCoordination.PRESENCE_TTL_MS)return "renew";
   return "keep"
+}
+const SYNC_PRESENCE_INPUT_WINDOW_MS=5000;
+function syncWindowFocused(){return !document.hidden&&document.hasFocus()}
+function syncUserEditingNow(now=Date.now()){return syncWindowFocused()&&now-syncLastEditInputAt<SYNC_PRESENCE_INPUT_WINDOW_MS}
+function syncInstallEditInputTracker(){
+  if(document.documentElement.dataset.syncEditInputTracker)return;document.documentElement.dataset.syncEditInputTracker="1";
+  const mark=()=>{syncLastEditInputAt=Date.now()};
+  for(const type of ["keydown","pointerdown","input","paste","cut","drop"])document.addEventListener(type,mark,{capture:true,passive:true})
 }
 // Unsent work-tracking seconds are device-generated, not an edit: they must not keep other devices read-only.
 async function syncLocalPendingForPresence(){return (await SyncRepository.listPending()).some(item=>item.entityType!=="work-tracking")}
@@ -6536,7 +6550,7 @@ async function syncPresenceTick(){
   if(!syncOwnPresence){if(!syncPresencePromise&&syncPresenceTimer){clearInterval(syncPresenceTimer);syncPresenceTimer=0}return "none"}
   // Unresolved conflicts or failing cycles: the edits will not arrive soon, so do not keep other devices read-only.
   if(syncUploadBlocked()){await syncReleasePresence(syncConflictBlocked?"sync-conflict":"sync-failing");return "release"}
-  const status=await SyncRepository.status(),dirty=status.stateSequence!==status.preparedSequence||!!syncOutboxTimer||(status.pending>0&&await syncLocalPendingForPresence()),decision=syncPresenceDecision({presence:syncOwnPresence,dirty,lastEditAt:syncLastLocalWriteAt});
+  const status=await SyncRepository.status(),dirty=status.stateSequence!==status.preparedSequence||!!syncOutboxTimer||(status.pending>0&&await syncLocalPendingForPresence()),decision=syncPresenceDecision({presence:syncOwnPresence,dirty,lastEditAt:syncLastEditInputAt,focused:syncWindowFocused()});
   if(decision==="release")await syncReleasePresence("quiet-and-published");else if(decision==="renew")await syncEnsurePresence("renew");
   return decision
 }
@@ -6765,7 +6779,7 @@ function syncInstallIdleReturnGuard(){
   document.addEventListener("keydown",onInput,true);document.addEventListener("pointerdown",onInput,true);
   document.addEventListener("wheel",()=>{syncLastUserInputAt=Date.now()},{capture:true,passive:true})
 }
-function startAutomaticSync(){syncInstallReadonlyGuard();syncInstallInteractionGuard();syncInstallIdleReturnGuard();scheduleAutomaticSync(2500);window.addEventListener("online",()=>{syncResetAutomaticBackoff("network-online");scheduleAutomaticSync(1000);if(syncReturnGate)syncCheckOnReturn(true)});window.addEventListener("blur",()=>syncMarkAway("blur"));window.addEventListener("focus",()=>{syncLastUserInputAt=Date.now();if(!document.hidden)syncHandleReturn()});document.addEventListener("visibilitychange",()=>{if(document.hidden)syncMarkAway("hidden");else{syncLastUserInputAt=Date.now();syncHandleReturn()}})}
+function startAutomaticSync(){syncInstallEditInputTracker();syncInstallReadonlyGuard();syncInstallInteractionGuard();syncInstallIdleReturnGuard();scheduleAutomaticSync(2500);window.addEventListener("online",()=>{syncResetAutomaticBackoff("network-online");scheduleAutomaticSync(1000);if(syncReturnGate)syncCheckOnReturn(true)});window.addEventListener("blur",()=>syncMarkAway("blur"));window.addEventListener("focus",()=>{syncLastUserInputAt=Date.now();if(!document.hidden)syncHandleReturn()});document.addEventListener("visibilitychange",()=>{if(document.hidden)syncMarkAway("hidden");else{syncLastUserInputAt=Date.now();syncHandleReturn()}})}
 async function assetImageDimensions(blob){const mime=String(blob?.type||"").toLowerCase();if(mime&&!mime.startsWith("image/"))return {width:null,height:null};if(typeof window.createImageBitmap==="function")try{const bitmap=await window.createImageBitmap(blob),result={width:Math.max(1,Math.floor(Number(bitmap.width)||0))||null,height:Math.max(1,Math.floor(Number(bitmap.height)||0))||null};bitmap.close?.();return result}catch{}return new Promise(resolve=>{const url=URL.createObjectURL(blob),image=new Image(),finish=result=>{URL.revokeObjectURL(url);resolve(result)};image.onload=()=>finish({width:Math.max(1,Math.floor(Number(image.naturalWidth)||0))||null,height:Math.max(1,Math.floor(Number(image.naturalHeight)||0))||null});image.onerror=()=>finish({width:null,height:null});image.src=url})}
 async function analyzeAssetContent(blob,knownSha256=""){const dimensions=await assetImageDimensions(blob);return {sha256:knownSha256||await assetSha256Hex(blob),width:dimensions.width,height:dimensions.height,byteSize:Number(blob.size)||0,mimeType:String(blob.type||""),analyzedAtMs:Date.now()}}
 async function mapWithConcurrency(items,limit,worker){const list=[...(items||[])],results=new Array(list.length),count=Math.min(list.length,Math.max(1,Math.floor(Number(limit)||1)));let next=0,failed=false,firstError;const run=async()=>{while(!failed&&next<list.length){const index=next++;try{results[index]=await worker(list[index],index)}catch(error){if(!failed){failed=true;firstError=error}}}};await Promise.all(Array.from({length:count},run));if(failed)throw firstError;return results}

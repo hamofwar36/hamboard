@@ -15,6 +15,27 @@ function context(extra={}){const ctx=vm.createContext({TextEncoder,Blob,console,
 const base=context(),safety=base.TransferSafety;
 const checks=[];
 async function check(name,task){await task();checks.push(name)}
+await check('automatic pull checks assets for changed documents and skips the Drive asset list for text-only changes',async()=>{
+  let metadataReads=0;
+  const snapshot={notes:[{id:'edited',images:['new-image']},{id:'unrelated',images:['old-image']}]};
+  const ctx=context({
+    Set,Map,Promise,
+    syncStateEntityMap:state=>new Map(state.notes.map(note=>[`note:${note.id}`,{entityType:'note',entityId:note.id,value:note}])),
+    syncStateAssetIds:state=>new Set(state.notes.flatMap(note=>note.images)),
+    syncChangeAssetIds:(change,ids)=>{for(const id of change.payload.images||[])ids.add(id);return ids},
+    assetMetadataRows:async()=>{metadataReads++;return []},
+    assetFilesystem:()=>({exists:async()=>false}),assetBaseDirectory:()=>'/assets',
+    assetRelativePath:id=>id,
+    mapWithConcurrency:async(items,limit,visit)=>Promise.all(items.map(visit))
+  });
+  vm.runInContext(functionSource('syncMissingStateAssets'),ctx);
+  const textOnly=await ctx.syncMissingStateAssets({notes:[{id:'edited',images:[]}]},new Set(['note:edited']));
+  assert.equal(textOnly.missing.length,0);assert.equal(metadataReads,0,'text edits do not scan local assets');
+  const changed=await ctx.syncMissingStateAssets(snapshot,new Set(['note:edited']));
+  assert.deepEqual([...changed.missing],['new-image'],'an unrelated missing image does not hold the note pull');
+  const importAll=await ctx.syncMissingStateAssets(snapshot);
+  assert.equal(importAll.missing.length,2,'full import still validates every referenced image')
+});
 function gate(){let resolve;const promise=new Promise(r=>{resolve=r});return {promise,resolve}}
 async function tick(){await new Promise(r=>setImmediate(r))}
 await check('JSON sizes above 16 MiB remain valid; malformed sizes are rejected',()=>{
@@ -86,25 +107,39 @@ await check('queued operations serialize and continue after failure',async()=>{
   hold.resolve();await observed;assert.equal(await second,'saved');await third;
   assert.deepEqual(events,['sync','backup','restore']);assert.equal(coordinator.busy,false);assert.equal(coordinator.active,null);
 });
-await check('actual automatic sync retains lock until lease release; backup and restore wait',async()=>{
-  const connection=gate(),lease=gate(),backup=gate(),events=[];
+await check('sync runs between backup items and restore waits for the whole backup',async()=>{
+  const coordinator=safety.createCoordinator(),first=gate(),events=[];
+  const backup=coordinator.runBackground('backup-upload',async segment=>{
+    await segment(async()=>{events.push('backup-1');await first.promise});
+    await tick();
+    await segment(async()=>events.push('backup-2'))
+  });
+  await tick();
+  const sync=coordinator.run('automatic-sync',async()=>events.push('sync'));
+  const restore=coordinator.run('restore',async()=>events.push('restore'));
+  first.resolve();await Promise.all([backup,sync,restore]);
+  assert.deepEqual(events,['backup-1','sync','backup-2','restore'])
+});
+await check('backup uploads yield between items while sync and restore retain exclusive transfers',async()=>{
+  const connection=gate(),lease=gate(),backupItem=gate(),events=[];let uploaded=0;
   const ctx=context({navigator:{onLine:true},
     DataTransferCoordinator:safety.createCoordinator(),
     syncAppUpdateInProgress:false,syncAutomaticPromise:null,syncManualImportPromise:null,syncReconnectImportPending:false,cloudBackupUploadPromise:null,
     SYNC_POLL_INTERVAL_MS:30000,syncAutomaticFailureCount:0,syncAutomaticRetryNotBefore:0,
-    GoogleDriveService:{status:async()=>{events.push('sync-start');await connection.promise;return {connected:false}}},
-    syncSetReadonly(){},syncReleaseOwnLease:async()=>{events.push('lease-release');await lease.promise},
+    GoogleDriveService:{status:async()=>{events.push('sync-start');await connection.promise;return {connected:false}},putObject:async()=>{events.push('backup-item');await backupItem.promise;return {}}},
+    syncSetReadonly(){},syncClearDocumentLocks(){},syncReleaseOwnLease:async()=>{events.push('lease-release');await lease.promise},
     syncResetAutomaticBackoff(){},scheduleAutomaticSync(){},syncDesiredPollInterval:()=>30000,
     DiagnosticsLog:{info(){},warn(){},error(){}},
-    CloudBackupRepository:{readRun:async()=>{events.push('backup-start');await backup.promise;return {id:'backup-1'}},progress:async()=>({total:1,uploaded:1}),complete:async()=>events.push('backup-complete')},
-    applyPreparedBackupExclusive:async()=>events.push('restore-start')
+    CloudBackupRepository:{readRun:async()=>({provider:'google-drive',image_quality:'balanced'}),progress:async()=>({total:1,uploaded}),complete:async()=>events.push('backup-complete'),nextRunnableItem:async()=>({item_key:'manifest',kind:'manifest',object_key:'backups/test/manifest.json',attempt_count:0}),markItemUploading:async()=>{},finalizeManifest:async()=>({manifestJson:'{}',manifestSha256:'0'.repeat(64),byteSize:2,summary:{}}),markItemUploaded:async()=>{uploaded=1},markItemFailed:async()=>{}},
+    cloudBackupErrorCode:()=>'',applyPreparedBackupExclusive:async()=>events.push('restore-start')
   });
   for(const name of ['runAutomaticSync','runCloudBackup','applyPreparedBackup'])vm.runInContext(functionSource(name),ctx);
   const sync=ctx.runAutomaticSync();await tick();const upload=ctx.runCloudBackup('backup-1');const restore=ctx.applyPreparedBackup({});
   await tick();assert.deepEqual(events,['sync-start']);
   connection.resolve();await tick();assert.deepEqual(events,['sync-start','lease-release']);
-  lease.resolve();await sync;await tick();assert.deepEqual(events,['sync-start','lease-release','backup-start']);
-  backup.resolve();await upload;await restore;assert.deepEqual(events,['sync-start','lease-release','backup-start','backup-complete','restore-start']);
+  lease.resolve();await sync;await tick();assert.deepEqual(events.slice(0,3),['sync-start','lease-release','backup-item']);
+  backupItem.resolve();await upload;await restore;
+  assert.ok(events.indexOf('restore-start')>events.indexOf('backup-item'));assert.ok(events.includes('backup-complete'))
 });
 await check('cloud restore keeps one lock across download and application',async()=>{
   const download=gate(),events=[],coordinator=safety.createCoordinator();

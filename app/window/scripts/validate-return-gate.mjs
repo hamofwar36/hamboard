@@ -22,7 +22,7 @@ assert.ok(constantsLine,"sync constants line");
 
 const LATENCY=40,LEASE_MS=100,CLEANUP_MS=800;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const REAL=["runAutomaticSync","syncCheckOnReturn","syncReturnProbe","syncCaptureWorkTracking","syncWorkTrackingCaptureDue","normalizeSyncWorkTracking","dataRecords","syncUpdateRemotePresence","syncCommitTopology","syncUserIdle","syncDesiredPollInterval","scheduleAutomaticSync","syncHideReturnGate","syncErrorText","syncFailureKind","syncFailureRetryDelay","syncPresenceDecision","syncPresenceTick","syncLocalPendingForPresence","startAutomaticSync","syncInstallIdleReturnGuard","syncMarkAway","syncHandleReturn","syncFinalPushBeforeExit","syncPrepareForAppUpdate","syncResumeAfterAppUpdateFailure","syncPreserveConflict","syncConflictJson","syncConflictMergeWorkTracking","syncUploadBlocked","syncPresenceAfterLocalWrite","syncWindowFocused","syncUserEditingNow","syncInstallEditInputTracker","syncIsDocumentChange","syncShouldBatchDeviceData"];
+const REAL=["runAutomaticSync","syncCheckOnReturn","syncReturnProbe","syncCaptureWorkTracking","syncWorkTrackingCaptureDue","normalizeSyncWorkTracking","dataRecords","syncUpdateRemotePresence","syncCommitTopology","syncUserIdle","syncDesiredPollInterval","scheduleAutomaticSync","syncHideReturnGate","syncErrorText","syncFailureKind","syncFailureRetryDelay","syncPresenceDecision","syncPresenceTick","syncLocalPendingForPresence","startAutomaticSync","syncInstallIdleReturnGuard","syncMarkAway","syncHandleReturn","syncFinalPushBeforeExit","syncPrepareForAppUpdate","syncResumeAfterAppUpdateFailure","syncPreserveConflict","syncConflictJson","syncConflictMergeWorkTracking","syncUploadBlocked","syncPresenceAfterLocalWrite","syncWindowFocused","syncUserEditingNow","syncInstallEditInputTracker","syncIsDocumentChange","syncShouldBatchDeviceData","syncCurrentDocumentLock","syncRefreshDocumentLock","syncClearDocumentLocks","syncNoticeDocumentLocked"];
 
 function createWorld(){
   const world={conflicts:[],objects:[{syncType:"commit",objectKey:"sync/commits/rev-0.json",revision:"rev-0",baseRevision:"",deviceId:"device-me",createdAtMs:"1",remoteObjectId:"f0"}],baseRevision:"rev-0",pending:[],events:[],gate:[],remoteApplied:false,seq:0,errors:[],workStart:Date.now(),checkpointUploads:true};
@@ -64,28 +64,29 @@ function createWorld(){
     syncCleanupRemoteStorage:async(state,objects,{reason,force}={})=>{if(reason==="steady-state"&&!force)return {skipped:"interval"};world.events.push("cleanup-start");await sleep(CLEANUP_MS);world.events.push("cleanup-end");return {}},
     syncSetReadonly:lease=>{ctx.syncRemoteLease=lease||null},
     syncShowReturnGate:(message,options)=>{ctx.syncReturnGate=true;world.gate.push({at:Date.now(),message,waiting:!!options?.waiting})},
+    syncSetNoteOpenGuard:()=>{},
     syncApplyAutomaticRebaseline:async()=>({blocked:"not-simulated"}),
     syncReadCommit:async object=>{await drive("read-commit");return {revision:object.revision,deviceId:object.deviceId,clientProfile:"desktop",changes:[{entityType:"note",entityId:"n1",operation:"upsert",payload:{id:"n1",title:"PC2"}}]}},
     syncEntityKey:(type,id)=>`${type}:${id}`,syncTransientEditReason:()=>"",syncEmptyRemoteState:()=>({schemaVersion:1}),
-    syncApplyChanges:value=>value,syncChangedEntityKeys:()=>new Set(["note:n1"]),syncEnsureStateAssets:async()=>{},syncAdoptMergedState:()=>{},
+    syncApplyChanges:value=>value,syncChangedEntityKeys:()=>new Set(["note:n1"]),syncMissingStateAssets:async()=>({referenced:0,missing:[]}),syncEnsureStateAssets:async()=>{},syncAdoptMergedState:()=>{},
     syncApplyWorkTracking:async()=>{},syncInvalidateChangedHistories:()=>{},syncRefreshAfterRemoteApply:()=>({rendered:true}),
     syncNotifyFailure:()=>{},syncResetAutomaticBackoff:()=>{},
     syncInstallReadonlyGuard:()=>{},syncInstallInteractionGuard:()=>{},syncFlushOnLeave:reason=>world.events.push(`flush:${reason}`),
-    syncReleasePresence:async reason=>{world.events.push(`presence-release:${reason}`)}
+    syncReleasePresence:async reason=>{world.events.push(`presence-release:${reason}`)},
+    syncCurrentDocumentKey:()=>world.currentDocument||""
   });
   vm.runInContext(safetySource,ctx);vm.runInContext(modelSource,ctx);vm.runInContext(coordinationSource,ctx);
   vm.runInContext("var TransferSafety=HamboardTransferSafety,DataTransferCoordinator=TransferSafety.createCoordinator(),SyncStateModel=HamboardSyncStateModel,SyncCoordination=HamboardSyncCoordination,SYNC_CLIENT_PROFILES=SyncStateModel.CLIENT_PROFILES",ctx);
   vm.runInContext(constantsLine.replace(/^const /,"var "),ctx);
-  vm.runInContext("var syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,cloudBackupUploadPromise=null,syncRemoteLease=null,syncConflictBlocked=false,syncInternalStateWrite=false,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=true,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncReadonlyOverride=null,syncLastUserInputAt=Date.now(),syncLastEditInputAt=0,SYNC_PRESENCE_INPUT_WINDOW_MS=5000,SYNC_DEVICE_DATA_PUBLISH_INTERVAL_MS=600000,syncDeviceDataPublishedAt=0,syncWorkTrackingCapturedAt=0,syncOutboxTimer=0,syncLastLocalWriteAt=0,syncPresenceTimer=0,syncPresencePromise=null,syncAppUpdateInProgress=false,syncAwaySince=0,syncOutboxFirstRequestAt=0,syncLocalWriteSincePrepare=false,syncOwnLease=null,syncConflictNoticeAt=0,SYNC_RETURN_GATE_SHORT_AWAY_MS=3000",ctx);
+  vm.runInContext("var syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,cloudBackupUploadPromise=null,syncRemoteLease=null,syncConflictBlocked=false,syncInternalStateWrite=false,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncReturnGate=false,syncReturnGateRun=0,syncNoteOpenGuardId='',syncWindowWasAway=false,syncCloudKnownConnected=true,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncRemoteDocLocks=new Map(),syncReadonlyNoticeAt=0,syncLastUserInputAt=Date.now(),syncLastEditInputAt=0,SYNC_PRESENCE_INPUT_WINDOW_MS=5000,SYNC_DEVICE_DATA_PUBLISH_INTERVAL_MS=600000,syncDeviceDataPublishedAt=0,syncWorkTrackingCapturedAt=0,syncOutboxTimer=0,syncLastLocalWriteAt=0,syncPresenceTimer=0,syncPresencePromise=null,syncAppUpdateInProgress=false,syncAwaySince=0,syncOutboxFirstRequestAt=0,syncLocalWriteSincePrepare=false,syncOwnLease=null,syncConflictNoticeAt=0,SYNC_RETURN_GATE_SHORT_AWAY_MS=3000",ctx);
   for(const name of REAL){const source=functionSource(name);if(source)vm.runInContext(source,ctx)}
   ctx.SYNC_READONLY_POLL_INTERVAL_MS=30;
   return {world,ctx}
 }
 async function settle(ctx){for(let i=0;i<400&&ctx.syncAutomaticPromise;i++)await sleep(10);if(ctx.syncAutomaticTimer){clearTimeout(ctx.syncAutomaticTimer);ctx.syncAutomaticTimer=0;ctx.syncAutomaticTimerDueAt=0}}
 async function returnToWindow(ctx,timeout=6000){
-  ctx.syncWindowWasAway=true;const started=Date.now();ctx.syncCheckOnReturn();
-  while(ctx.syncReturnGate&&Date.now()-started<timeout)await sleep(5);
-  assert.equal(ctx.syncReturnGate,false,"gate lifted");return Date.now()-started
+  ctx.syncWindowWasAway=true;const started=Date.now();await ctx.syncCheckOnReturn();
+  assert.equal(ctx.syncReturnGate,false,"return check finished");return Date.now()-started
 }
 const commitsFrom=(world,device)=>world.objects.filter(item=>item.syncType==="commit"&&item.deviceId===device&&item.revision!=="rev-0").length;
 const checks=[],failures=[];async function check(name,run){try{await run();checks.push(name);console.log("  PASS",name)}catch(error){failures.push(name);console.log("  FAIL",name,"\n       ",String(error?.message||error).split("\n")[0])}}
@@ -114,34 +115,31 @@ await check("returning while this device is in a long cleanup does not wait for 
   await cycle;await settle(ctx)
 });
 
-await check("another device's new commit is applied before the gate lifts (hand-off requirement kept)",async()=>{
+await check("another device's new commit is applied before the return check finishes",async()=>{
   const {world,ctx}=createWorld();
   world.objects.push({syncType:"commit",objectKey:"sync/commits/rev-pc2.json",revision:"rev-pc2",baseRevision:"rev-0",deviceId:"device-pc2",createdAtMs:String(Date.now()),remoteObjectId:"fx"});
-  world.events.length=0;
-  ctx.syncWindowWasAway=true;ctx.syncCheckOnReturn();
-  let appliedWhenLifted=null;const started=Date.now();
-  while(Date.now()-started<6000){if(!ctx.syncReturnGate){appliedWhenLifted=world.remoteApplied;break}await sleep(2)}
-  assert.equal(appliedWhenLifted,true,"remote change applied before editing is allowed");
+  world.events.length=0;await returnToWindow(ctx);
+  assert.equal(world.remoteApplied,true,"remote change applied before the check finishes");
   const gateEvents=world.events.slice(0,world.events.indexOf("remote-applied")+1);
-  assert.ok(!gateEvents.includes("lease"),"pull for the gate does not take the upload lease");
+  assert.ok(!gateEvents.includes("lease"),"a read-only pull never takes the upload lease");await settle(ctx)
+});
+
+await check("opening a note keeps its editor blocked until the remote revision is applied",async()=>{
+  const {world,ctx}=createWorld();let noteBlocked=false;
+  ctx.syncSetNoteOpenGuard=(noteId="")=>{noteBlocked=!!noteId};
+  world.objects.push({syncType:"commit",objectKey:"sync/commits/rev-phone.json",revision:"rev-phone",baseRevision:"rev-0",deviceId:"device-phone",createdAtMs:"2",remoteObjectId:"f-phone"});
+  const checking=ctx.syncCheckOnReturn(true,{noteId:"n1"});
+  assert.equal(noteBlocked,true,"the note locks before the Drive query starts");
+  await checking;assert.equal(world.remoteApplied,true);assert.equal(noteBlocked,false,"the note unlocks after the pull");
   await settle(ctx)
 });
 
-await check("while another device is editing, the gate waits without uploading, then applies its commit",async()=>{
+await check("an obsolete editing presence does not delay a new commit",async()=>{
   const {world,ctx}=createWorld();
-  await ctx.syncCaptureWorkTracking();
   const now=Date.now(),presence={syncType:"lease",objectKey:"sync/leases/presence-device-pc2-ab.json",revision:"presence-device-pc2-ab",deviceId:"device-pc2",displayName:"Windows PC",createdAtMs:String(now-1000),expiresAtMs:String(now+45000),remoteObjectId:"fp"};
-  world.objects.push(presence);world.events.length=0;
-  ctx.syncWindowWasAway=true;ctx.syncCheckOnReturn();
-  for(let i=0;i<200&&!world.gate.some(item=>item.waiting);i++)await sleep(5);
-  assert.ok(world.gate.some(item=>item.waiting),"waiting message shown");
-  await sleep(150);
-  assert.ok(!world.events.includes("lease")&&!world.events.some(item=>item.startsWith("put:")),"no uploads while waiting");
-  world.objects=world.objects.filter(item=>item!==presence);
+  world.objects.push(presence);await returnToWindow(ctx);assert.equal(world.gate.length,0);
   world.objects.push({syncType:"commit",objectKey:"sync/commits/rev-pc2.json",revision:"rev-pc2",baseRevision:"rev-0",deviceId:"device-pc2",createdAtMs:String(Date.now()),remoteObjectId:"fx"});
-  const started=Date.now();while(ctx.syncReturnGate&&Date.now()-started<6000)await sleep(5);
-  assert.equal(ctx.syncReturnGate,false);assert.equal(world.remoteApplied,true);
-  await settle(ctx)
+  await returnToWindow(ctx);assert.equal(world.remoteApplied,true);await settle(ctx)
 });
 
 await check("work-tracking is captured at most once a minute, so it cannot drive back-to-back upload cycles",async()=>{
@@ -175,7 +173,7 @@ await check("an editing presence is released even while work-tracking changes ke
 });
 
 await check("background writes never mark this device as editing; typing does, and leaving the window releases it",async()=>{
-  const {world,ctx}=createWorld();let published=0,released=[];
+  const {world,ctx}=createWorld();let published=0,released=[];world.currentDocument="note:n9";
   ctx.syncEnsurePresence=async()=>{published++;ctx.syncOwnPresence={objectKey:"sync/leases/presence-me.json",expiresAtMs:Date.now()+40000,sessionStartedAtMs:Date.now()};return ctx.syncOwnPresence};
   ctx.syncStartPresenceTicker=()=>{};ctx.syncReleasePresence=async reason=>{released.push(reason);ctx.syncOwnPresence=null};
   world.pending.push({entityType:"note",entityId:"n9",operation:"upsert",payloadJson:"{}",payloadSha256:"0".repeat(64)});
@@ -232,12 +230,13 @@ await check("the first click after returning does not start a second check (idle
   ctx.syncLastUserInputAt=Date.now()-100000;
   win.fire("blur");assert.ok(world.events.includes("flush:blur"),"leaving publishes");
   ctx.syncAwaySince=Date.now()-10000;world.events.length=0;
-  win.fire("focus");assert.equal(ctx.syncReturnGate,true,"switching back to the window still runs the return check");
-  for(let i=0;i<400&&ctx.syncReturnGate;i++)await sleep(5);
-  assert.equal(ctx.syncReturnGate,false);
+  win.fire("focus");
+  for(let i=0;i<200&&!world.events.includes("list:topology");i++)await sleep(5);
+  assert.ok(world.events.includes("list:topology"),"return starts a cloud check");
+  assert.equal(ctx.syncReturnGate,false,"a clean check does not block editing");
+  const before=world.events.filter(event=>event==="log:idle-return-check").length;
   doc.fire("pointerdown");await sleep(20);
-  assert.ok(!world.events.includes("log:idle-return-check"),"no second check on the first click");
-  assert.equal(ctx.syncReturnGate,false);
+  assert.equal(world.events.filter(event=>event==="log:idle-return-check").length,before,"first click does not start another gated check");
   await settle(ctx)
 });
 
@@ -313,6 +312,40 @@ await check("while uploads are blocked by a conflict or failures, this device do
   assert.equal(await ctx.syncPresenceTick(),"release");assert.equal(released,"sync-failing");
   let published=false;ctx.syncEnsurePresence=async()=>{published=true};
   assert.equal(await ctx.syncPresenceAfterLocalWrite(),false);assert.equal(published,false,"no new presence while blocked")
+});
+
+await check("a PC left open in front: the first key after 20 s idle checks the cloud first (and is not typed into a stale note)",async()=>{
+  const {world,ctx}=createWorld();
+  const hub=()=>{const handlers={};return {handlers,addEventListener(type,fn){(handlers[type]=handlers[type]||[]).push(fn)},fire(type,event={}){const full={type,target:null,defaultPrevented:false,preventDefault(){this.defaultPrevented=true},stopPropagation(){},...event};for(const fn of handlers[type]||[])fn(full);return full}}};
+  const win=hub(),doc=hub();win.crypto=globalThis.crypto;Object.assign(doc,{hidden:false,hasFocus:()=>true,documentElement:{dataset:{}}});
+  ctx.window=win;ctx.document=doc;ctx.startAutomaticSync();await settle(ctx);
+  assert.equal(ctx.syncDesiredPollInterval(),ctx.SYNC_POLL_INTERVAL_MS,"focused: 5 s polling");
+  ctx.syncLastUserInputAt=Date.now()-25000;
+  assert.equal(ctx.syncDesiredPollInterval(),ctx.SYNC_POLL_INTERVAL_MS,"still 5 s after 25 s without input while the window is in front");
+  world.objects.push({syncType:"commit",objectKey:"sync/commits/rev-phone.json",revision:"rev-phone",baseRevision:"rev-0",deviceId:"device-phone",createdAtMs:String(Date.now()),remoteObjectId:"f-phone"});
+  world.events.length=0;
+  const key=doc.fire("keydown",{target:{closest:selector=>/contenteditable/.test(selector)?{}:null}});
+  assert.equal(key.defaultPrevented,true,"the first key is held back while the check runs");
+  for(let i=0;i<300&&!world.remoteApplied;i++)await sleep(5);
+  assert.ok(world.events.includes("log:idle-return-check"),"the idle return check ran");
+  assert.equal(world.remoteApplied,true,"the phone's edit is applied");
+  ctx.syncLastUserInputAt=Date.now();world.events.length=0;doc.fire("keydown",{target:null});await sleep(10);
+  assert.ok(!world.events.includes("log:idle-return-check"),"normal typing is not interrupted");
+  await settle(ctx)
+});
+
+await check("another device editing one note does not hold the return check or the rest of the app",async()=>{
+  const {world,ctx}=createWorld();world.currentDocument="project:p1";
+  const now=Date.now();
+  world.objects.push({syncType:"lease",objectKey:"sync/leases/presence-device-phone-ab.json",revision:"presence-device-phone-ab",deviceId:"device-phone",displayName:"휴대폰",createdAtMs:String(now-1000),expiresAtMs:String(now+45000),assetId:"note:n1",remoteObjectId:"fp"});
+  world.objects.push(remoteNoteCommit());
+  const gateMs=await returnToWindow(ctx);
+  assert.ok(gateMs<1000,`return check took ${gateMs}ms`);assert.equal(world.remoteApplied,true,"the phone's committed edits are applied");
+  assert.ok(!world.gate.some(item=>item.waiting),"no 'waiting for the other device' gate");
+  assert.deepEqual([...ctx.syncRemoteDocLocks.keys()],["note:n1"],"the note is known to be locked");
+  assert.equal(ctx.syncRemoteLease,null,"the open project is editable");
+  world.currentDocument="note:n1";assert.equal(ctx.syncRefreshDocumentLock()?.deviceId,"device-phone","opening the note shows it read-only");
+  await settle(ctx)
 });
 
 if(failures.length){console.log(`Return gate QA failed (${failures.length} of ${checks.length+failures.length}).`);process.exit(1)}

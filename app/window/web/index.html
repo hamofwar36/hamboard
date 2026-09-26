@@ -4689,7 +4689,7 @@ function showView(name,historyMode="push"){
 let lastMainNavigationKey="";
 function mainNavigationKey(name){const view=String(name||currentViewName()||"home");if(view==="note")return `note:${currentNoteId||""}`;if(view==="mindmap")return `mindmap:${currentMindmapId||""}`;if(view==="board"||view==="detail")return `${view}:${currentProjectId||""}:${currentEpisodeId||""}:${(detailPath||[]).join("/")}`;return view}
 const showViewWithoutScrollReset=showView;
-showView=function(name,historyMode="push"){const nextKey=mainNavigationKey(String(name||"home")),changed=!!lastMainNavigationKey&&lastMainNavigationKey!==nextKey,result=showViewWithoutScrollReset(name,historyMode);lastMainNavigationKey=mainNavigationKey(currentViewName());if(changed&&!splitWorkspace.enabled){const main=document.querySelector(".main");if(main){main.scrollTop=0;main.scrollLeft=0}document.querySelector(".view.active")?.querySelectorAll?.("#noteEditor,#noteSourceEditor").forEach(element=>{element.scrollTop=0;element.scrollLeft=0})}return result};
+showView=function(name,historyMode="push"){const nextKey=mainNavigationKey(String(name||"home")),changed=!!lastMainNavigationKey&&lastMainNavigationKey!==nextKey,result=showViewWithoutScrollReset(name,historyMode);lastMainNavigationKey=mainNavigationKey(currentViewName());if(typeof syncRefreshDocumentLock==="function")syncRefreshDocumentLock();if(changed&&!splitWorkspace.enabled){const main=document.querySelector(".main");if(main){main.scrollTop=0;main.scrollLeft=0}document.querySelector(".view.active")?.querySelectorAll?.("#noteEditor,#noteSourceEditor").forEach(element=>{element.scrollTop=0;element.scrollLeft=0})}return result};
 function confirmEditorLeave(){return true}
 function sameId(a,b){return a!=null&&b!=null&&String(a)===String(b)}
 let entityContextActions=null;
@@ -5530,7 +5530,7 @@ function replaceNoteEditorHtml(editor,html){if(!editor)return;const reusable=new
 function renderNote(){const n=currentNote();if(!n){renderHome();return}const noteGeneration=++noteRenderGeneration,noteId=String(n.id),title=$("#noteTitleText"),subtitle=$("#noteSubtitleText"),editor=$("#noteEditor");if(title&&subtitle){title.textContent=n.title||"제목 없는 노트";bindEntityContext(title,()=>noteEntityActions(n.id));subtitle.textContent=n.subtitle||"";subtitle.hidden=!n.subtitle;bindInlineTextEdit(subtitle,n,"subtitle",{fallback:"",afterSave:()=>{renderFolders()},onStart:()=>{subtitle.removeAttribute("aria-placeholder")},onFinish:()=>{subtitle.removeAttribute("aria-placeholder");subtitle.textContent=n.subtitle||"";subtitle.hidden=!n.subtitle}});bindInlineTextEdit(title,n,"title",{required:true,fallback:"제목 없는 노트",beforeSave:()=>syncWorkDeadline("note",n),afterSave:()=>{renderFolders()},onStart:()=>{subtitle.textContent=n.subtitle||"부제 추가";subtitle.toggleAttribute("aria-placeholder",!n.subtitle);subtitle.hidden=false},onFinish:()=>{requestAnimationFrame(()=>{if(!subtitle.isContentEditable&&!subtitle.matches(":hover")){subtitle.removeAttribute("aria-placeholder");subtitle.textContent=n.subtitle||"";subtitle.hidden=!n.subtitle}})}})};renderNoteToolButtons("#noteTools");renderBacklinkTrigger($("#noteTools"),`n:${n.id}`);editor.style.zoom=String(Math.min(1.6,Math.max(.7,Number(n.viewZoom)||1)));replaceNoteEditorHtml(editor,sanitizeNoteHtml(n.content||""));enhanceNoteFolds();safeRunAsync("노트 본문 이미지 표시",()=>hydrateNoteImages(noteGeneration,noteId));applyNoteDefaultStyle();noteHasUncommittedChanges=false;ensureVersionBaseline(n,{content:n.content||""},"note");noteSavedRange=null;bindNoteEditor();$("#noteExportButton").onclick=()=>openNoteExportModal(n.id);$("#noteCorrectionMerge").onclick=()=>openNoteCorrectionMerge();$("#noteVersionHistory").onclick=()=>openVersionHistoryModal(n,"note");updateNoteCharacterCount();requestAnimationFrame(()=>refreshFieldLinkEditors($("#noteView")))}
 const renderNoteBase=renderNote;
 renderNote=function(){noteEditorMode="rich";noteSourceDirty=false;noteSourceNoteId=String(currentNoteId||"");const result=renderNoteBase();const source=$("#noteSourceEditor"),note=currentNote();if(source)source.value=formatNoteHtmlSource(note?.content||"");bindNoteEditorMode();return result};
-function openNote(id){if(splitActivateExistingDocument("note",id))return;if(!confirmEditorLeave())return;if(splitWorkspace.enabled){splitCapturePaneRuntime(splitWorkspace.active);splitCommitCurrentLive()}if(detailDirty)flushDetailAutosave();if(workToolOverlayIsOpen())closeWorkToolOverlay();if(currentViewName()==="note")saveCurrentNoteFromEditor(true);documentHistoryBreak();currentNoteId=String(id);currentProjectId=null;currentEpisodeId=null;currentMindmapId=null;const n=currentNote();if(!n){renderHome();return}if(n.folderId)expandFolderAncestors(n.folderId);renderNote();showView("note");renderFolders()}
+function openNote(id){if(splitActivateExistingDocument("note",id)){syncCheckOnReturn(true,{noteId:id});return}if(!confirmEditorLeave())return;if(splitWorkspace.enabled){splitCapturePaneRuntime(splitWorkspace.active);splitCommitCurrentLive()}if(detailDirty)flushDetailAutosave();if(workToolOverlayIsOpen())closeWorkToolOverlay();if(currentViewName()==="note")saveCurrentNoteFromEditor(true);documentHistoryBreak();currentNoteId=String(id);currentProjectId=null;currentEpisodeId=null;currentMindmapId=null;const n=currentNote();if(!n){renderHome();return}if(n.folderId)expandFolderAncestors(n.folderId);renderNote();showView("note");renderFolders();syncCheckOnReturn(true,{noteId:id})}
 function deleteNoteById(id){const n=noteById(id);if(!n)return;const index=state.notes.findIndex(x=>sameId(x.id,id)),trashId=pushTrash("note",n.title||"제목 없는 노트",n,{index});state.notes.splice(index,1);removeWorkDeadlineEntries("note",id);if(sameId(currentNoteId,id))currentNoteId=null;persistState();closeModal();renderHome();toast("노트를 휴지통으로 옮겼습니다",{label:"취소",run:()=>restoreTrashItem(trashId)})}
 function openNoteModal(editId=null){
   const n=editId?noteById(editId):null;if(!n)return;
@@ -6249,8 +6249,8 @@ const SyncAssetRepository={
 function scheduleSyncOutboxPreparation(delay=SYNC_OUTBOX_DEBOUNCE_MS){const now=Date.now();if(!syncOutboxFirstRequestAt)syncOutboxFirstRequestAt=now;const wait=Math.max(0,Math.min(Math.max(0,Number(delay)||0),SYNC_OUTBOX_MAX_WAIT_MS-(now-syncOutboxFirstRequestAt)));if(syncOutboxTimer)clearTimeout(syncOutboxTimer);syncOutboxTimer=setTimeout(()=>{syncOutboxTimer=0;syncOutboxFirstRequestAt=0;const localWrite=syncLocalWriteSincePrepare;syncLocalWriteSincePrepare=false;safeRunAsync("동기화 변경 목록 준비",async()=>{const result=await SyncRepository.prepareOutbox();if(localWrite){await syncPresenceAfterLocalWrite().catch(error=>DiagnosticsLog.warn("SYNC","presence-after-write-failed",{error}));scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS)}return result})},wait)}
 function syncMarkLocalWrite(){if(syncInternalStateWrite)return false;syncLocalWriteSincePrepare=true;syncLastLocalWriteAt=Date.now();return true}
 const SYNC_ASSET_DESCRIPTOR_GRACE_MS=24*60*60*1000;
-const SYNC_PROTOCOL_VERSION=1,SYNC_POLL_INTERVAL_MS=10000,SYNC_BACKGROUND_POLL_INTERVAL_MS=5000,SYNC_READONLY_POLL_INTERVAL_MS=2000,SYNC_IDLE_AWAY_MS=20000,SYNC_OUTBOX_DEBOUNCE_MS=350,SYNC_OUTBOX_MAX_WAIT_MS=2500,SYNC_PUBLISH_DELAY_MS=250,SYNC_LEASE_SETTLE_MS=600,SYNC_EXIT_PUSH_TIMEOUT_MS=8000,SYNC_WORK_TRACKING_CAPTURE_INTERVAL_MS=60000,SYNC_LEASE_DURATION_MS=90000,SYNC_LEASE_RENEW_MS=30000,SYNC_CHECKPOINT_INTERVAL_COMMITS=8,SYNC_CLEANUP_INTERVAL_MS=30*60*1000,SYNC_CLEANUP_DELETE_BUDGET=200;
-let syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,syncRemoteLease=null,syncOwnLease=null,syncConflictBlocked=false,syncConflictResolutionWrite=false,syncInternalStateWrite=false,syncPointerInteraction=null,syncConflictNoticeAt=0,syncReadonlyNoticeAt=0,syncLeaseCleanupAt=0,syncLeaseHeartbeatTimer=0,syncLeaseHeartbeatPromise=null,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncRemoteCleanupAt=0,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=null,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncPresencePromise=null,syncPresenceTimer=0,syncPresenceTickPromise=null,syncReadonlyOverride=null,syncLastUserInputAt=Date.now(),syncLastEditInputAt=0,syncWorkTrackingCapturedAt=0,syncAppUpdateInProgress=false;
+const SYNC_PROTOCOL_VERSION=1,SYNC_POLL_INTERVAL_MS=5000,SYNC_BACKGROUND_POLL_INTERVAL_MS=30000,SYNC_READONLY_POLL_INTERVAL_MS=5000,SYNC_IDLE_AWAY_MS=20000,SYNC_OUTBOX_DEBOUNCE_MS=250,SYNC_OUTBOX_MAX_WAIT_MS=1500,SYNC_PUBLISH_DELAY_MS=250,SYNC_LEASE_SETTLE_MS=600,SYNC_EXIT_PUSH_TIMEOUT_MS=8000,SYNC_WORK_TRACKING_CAPTURE_INTERVAL_MS=60000,SYNC_LEASE_DURATION_MS=90000,SYNC_LEASE_RENEW_MS=30000,SYNC_CHECKPOINT_INTERVAL_COMMITS=8,SYNC_CLEANUP_INTERVAL_MS=30*60*1000,SYNC_CLEANUP_DELETE_BUDGET=200;
+let syncAutomaticTimer=0,syncAutomaticTimerDueAt=0,syncAutomaticPromise=null,syncManualImportPromise=null,syncReconnectImportPending=false,syncRemoteLease=null,syncOwnLease=null,syncConflictBlocked=false,syncConflictResolutionWrite=false,syncInternalStateWrite=false,syncPointerInteraction=null,syncConflictNoticeAt=0,syncReadonlyNoticeAt=0,syncLeaseCleanupAt=0,syncLeaseHeartbeatTimer=0,syncLeaseHeartbeatPromise=null,syncAutomaticFailureCount=0,syncAutomaticRetryNotBefore=0,syncRejectedRemoteCommit=null,syncRemoteCleanupAt=0,syncReturnGate=false,syncReturnGateRun=0,syncWindowWasAway=false,syncCloudKnownConnected=null,syncAutomaticRerunRequested=false,syncOwnPresence=null,syncPresencePromise=null,syncPresenceTimer=0,syncPresenceTickPromise=null,syncRemoteDocLocks=new Map(),syncLastUserInputAt=Date.now(),syncLastEditInputAt=0,syncWorkTrackingCapturedAt=0,syncAppUpdateInProgress=false;
 const syncFailureNotices=new Map();
 function syncErrorText(error){return String(error?.message||error||"")}
 function syncFailureKind(error){const text=syncErrorText(error);if(/sync-history-incomplete/.test(text))return "incomplete-history";if(/google-drive-reconnect-required|google-drive-not-connected|oauth-token-refresh.*invalid_grant/i.test(text))return "auth";if(/google-drive-quota-or-permission/i.test(text))return "quota-or-permission";if(/google-drive-rate-limited/i.test(text))return "rate-limit";if(/network-failed|server-unavailable|timed?out|connection|offline/i.test(text))return "network";if(/cloud-(?:payload|envelope|json-integrity)|sync-pages?-|json-tree-|sync-commit-(?:json|header|payload|client-profile)|download-integrity-mismatch|sync-change-(?:invalid|payload-invalid|not-writable-by-client)|sync-client-profile-unsupported|sync-entity-type-unsupported|sync-user-library-invalid/i.test(text))return "remote-integrity";return "other"}
@@ -6265,14 +6265,17 @@ SyncRepository.acceptBaseline=async function(expectedStateSequence,revision,base
 SyncRepository.applyRemoteState=async function(expectedStateSequence,revision,nextState,baseState,expectedGeneration=StateRepository.changeGeneration){await this.ready();const invoke=window.__TAURI__?.core?.invoke;if(!invoke)throw new Error("sync-native-command-unavailable");const operation=StateRepository.writeQueue.catch(()=>{}).then(()=>{if(StateRepository.changeGeneration!==expectedGeneration)throw new Error("sync-local-state-changed-before-native-apply");return invoke("sync_apply_remote_state",{expectedStateSequence:Number(expectedStateSequence)||0,revision:String(revision||""),stateJson:JSON.stringify(nextState),baseStateJson:JSON.stringify(baseState)})});StateRepository.writeQueue=operation.catch(()=>{});return operation}
 function syncEntityKey(type,id){return `${String(type||"")}:${String(id||"")}`}
 function syncStateComparable(snapshot,profile=SYNC_CLIENT_PROFILES.desktop){return JSON.stringify([...syncStateEntityMap(snapshot,profile).entries()].map(([key,row])=>[key,row.value]))}
+// Only a write that changes a document another device is editing is refused (as a whole, so a move to
+// the trash and similar multi-entity actions stay consistent). Everything else stays editable.
 function syncGuardStateWrite(value){
   if(backupRestoreBlocksWrites)return false;
   if(syncConflictResolutionWrite||syncInternalStateWrite)return true;
-  if(!syncRemoteLease)return true;
-  const stored=StateRepository.snapshot(false);if(syncStateComparable(stored)===syncStateComparable(value))return true;
+  if(!syncRemoteDocLocks.size)return true;
+  const stored=StateRepository.snapshot(false),blocked=[...syncChangedEntityKeys(stored||INITIAL_STATE,value)].filter(key=>syncRemoteDocLocks.has(key));if(!blocked.length)return true;
+  const lock=syncRemoteDocLocks.get(blocked[0]);
   state=readState(cloneData(stored||INITIAL_STATE));
-  if(Date.now()-syncReadonlyNoticeAt>2500){syncReadonlyNoticeAt=Date.now();toast("다른 기기가 편집 중이라 현재는 읽기 전용입니다")}
-  setTimeout(syncRenderCurrentState,0);DiagnosticsLog.warn("SYNC","readonly-write-blocked",{stage:"state-repository",remoteDeviceId:String(syncRemoteLease.deviceId||"")});return false
+  syncNoticeDocumentLocked(lock);
+  setTimeout(syncRenderCurrentState,0);DiagnosticsLog.warn("SYNC","readonly-write-blocked",{stage:"state-repository",documents:blocked.slice(0,6),remoteDeviceId:String(lock?.deviceId||"")});return false
 }
 function syncEmptyRemoteState(localState,profile=SYNC_CLIENT_PROFILES.desktop){profile=syncClientProfile(profile);const empty=cloneData(localState||INITIAL_STATE);for(const [,field] of profile.collections)empty[field]=[];if(profile.userLibrary){empty.tagLibrary=[];empty.favorites=[]}if(profile.utilityLibrary)empty.utilities={};if(profile.workTracking)empty.workTrackingSync={programs:[],daily:[]};if(profile.workspace){empty.homeWidgets=[];empty.homeWidgetPositions={};empty.homeScheduleWidget={enabled:false,range:"week",size:"1x1"};empty.homeDdayWidget={eventId:""};empty.collapsedFolderIds=[];empty.newsReadIds=[]}return empty}
 function syncApplyChanges(snapshot,changes=[],profile=SYNC_CLIENT_PROFILES.desktop){
@@ -6289,6 +6292,7 @@ function syncTransientEditReason(remoteKeys=new Set()){
   if(!document.hasFocus()||syncReturnGate)return "";
   const active=document.activeElement,activeEditable=!!active&&(active.matches?.(editableSelector)||!!active.closest?.("[contenteditable='true']"));if(!activeEditable)return "";
   const liveKey=splitDocumentKey(sessionViewSnapshot(currentViewName()));if(!liveKey)return "active-view-editor";
+  if(syncRemoteDocLocks.has(liveKey))return "";
   return remoteKeys.has(liveKey)?"active-document-editor":""
 }
 function syncAdoptMergedState(merged,changedKeys=new Set(),preservedLocalKeys=new Set(),profile=SYNC_CLIENT_PROFILES.desktop){
@@ -6395,13 +6399,20 @@ async function syncMergeRemoteHead(current,remote,runtime,{remoteOwners=new Map(
   const merged=syncApplyChanges(current,remoteChanges),changedKeys=syncChangedEntityKeys(current,merged);
   return {merged,changedKeys,remoteChanges,conflicts,remoteDeletes,localOnlyPreserved,freshRebaseline}
 }
-async function syncEnsureStateAssets(snapshot,objects,onProgress=()=>{}){
-  const ids=[...syncStateAssetIds(snapshot)],rows=await assetMetadataRows(),byId=new Map(rows.map(row=>[String(row.id),row])),fs=assetFilesystem(),baseDir=assetBaseDirectory();
-  const missing=(await mapWithConcurrency(ids,4,async id=>{const row=byId.get(id);if(!row)return id;try{return await fs.exists(String(row.relative_path||assetRelativePath(id)),{baseDir})?null:id}catch{return id}})).filter(Boolean);
-  if(!missing.length){onProgress(82);return {referenced:ids.length,downloaded:0,unresolved:[]}}
+async function syncMissingStateAssets(snapshot,changedKeys=null){
+  const ids=changedKeys===null?syncStateAssetIds(snapshot):new Set(),entities=changedKeys===null?null:syncStateEntityMap(snapshot);
+  if(changedKeys!==null)for(const key of changedKeys){const entry=entities.get(key);if(entry)syncChangeAssetIds({entityType:entry.entityType,entityId:entry.entityId,operation:"upsert",payload:entry.value},ids)}
+  if(!ids.size)return {referenced:0,missing:[]};
+  const rows=await assetMetadataRows(),byId=new Map(rows.map(row=>[String(row.id),row])),fs=assetFilesystem(),baseDir=assetBaseDirectory();
+  const missing=(await mapWithConcurrency([...ids],4,async id=>{const row=byId.get(id);if(!row)return id;try{return await fs.exists(String(row.relative_path||assetRelativePath(id)),{baseDir})?null:id}catch{return id}})).filter(Boolean);
+  return {referenced:ids.size,missing}
+}
+async function syncEnsureStateAssets(snapshot,objects,onProgress=()=>{},preflight=null){
+  const {referenced,missing}=preflight||await syncMissingStateAssets(snapshot);
+  if(!missing.length){onProgress(82);return {referenced,downloaded:0,unresolved:[]}}
   let completed=0;const unresolved=await syncDownloadAssets(missing,objects,{concurrency:3,onProgress:()=>{completed++;onProgress(Math.round(52+completed/missing.length*30))}});
   if(unresolved.length){DiagnosticsLog.warn("SYNC","remote-assets-deferred",{stage:"final-state",count:unresolved.length,sample:unresolved.slice(0,12)});throw new Error("sync-remote-assets-not-local")}
-  return {referenced:ids.length,downloaded:missing.length,unresolved:[]}
+  return {referenced,downloaded:missing.length,unresolved:[]}
 }
 function syncConfirmReconnectImport(){
   return new Promise((resolve,reject)=>{const backdrop=$("#modalBackdrop");if(!backdrop){reject(new Error("sync-import-confirmation-unavailable"));return}backdrop.querySelector(".cloud-replace-backdrop")?.remove();const layer=document.createElement("div");layer.className="cloud-replace-backdrop";layer.innerHTML=`<section class="cloud-replace-dialog" role="alertdialog" aria-modal="true" aria-labelledby="syncReconnectImportTitle"><h3 id="syncReconnectImportTitle">자동 동기화 데이터를 불러오시겠습니까?</h3><p>클라우드의 최신 상태를 가져옵니다.<br>이 로컬 환경에서만 새로 만든 데이터는 유지되며, 양쪽에서 각각 수정한 항목만 충돌로 보존합니다.<br><small>처음 불러올 때는 이미지와 데이터를 내려받느라 오래 걸릴 수 있습니다.</small></p><div class="modal-actions"><button class="btn secondary" type="button" data-sync-reconnect-skip>지금은 불러오지 않기</button><button class="btn icon-label" type="button" data-sync-reconnect-import>${lucideIcon("cloud-download")}<span>불러오기</span></button></div></section>`;backdrop.append(layer);layer.onclick=event=>event.stopPropagation();const skip=layer.querySelector("[data-sync-reconnect-skip]"),confirm=layer.querySelector("[data-sync-reconnect-import]");skip.onclick=()=>{syncReconnectImportPending=false;layer.remove();scheduleAutomaticSync(1000);DiagnosticsLog.info("SYNC","reconnect-import-skipped",{localChangesWillSync:true});resolve({skipped:true,empty:false,restored:0,conflicts:0})};confirm.onclick=async()=>{skip.disabled=true;confirm.disabled=true;confirm.innerHTML=`${lucideIcon("loader-circle")}<span>불러오는 중 · 0%</span>`;try{const result=await syncApplyLatestRemoteState(percent=>{const label=confirm.querySelector("span");if(label)label.textContent=`불러오는 중 · ${percent}%`});syncReconnectImportPending=false;layer.remove();resolve(result)}catch(error){skip.disabled=false;confirm.disabled=false;confirm.innerHTML=`${lucideIcon("cloud-download")}<span>다시 시도</span>`;reject(error)}};requestAnimationFrame(()=>confirm.focus())})
@@ -6485,9 +6496,18 @@ async function syncCleanupRemoteStorage(canonicalState,topologyObjects,{reason="
 }
 
 function syncActiveLeases(objects,now=Date.now()){if(now-syncLeaseCleanupAt>5*60*1000){syncLeaseCleanupAt=now;for(const item of SyncCoordination.expiredLeaseObjects(objects,now,5*60*1000).slice(0,8))safeRunAsync("만료된 edit lease 정리",()=>GoogleDriveService.deleteSyncObject(syncRemoteObjectRequest(item)))}return SyncCoordination.activeCommitLeases(objects,now)}
-function syncSetReadonly(lease=null){syncRemoteLease=lease||null;let banner=document.getElementById("syncReadonlyBanner");if(!syncRemoteLease){banner?.remove();document.body.classList.remove("sync-remote-readonly");return}document.body.classList.add("sync-remote-readonly");if(!banner){banner=document.createElement("div");banner.id="syncReadonlyBanner";banner.style.cssText="position:fixed;z-index:10020;top:12px;left:50%;transform:translateX(-50%);padding:9px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);font-size:var(--fs-xs);font-weight:700;pointer-events:none";document.body.appendChild(banner)}banner.textContent=`다른 기기(${SyncCoordination.deviceLabel(syncRemoteLease,"Windows PC")})에서 수정 중 · 읽기 전용`}
+// syncRemoteLease is the lock on the document shown now (banner, input guard); syncRemoteDocLocks holds
+// every document other devices are editing (write guard).
+function syncSetReadonly(lease=null){syncRemoteLease=lease||null;let banner=document.getElementById("syncReadonlyBanner");if(!syncRemoteLease){banner?.remove();document.body.classList.remove("sync-remote-readonly");return}document.body.classList.add("sync-remote-readonly");if(!banner){banner=document.createElement("div");banner.id="syncReadonlyBanner";banner.setAttribute("role","status");banner.style.cssText="position:fixed;z-index:10020;top:12px;left:50%;transform:translateX(-50%);padding:9px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);font-size:var(--fs-xs);font-weight:700;pointer-events:none";document.body.appendChild(banner)}banner.textContent=`다른 기기(${SyncCoordination.deviceLabel(syncRemoteLease,"Windows PC")})에서 이 문서를 수정 중 · 읽기 전용`}
+function syncCurrentDocumentKey(){try{return splitDocumentKey(sessionViewSnapshot(currentViewName()))}catch{return ""}}
+function syncCurrentDocumentLock(){if(!syncRemoteDocLocks.size)return null;const key=syncCurrentDocumentKey();return key?syncRemoteDocLocks.get(key)||null:null}
+// Also called from showView, which can run before the sync state below is initialised.
+function syncRefreshDocumentLock(){try{const lock=syncCurrentDocumentLock();if(!!lock!==!!syncRemoteLease||String(lock?.objectKey||"")!==String(syncRemoteLease?.objectKey||""))syncSetReadonly(lock);return lock}catch{return null}}
+// Offline or disconnected: nothing tells us the other device is still editing, so nothing stays locked.
+function syncClearDocumentLocks(){syncRemoteDocLocks=new Map();syncSetReadonly(null)}
+function syncNoticeDocumentLocked(lock=syncRemoteLease){if(Date.now()-syncReadonlyNoticeAt<=2500)return;syncReadonlyNoticeAt=Date.now();toast(lock?`다른 기기(${SyncCoordination.deviceLabel(lock,"Windows PC")})에서 이 문서를 수정 중이라 읽기 전용입니다`:"다른 기기에서 수정 중인 문서라 읽기 전용입니다")}
 function syncRenderCurrentState(){try{renderSidebarUtilities();applyTheme();restoreLastSessionView();renderQuickMemoPins()}catch(error){DiagnosticsLog.error("SYNC","render-after-apply-failed",{stage:"render-current-state",error})}}
-function syncInstallReadonlyGuard(){if(document.documentElement.dataset.syncReadonlyGuard)return;document.documentElement.dataset.syncReadonlyGuard="1";const editableSelector=".view.active input,.view.active textarea,.view.active [contenteditable='true'],#workToolOverlay input,#workToolOverlay textarea,#workToolOverlay [contenteditable='true'],#quickMemoPinLayer [contenteditable='true'],#modalBackdrop.show input,#modalBackdrop.show textarea,#modalBackdrop.show [contenteditable='true']";for(const type of ["beforeinput","paste","cut","drop"]){document.addEventListener(type,event=>{if(!(syncRemoteLease||syncReturnGate)||!event.target?.closest?.(editableSelector)||event.target?.closest?.("#syncReturnGate"))return;event.preventDefault();if(Date.now()-syncReadonlyNoticeAt>2500){syncReadonlyNoticeAt=Date.now();toast(syncRemoteLease?"다른 기기가 편집 중이라 현재는 읽기 전용입니다":"최신 내용을 확인하는 중입니다")}},true)}}
+function syncInstallReadonlyGuard(){if(document.documentElement.dataset.syncReadonlyGuard)return;document.documentElement.dataset.syncReadonlyGuard="1";const editableSelector=".view.active input,.view.active textarea,.view.active [contenteditable='true'],#workToolOverlay input,#workToolOverlay textarea,#workToolOverlay [contenteditable='true'],#quickMemoPinLayer [contenteditable='true'],#modalBackdrop.show input,#modalBackdrop.show textarea,#modalBackdrop.show [contenteditable='true']";const documentEditorSelector=".view.active input,.view.active textarea,.view.active [contenteditable='true'],#workToolOverlay input,#workToolOverlay textarea,#workToolOverlay [contenteditable='true']";for(const type of ["beforeinput","paste","cut","drop"]){document.addEventListener(type,event=>{const target=event.target;if(!target?.closest?.(editableSelector)||target.closest("#syncReturnGate"))return;if(syncReturnGate){event.preventDefault();if(Date.now()-syncReadonlyNoticeAt>2500){syncReadonlyNoticeAt=Date.now();toast("최신 내용을 확인하는 중입니다")}return}const lock=syncRemoteDocLocks.size&&target.closest(documentEditorSelector)?syncRefreshDocumentLock():null;if(!lock)return;event.preventDefault();syncNoticeDocumentLocked(lock)},true)}}
 function syncInstallInteractionGuard(){if(document.documentElement.dataset.syncInteractionGuard)return;document.documentElement.dataset.syncInteractionGuard="1";document.addEventListener("pointerdown",event=>{const target=event.target;if(!target?.closest)return;let scope="",key="";if(target.closest("#modalBackdrop.show"))scope="modal";else if(target.closest("#workToolOverlay.show")){scope="tool";key=splitDocumentKey(sessionViewSnapshot(currentViewName()))}else if(target.closest("#quickMemoPinLayer")){scope="quick-memo";const id=String(target.closest("[data-quick-memo-pin-id]")?.dataset.quickMemoPinId||"");key=id?syncEntityKey("quick-memo",id):""}else if(target.closest(".view.active")){scope="view";key=splitDocumentKey(sessionViewSnapshot(currentViewName()))}if(scope)syncPointerInteraction={pointerId:event.pointerId,scope,key}},true);const finish=event=>{if(syncPointerInteraction&&(event.pointerId===undefined||event.pointerId===syncPointerInteraction.pointerId))syncPointerInteraction=null};document.addEventListener("pointerup",finish,true);document.addEventListener("pointercancel",finish,true);window.addEventListener("blur",()=>{syncPointerInteraction=null})}
 async function syncCreateLease(device,objects){
   const now=Date.now(),leaseId=`lease-${window.crypto?.randomUUID?.()||uid()}`,expiresAt=now+SYNC_LEASE_DURATION_MS,content=JSON.stringify({format:"hamboard-sync-lease",formatVersion:SYNC_PROTOCOL_VERSION,leaseId,deviceId:device.deviceId,displayName:device.displayName,createdAtMs:now,expiresAtMs:expiresAt}),sha=await syncJsonSha256(content),objectKey=`sync/leases/${leaseId}.json`;await GoogleDriveService.putObject({objectKey,contentSha256:sha,byteSize:new TextEncoder().encode(content).byteLength,mimeType:"application/json",kind:"sync",source:"text",content,syncMetadata:{syncType:"lease",revision:leaseId,baseRevision:"",deviceId:device.deviceId,displayName:device.displayName,createdAtMs:String(now),expiresAtMs:String(expiresAt)}});const previous=syncOwnLease;syncOwnLease={objectKey,contentSha256:sha,byteSize:new TextEncoder().encode(content).byteLength,deviceId:device.deviceId,displayName:device.displayName,createdAtMs:now,expiresAtMs:expiresAt};if(previous&&previous.objectKey!==objectKey)safeRunAsync("이전 edit lease 정리",()=>GoogleDriveService.deleteSyncObject(previous));DiagnosticsLog.info("SYNC","lease-renewed",{expiresAtMs:expiresAt});return syncOwnLease
@@ -6499,24 +6519,31 @@ async function syncEnsureLease(device,objects){const active=syncActiveLeases(obj
 // device has unpublished edits or is still typing, and withdrawn after a short quiet period
 // once everything is committed. Other devices stay read-only while it exists.
 function syncUploadBlocked(){return syncConflictBlocked||syncAutomaticFailureCount>0}
+// The editing presence names the one document being edited (project, note or mindmap); other devices
+// keep only that document read-only. Folders, calendar, memos and settings never lock anything.
 async function syncPresenceAfterLocalWrite(){
   if(syncAppUpdateInProgress||syncUploadBlocked()||syncCloudKnownConnected!==true||navigator.onLine===false)return false;
   // Only a write that follows the user's own input counts; automatic writes are committed without telling other devices to wait.
   if(!syncUserEditingNow())return false;
+  const documentKey=SyncCoordination.lockableDocumentKey(syncCurrentDocumentKey());if(!documentKey)return false;
+  // Another device was editing this document first: it keeps it.
+  if(syncRemoteDocLocks.has(documentKey))return false;
   const pending=await SyncRepository.listPending();
-  if(!pending.some(syncIsDocumentChange))return false;
-  if(syncRemoteLease&&!syncOwnPresence)return false;
-  await syncEnsurePresence("local-edit");syncStartPresenceTicker();return true
+  if(!pending.some(item=>syncEntityKey(item.entityType,item.entityId)===documentKey))return false;
+  await syncEnsurePresence("local-edit",documentKey);syncStartPresenceTicker();return true
 }
-function syncEnsurePresence(reason="renew"){
-  if(syncPresencePromise)return syncPresencePromise;
-  if(syncOwnPresence&&syncOwnPresence.expiresAtMs-Date.now()>SyncCoordination.PRESENCE_RENEW_BEFORE_MS)return Promise.resolve(syncOwnPresence);
+function syncEnsurePresence(reason="renew",documentKey=syncOwnPresence?.documentKey||""){
+  documentKey=SyncCoordination.lockableDocumentKey(documentKey);if(!documentKey)return Promise.resolve(null);
+  if(syncPresencePromise)return syncPresencePromise.then(current=>current?.documentKey===documentKey?current:syncEnsurePresence(reason,documentKey));
+  const sameDocument=syncOwnPresence?.documentKey===documentKey;
+  if(sameDocument&&syncOwnPresence.expiresAtMs-Date.now()>SyncCoordination.PRESENCE_RENEW_BEFORE_MS)return Promise.resolve(syncOwnPresence);
   const operation=(async()=>{
-    const device=await SyncRepository.device(),runtime=await SyncRepository.runtime(),sessionStartedAtMs=syncOwnPresence?.sessionStartedAtMs||Date.now(),record=SyncCoordination.presenceRecord({deviceId:device.deviceId,displayName:device.displayName,clientProfile:"desktop",sessionStartedAtMs,expiresAtMs:Date.now()+SyncCoordination.PRESENCE_TTL_MS,baseRevision:runtime.baseRevision}),byteSize=new TextEncoder().encode(record.content).byteLength,contentSha256=await syncJsonSha256(record.content);
+    // A new document starts a new claim; renewing keeps the original start so the earlier editor keeps winning.
+    const device=await SyncRepository.device(),runtime=await SyncRepository.runtime(),sessionStartedAtMs=sameDocument&&syncOwnPresence?.sessionStartedAtMs||Date.now(),record=SyncCoordination.presenceRecord({deviceId:device.deviceId,displayName:device.displayName,clientProfile:"desktop",sessionStartedAtMs,expiresAtMs:Date.now()+SyncCoordination.PRESENCE_TTL_MS,baseRevision:runtime.baseRevision,documentKey}),byteSize=new TextEncoder().encode(record.content).byteLength,contentSha256=await syncJsonSha256(record.content);
     await GoogleDriveService.putObject({objectKey:record.objectKey,contentSha256,byteSize,mimeType:"application/json",kind:"sync",source:"text",content:record.content,syncMetadata:record.syncMetadata});
-    const previous=syncOwnPresence;syncOwnPresence={objectKey:record.objectKey,contentSha256,byteSize,deviceId:device.deviceId,sessionStartedAtMs,expiresAtMs:Number(record.syncMetadata.expiresAtMs)};
+    const previous=syncOwnPresence;syncOwnPresence={objectKey:record.objectKey,contentSha256,byteSize,deviceId:device.deviceId,documentKey,sessionStartedAtMs,expiresAtMs:Number(record.syncMetadata.expiresAtMs)};
     if(previous&&previous.objectKey!==record.objectKey)safeRunAsync("이전 편집 표시 정리",()=>GoogleDriveService.deleteSyncObject(syncRemoteObjectRequest(previous)));
-    DiagnosticsLog.info("SYNC","presence-published",{reason,sessionStartedAtMs,expiresAtMs:syncOwnPresence.expiresAtMs});return syncOwnPresence
+    DiagnosticsLog.info("SYNC","presence-published",{reason,documentKey,sessionStartedAtMs,expiresAtMs:syncOwnPresence.expiresAtMs});return syncOwnPresence
   })();
   const shared=operation.catch(error=>{DiagnosticsLog.warn("SYNC","presence-publish-failed",{reason,error});return null}).finally(()=>{if(syncPresencePromise===shared)syncPresencePromise=null});
   syncPresencePromise=shared;return shared
@@ -6562,6 +6589,7 @@ function syncWindowFocused(){return !document.hidden&&document.hasFocus()}
 function syncUserEditingNow(now=Date.now()){return syncWindowFocused()&&now-syncLastEditInputAt<SYNC_PRESENCE_INPUT_WINDOW_MS}
 function syncInstallEditInputTracker(){
   if(document.documentElement.dataset.syncEditInputTracker)return;document.documentElement.dataset.syncEditInputTracker="1";
+  // syncLastUserInputAt belongs to the idle-return guard, which must see how long the user was idle.
   const mark=()=>{syncLastEditInputAt=Date.now()};
   for(const type of ["keydown","pointerdown","input","paste","cut","drop"])document.addEventListener(type,mark,{capture:true,passive:true})
 }
@@ -6577,11 +6605,12 @@ async function syncPresenceTick(){
 }
 function syncStartPresenceTicker(){if(syncPresenceTimer)return;syncPresenceTimer=setInterval(()=>{if(syncPresenceTickPromise)return;const operation=syncPresenceTick().catch(error=>DiagnosticsLog.warn("SYNC","presence-tick-failed",{error})),shared=operation.finally(()=>{if(syncPresenceTickPromise===shared)syncPresenceTickPromise=null});syncPresenceTickPromise=shared},1000)}
 function syncUpdateRemotePresence(objects,device){
-  if(syncReadonlyOverride&&!SyncCoordination.activePresences(objects).some(item=>String(item.deviceId)===String(syncReadonlyOverride.deviceId)&&Number(item.createdAtMs)===Number(syncReadonlyOverride.sessionStartedAtMs)))syncReadonlyOverride=null;
-  const blocking=SyncCoordination.blockingPresence(objects,{deviceId:device.deviceId,ownSessionStartedAtMs:syncOwnPresence?.sessionStartedAtMs||0,ignore:syncReadonlyOverride});
-  if(blocking&&String(syncRemoteLease?.objectKey||"")!==String(blocking.objectKey||""))DiagnosticsLog.info("SYNC","remote-presence-active",{remoteDeviceId:String(blocking.deviceId||""),expiresAtMs:Number(blocking.expiresAtMs)||0,pullContinues:true});
-  if(!blocking&&syncRemoteLease)DiagnosticsLog.info("SYNC","remote-presence-cleared",{remoteDeviceId:String(syncRemoteLease.deviceId||"")});
-  syncSetReadonly(blocking);return blocking
+  const locks=SyncCoordination.documentLocks(objects,{deviceId:device.deviceId,own:syncOwnPresence}),before=[...syncRemoteDocLocks.keys()].sort().join("|"),after=[...locks.keys()].sort().join("|");
+  syncRemoteDocLocks=locks;
+  if(before!==after)DiagnosticsLog.info("SYNC","remote-document-locks",{documents:[...locks.keys()].slice(0,12),devices:[...new Set([...locks.values()].map(item=>String(item.deviceId||"")))].slice(0,6)});
+  // Another device claimed this document first: stop claiming it here.
+  if(syncOwnPresence?.documentKey&&locks.has(syncOwnPresence.documentKey))safeRunAsync("편집 표시 양보",()=>syncReleasePresence("earlier-editor-elsewhere"));
+  return syncRefreshDocumentLock()
 }
 async function syncFinalPushBeforeExit(reason="app-exit"){
   try{
@@ -6663,9 +6692,8 @@ async function runAutomaticSync(reason="timer",{pullOnly=false}={}){
   if(syncReconnectImportPending)return {skipped:"reconnect-import-pending"};
   syncAutomaticRerunRequested=false;
   const operation=DataTransferCoordinator.run("automatic-sync",async()=>{try{
-    if(navigator.onLine===false){syncSetReadonly(null);return {skipped:"offline"}}
-    if(cloudBackupUploadPromise)return {skipped:"manual-backup-active"};
-    const driveStatus=await GoogleDriveService.status();syncCloudKnownConnected=driveStatus?.connected===true;if(!driveStatus?.connected){syncSetReadonly(null);return {skipped:"disconnected"}}
+    if(navigator.onLine===false){syncClearDocumentLocks();return {skipped:"offline"}}
+    const driveStatus=await GoogleDriveService.status();syncCloudKnownConnected=driveStatus?.connected===true;if(!driveStatus?.connected){syncClearDocumentLocks();return {skipped:"disconnected"}}
     if(!pullOnly&&syncWorkTrackingCaptureDue(reason))await syncCaptureWorkTracking();await StateRepository.flush();await SyncRepository.prepareOutbox();
     let runtime=await SyncRepository.runtime(),pending=await SyncRepository.listPending(),device=await SyncRepository.device(),listing=await GoogleDriveService.listSyncObjects("topology");
     if(listing?.truncated)throw new Error("sync-object-list-truncated");
@@ -6691,7 +6719,7 @@ async function runAutomaticSync(reason="timer",{pullOnly=false}={}){
       for(const commit of commits){remoteBase=syncApplyChanges(remoteBase,commit.changes,commit.clientProfile);const mergeChanges=commit.changes.filter(change=>{const key=syncEntityKey(change.entityType,change.entityId);if(conflictKeys.has(key)){conflictDeferred++;return false}if(String(commit.deviceId||"")===device.deviceId&&pendingKeys.has(key)){selfDeferred++;return false}return true});merged=syncApplyChanges(merged,mergeChanges,commit.clientProfile)}
       if(workTrackingLocal){merged=syncApplyChanges(merged,[{entityType:"work-tracking",entityId:"main",operation:"upsert",payload:syncConflictMergeWorkTracking(workTrackingLocal,merged.workTrackingSync)}]);DiagnosticsLog.info("SYNC","work-tracking-merged",{revision:String(topology.head.revision)})}
       if(selfDeferred)DiagnosticsLog.info("SYNC","self-stale-commit-rebased",{changes:selfDeferred,revision:String(topology.head.revision)});
-      const changedKeys=syncChangedEntityKeys(current,merged);if(changedKeys.size){const assetListing=await GoogleDriveService.listSyncObjects("assets");if(assetListing?.truncated)throw new Error("sync-asset-list-truncated");await syncEnsureStateAssets(merged,Array.isArray(assetListing?.objects)?assetListing.objects:[])}const applyGeneration=StateRepository.changeGeneration,applyResult=await SyncRepository.applyRemoteState(runtime.stateSequence,String(topology.head.revision),merged,remoteBase,applyGeneration),localChangedDuringApply=StateRepository.changeGeneration!==applyGeneration;
+      const changedKeys=syncChangedEntityKeys(current,merged);if(changedKeys.size){const assetNeed=await syncMissingStateAssets(merged,changedKeys);if(assetNeed.missing.length){const assetListing=await GoogleDriveService.listSyncObjects("assets");if(assetListing?.truncated)throw new Error("sync-asset-list-truncated");await syncEnsureStateAssets(merged,Array.isArray(assetListing?.objects)?assetListing.objects:[],()=>{},assetNeed)}}const applyGeneration=StateRepository.changeGeneration,applyResult=await SyncRepository.applyRemoteState(runtime.stateSequence,String(topology.head.revision),merged,remoteBase,applyGeneration),localChangedDuringApply=StateRepository.changeGeneration!==applyGeneration;
       let effectiveChangedKeys=new Set(changedKeys),applyRaceConflicts=0;
       if(localChangedDuringApply){
         const latest=readState(cloneData(state)),localRaceKeys=syncChangedEntityKeys(current,latest),overlapKeys=new Set([...changedKeys].filter(key=>localRaceKeys.has(key)&&externalRemoteKeys.has(key))),currentEntities=syncStateEntityMap(current),latestEntities=syncStateEntityMap(latest);
@@ -6733,13 +6761,30 @@ async function runAutomaticSync(reason="timer",{pullOnly=false}={}){
 // cycle (and every return to the window) into an upload, so they are captured at most once a minute.
 function syncWorkTrackingCaptureDue(reason,now=Date.now()){return reason==="app-exit"||reason==="app-update"||now-syncWorkTrackingCapturedAt>=SYNC_WORK_TRACKING_CAPTURE_INTERVAL_MS}
 function syncUserIdle(now=Date.now()){return now-syncLastUserInputAt>=SYNC_IDLE_AWAY_MS}
-function syncDesiredPollInterval(){if(navigator.onLine===false||syncCloudKnownConnected===false)return SYNC_POLL_INTERVAL_MS;if(syncRemoteLease||syncReturnGate)return SYNC_READONLY_POLL_INTERVAL_MS;return document.hidden||!document.hasFocus()||syncUserIdle()?SYNC_BACKGROUND_POLL_INTERVAL_MS:SYNC_POLL_INTERVAL_MS}
+// In front (idle or not) the window polls every 5 s, so a change from another device shows up within
+// seconds on a PC left open; only a hidden or unfocused window slows to 30 s.
+function syncDesiredPollInterval(){if(navigator.onLine===false||syncCloudKnownConnected===false)return SYNC_BACKGROUND_POLL_INTERVAL_MS;if(syncRemoteLease||syncReturnGate)return SYNC_READONLY_POLL_INTERVAL_MS;return document.hidden||!document.hasFocus()?SYNC_BACKGROUND_POLL_INTERVAL_MS:SYNC_POLL_INTERVAL_MS}
 function scheduleAutomaticSync(delay=syncDesiredPollInterval()){if(syncAppUpdateInProgress)return;const now=Date.now(),requested=Math.max(1000,Number(delay)||syncDesiredPollInterval()),dueAt=now+Math.max(requested,Math.max(0,syncAutomaticRetryNotBefore-now));if(syncAutomaticTimer&&syncAutomaticTimerDueAt<=dueAt&&syncAutomaticTimerDueAt>=syncAutomaticRetryNotBefore)return;if(syncAutomaticTimer)clearTimeout(syncAutomaticTimer);syncAutomaticTimerDueAt=dueAt;syncAutomaticTimer=setTimeout(()=>{syncAutomaticTimer=0;syncAutomaticTimerDueAt=0;safeRunAsync("Google Drive 자동 동기화",()=>runAutomaticSync("scheduled"))},dueAt-now)}
-const SYNC_RETURN_GATE_SHORT_AWAY_MS=3000,SYNC_RETURN_GATE_REVEAL_MS=700;
+const SYNC_RETURN_GATE_REVEAL_MS=700;
 let syncAwaySince=0;
-function syncHideReturnGate(){syncReturnGate=false;$("#syncReturnGate")?.remove()}
+let syncNoteOpenGuardId="",syncNoteOpenGuardTimer=0;
+function syncSetNoteOpenGuard(noteId=""){
+  if(syncNoteOpenGuardTimer){clearTimeout(syncNoteOpenGuardTimer);syncNoteOpenGuardTimer=0}
+  $("#syncNoteCheckStatus")?.remove();
+  const view=$("#noteView");if(view)view.inert=false;
+  syncNoteOpenGuardId="";
+  if(!noteId||!view||currentViewName()!=="note"||!sameId(currentNoteId,noteId)||navigator.onLine===false||syncCloudKnownConnected===false)return;
+  syncNoteOpenGuardId=String(noteId);view.inert=true;
+  syncNoteOpenGuardTimer=setTimeout(()=>{
+    syncNoteOpenGuardTimer=0;if(syncNoteOpenGuardId!==String(noteId)||!view.isConnected)return;
+    const status=document.createElement("div");status.id="syncNoteCheckStatus";status.setAttribute("role","status");status.textContent="노트 최신 내용 확인 중…";
+    status.style.cssText="position:fixed;z-index:10020;top:12px;left:50%;transform:translateX(-50%);padding:9px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);font-size:var(--fs-xs);font-weight:700;pointer-events:none";
+    document.body.appendChild(status)
+  },1200)
+}
+function syncHideReturnGate(){syncReturnGate=false;$("#syncReturnGate")?.remove();syncSetNoteOpenGuard()}
 function syncShowReturnGate(message="다른 기기의 변경사항을 확인하고 있습니다. 확인이 끝나면 편집할 수 있습니다.",{waiting=null}={}){
-  syncReturnGate=true;let layer=$("#syncReturnGate");if(!layer){document.activeElement?.blur?.();layer=document.createElement("div");layer.id="syncReturnGate";layer.className="sync-return-gate";layer.style.opacity="0";layer.innerHTML='<section class="sync-return-gate-card" role="status" aria-live="polite" tabindex="-1"><strong>최신 내용 확인 중</strong><p></p><div class="sync-return-gate-actions"><button type="button" class="btn secondary" data-sync-return-retry>다시 확인</button><button type="button" class="btn secondary" data-sync-return-local>로컬에서 편집</button></div></section>';document.body.appendChild(layer);setTimeout(()=>{if(layer.isConnected)layer.style.opacity="1"},SYNC_RETURN_GATE_REVEAL_MS);layer.querySelector("[data-sync-return-retry]").onclick=()=>syncCheckOnReturn(true);layer.querySelector("[data-sync-return-local]").onclick=()=>{const remote=syncRemoteLease;syncReturnGateRun++;syncHideReturnGate();if(remote){syncReadonlyOverride={deviceId:String(remote.deviceId||""),sessionStartedAtMs:Number(remote.createdAtMs)||0};syncSetReadonly(null);DiagnosticsLog.warn("SYNC","remote-presence-overridden",{remoteDeviceId:String(remote.deviceId||"")});toast("다른 기기의 수정을 기다리지 않고 편집합니다. 같은 항목을 수정하면 충돌이 날 수 있습니다")}else toast("최신 내용 확인 전 로컬 편집을 선택했습니다. 같은 항목을 수정하면 충돌이 날 수 있습니다")};layer.querySelector(".sync-return-gate-card")?.focus({preventScroll:true})}
+  syncReturnGate=true;let layer=$("#syncReturnGate");if(!layer){document.activeElement?.blur?.();layer=document.createElement("div");layer.id="syncReturnGate";layer.className="sync-return-gate";layer.style.opacity="0";layer.innerHTML='<section class="sync-return-gate-card" role="status" aria-live="polite" tabindex="-1"><strong>최신 내용 확인 중</strong><p></p><div class="sync-return-gate-actions"><button type="button" class="btn secondary" data-sync-return-retry>다시 확인</button><button type="button" class="btn secondary" data-sync-return-local>로컬에서 편집</button></div></section>';document.body.appendChild(layer);setTimeout(()=>{if(layer.isConnected)layer.style.opacity="1"},SYNC_RETURN_GATE_REVEAL_MS);layer.querySelector("[data-sync-return-retry]").onclick=()=>syncCheckOnReturn(true);layer.querySelector("[data-sync-return-local]").onclick=()=>{syncReturnGateRun++;syncHideReturnGate();toast("최신 내용 확인 전 로컬 편집을 선택했습니다. 같은 항목을 수정하면 충돌이 날 수 있습니다")};layer.querySelector(".sync-return-gate-card")?.focus({preventScroll:true})}
   layer.querySelector("strong").textContent=waiting?"다른 기기에서 수정 중":"최신 내용 확인 중";
   layer.querySelector("[data-sync-return-local]").textContent=waiting?"기다리지 않고 편집":"로컬에서 편집";
   if(waiting)layer.style.opacity="1";
@@ -6753,7 +6798,7 @@ async function syncReturnProbe(){
   const [runtime,device,listing]=await Promise.all([SyncRepository.runtime(),SyncRepository.device(),GoogleDriveService.listSyncObjects("topology")]);
   if(listing?.truncated)return {needsPull:true,why:"list-truncated"};
   const objects=Array.isArray(listing?.objects)?listing.objects:[];
-  if(syncUpdateRemotePresence(objects,device))return {remote:syncRemoteLease};
+  syncUpdateRemotePresence(objects,device);
   if(runtime.requiresRebaseline)return {needsPull:true,why:"rebaseline"};
   const topology=syncCommitTopology(objects,runtime.baseRevision);
   if(topology.error)return {needsPull:true,why:topology.error};
@@ -6761,38 +6806,34 @@ async function syncReturnProbe(){
   const remoteCommits=(topology.path||[]).filter(item=>String(item.deviceId||"")!==device.deviceId).length;
   return remoteCommits?{needsPull:true,why:"remote-commits",remoteCommits}:{upToDate:true}
 }
-function syncCheckOnReturn(force=false){
+function syncCheckOnReturn(force=false,{noteId=""}={}){
   if(!force&&(!syncWindowWasAway||syncReturnGate||syncCloudKnownConnected===false))return;
-  syncWindowWasAway=false;const run=++syncReturnGateRun;syncShowReturnGate();
-  const failed=message=>{syncShowReturnGate(message);const layer=$("#syncReturnGate");if(layer)layer.style.opacity="1"};
-  safeRunAsync("창 복귀 최신 동기화 확인",async()=>{try{
-    for(;;){
-      if(run!==syncReturnGateRun)return;
+  syncWindowWasAway=false;const run=++syncReturnGateRun;
+  syncSetNoteOpenGuard(noteId||syncNoteOpenGuardId);
+  return safeRunAsync("창 복귀 최신 동기화 확인",async()=>{
+    try{
+      // The lightweight probe runs immediately on return, without a modal or waiting for an upload.
       const probe=await syncReturnProbe();if(run!==syncReturnGateRun)return;
-      if(probe.skipped){failed(probe.skipped==="offline"?"인터넷 연결을 확인할 수 없습니다. 연결 후 다시 확인하거나 로컬 편집을 선택하세요":"Google Drive가 연결되지 않았습니다. 로컬 편집을 선택하거나 설정에서 다시 연결하세요");return}
-      if(probe.remote){
-        const remote=probe.remote,until=Math.max(0,Math.ceil((Number(remote.expiresAtMs)-Date.now())/1000));
-        syncShowReturnGate(`${SyncCoordination.deviceLabel(remote,"Windows PC")}에서 수정 중입니다. 변경사항이 올라오면 자동으로 편집할 수 있습니다.${until?` (최대 ${until}초)`:""}`,{waiting:remote});
-        DiagnosticsLog.info("SYNC","return-gate-waiting-remote",{remoteDeviceId:String(remote.deviceId||""),expiresAtMs:Number(remote.expiresAtMs)||0});
-        await new Promise(resolve=>setTimeout(resolve,SYNC_READONLY_POLL_INTERVAL_MS));continue
-      }
-      // Up to date: let the user in and run a normal cycle soon for anything this device has not uploaded yet.
-      if(probe.upToDate){syncHideReturnGate();DiagnosticsLog.info("SYNC","return-gate-up-to-date",{});scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS);return}
-      // Another device changed something: apply it before editing. This waits for a running cycle, but the
-      // gate's own pass only pulls; uploads and maintenance follow in the next normal cycle.
+      if(probe.skipped){scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS);return}
+      if(probe.upToDate){scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS);return}
+      // Only an actual remote revision needs a brief input guard while it is applied.
       if(syncAutomaticPromise)await syncAutomaticPromise.catch(()=>{});
       if(run!==syncReturnGateRun)return;
+      const latest=await syncReturnProbe();if(run!==syncReturnGateRun)return;
+      if(latest.skipped||latest.upToDate){scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS);return}
+      syncShowReturnGate("다른 기기의 변경사항을 반영하고 있습니다.");
       const result=await runAutomaticSync("window-return",{pullOnly:true});if(run!==syncReturnGateRun)return;
-      if(syncRemoteLease&&!result?.failed)continue;
-      if(result?.synced){syncHideReturnGate();DiagnosticsLog.info("SYNC","return-gate-pulled",{why:probe.why||"",remoteCommits:Number(probe.remoteCommits)||0,pushDeferred:result.pushDeferred===true});return}
-      failed(result?.skipped==="offline"?"인터넷 연결을 확인할 수 없습니다. 연결 후 다시 확인하거나 로컬 편집을 선택하세요":result?.skipped==="disconnected"?"Google Drive가 연결되지 않았습니다. 로컬 편집을 선택하거나 설정에서 다시 연결하세요":result?.deferred==="active-editor"?"열려 있는 편집 창 때문에 원격 변경 적용이 미뤄졌습니다. 편집 창을 정리한 뒤 다시 확인하세요":"아직 최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬 편집을 선택하세요");return
-    }
-  }catch(error){if(run===syncReturnGateRun){DiagnosticsLog.error("SYNC","return-check-failed",{stage:"window-return",error});failed("최신 내용을 확인하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도하세요")}}})
+      if(!result?.synced){
+        DiagnosticsLog.warn("SYNC","return-pull-deferred",{why:latest.why||"",result});
+        if(result?.failed||result?.blocked)toast("최신 내용을 아직 반영하지 못했습니다. 자동으로 다시 시도합니다")
+      }
+    }catch(error){if(run===syncReturnGateRun)DiagnosticsLog.error("SYNC","return-check-failed",{stage:"window-return",error})}
+    finally{if(run===syncReturnGateRun){syncHideReturnGate();scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS)}}
+  })
 }
 function syncMarkAway(reason){if(!syncWindowWasAway||!syncAwaySince)syncAwaySince=Date.now();syncWindowWasAway=true;syncFlushOnLeave(reason)}
 function syncHandleReturn(){
   if(!syncWindowWasAway)return;
-  if(syncAwaySince&&Date.now()-syncAwaySince<SYNC_RETURN_GATE_SHORT_AWAY_MS&&!syncUserIdle()){syncWindowWasAway=false;syncAwaySince=0;scheduleAutomaticSync(SYNC_PUBLISH_DELAY_MS);return}
   syncAwaySince=0;syncCheckOnReturn()
 }
 function syncInstallIdleReturnGuard(){
@@ -7091,7 +7132,7 @@ async function syncUploadReferencedAssets(objects){
 let cloudBackupUploadPromise=null;
 async function runCloudBackup(backupId,onProgress=()=>{}){
   if(cloudBackupUploadPromise)return cloudBackupUploadPromise;
-  const operation=DataTransferCoordinator.run("backup-upload",async()=>{const id=String(backupId||""),run=await CloudBackupRepository.readRun(id);if(!run)throw new Error("cloud-backup-run-missing");DiagnosticsLog.info("CLOUD_BACKUP","upload-start",{backupId:id,provider:String(run.provider),imageQuality:String(run.image_quality)});while(true){const progress=await CloudBackupRepository.progress(id);onProgress(progress);if(progress.total>0&&progress.uploaded===progress.total){await CloudBackupRepository.complete(id);DiagnosticsLog.info("CLOUD_BACKUP","upload-ok",{backupId:id,items:progress.total});return {backupId:id,...progress}}const item=await CloudBackupRepository.nextRunnableItem(id);if(!item)throw new Error(progress.failed?"cloud-backup-retry-deferred":"cloud-backup-queue-stalled");let source=null;try{if(item.kind==="manifest"){await CloudBackupRepository.markItemUploading(id,item.item_key);const finalized=await CloudBackupRepository.finalizeManifest(id);source={source:"text",content:finalized.manifestJson,contentSha256:finalized.manifestSha256,byteSize:finalized.byteSize,mimeType:"application/json",objectKey:String(item.object_key),summary:finalized.summary,staged:false}}else{source=await cloudAssetUploadSource(item,run);await CloudBackupRepository.updateItemObjectKey(id,item.item_key,source.objectKey)}if(item.kind!=="manifest")await CloudBackupRepository.markItemUploading(id,item.item_key);DiagnosticsLog.info("CLOUD_BACKUP","upload-item-start",{backupId:id,itemKey:String(item.item_key),kind:String(item.kind),attempt:Number(item.attempt_count)||0,byteSize:source.byteSize,transform:String(item.transform)});const result=await GoogleDriveService.putObject({backupId:id,kind:String(item.kind),objectKey:String(source.objectKey||item.object_key),source:source.source,relativePath:source.relativePath,content:source.content,contentSha256:source.contentSha256,byteSize:source.byteSize,mimeType:source.mimeType,summary:source.summary});await CloudBackupRepository.markItemUploaded(id,item.item_key,result);DiagnosticsLog.info("CLOUD_BACKUP","upload-item-ok",{backupId:id,itemKey:String(item.item_key),kind:String(item.kind),byteSize:Number(result?.uploadByteSize)||0,reused:result?.reused===true})}catch(error){const retrySeconds=Math.min(300,5*Math.pow(2,Math.min(6,Math.max(0,Number(item.attempt_count)||0)))),retryAt=Date.now()+retrySeconds*1000;try{await CloudBackupRepository.markItemFailed(id,item.item_key,error,retryAt)}catch(markError){DiagnosticsLog.error("CLOUD_BACKUP","upload-failure-persist-failed",{stage:"queue-mark-failed",backupId:id,itemKey:String(item.item_key),error:markError})}DiagnosticsLog.error("CLOUD_BACKUP","upload-item-error",{stage:String(item.kind)==="manifest"?"manifest-upload":"asset-upload",backupId:id,itemKey:String(item.item_key),error});throw error}finally{if(source?.staged)await removeCloudUploadStaging(source.relativePath)}}});const shared=operation.finally(()=>{if(cloudBackupUploadPromise===shared)cloudBackupUploadPromise=null});cloudBackupUploadPromise=shared;return shared
+  const operation=DataTransferCoordinator.runBackground("backup-upload",async runSegment=>{const id=String(backupId||""),run=await CloudBackupRepository.readRun(id);if(!run)throw new Error("cloud-backup-run-missing");DiagnosticsLog.info("CLOUD_BACKUP","upload-start",{backupId:id,provider:String(run.provider),imageQuality:String(run.image_quality)});while(true){const progress=await CloudBackupRepository.progress(id);onProgress(progress);if(progress.total>0&&progress.uploaded===progress.total){await CloudBackupRepository.complete(id);DiagnosticsLog.info("CLOUD_BACKUP","upload-ok",{backupId:id,items:progress.total});return {backupId:id,...progress}}const item=await CloudBackupRepository.nextRunnableItem(id);if(!item)throw new Error(progress.failed?"cloud-backup-retry-deferred":"cloud-backup-queue-stalled");await runSegment(async()=>{let source=null;try{if(item.kind==="manifest"){await CloudBackupRepository.markItemUploading(id,item.item_key);const finalized=await CloudBackupRepository.finalizeManifest(id);source={source:"text",content:finalized.manifestJson,contentSha256:finalized.manifestSha256,byteSize:finalized.byteSize,mimeType:"application/json",objectKey:String(item.object_key),summary:finalized.summary,staged:false}}else{source=await cloudAssetUploadSource(item,run);await CloudBackupRepository.updateItemObjectKey(id,item.item_key,source.objectKey)}if(item.kind!=="manifest")await CloudBackupRepository.markItemUploading(id,item.item_key);DiagnosticsLog.info("CLOUD_BACKUP","upload-item-start",{backupId:id,itemKey:String(item.item_key),kind:String(item.kind),attempt:Number(item.attempt_count)||0,byteSize:source.byteSize,transform:String(item.transform)});const result=await GoogleDriveService.putObject({backupId:id,kind:String(item.kind),objectKey:String(source.objectKey||item.object_key),source:source.source,relativePath:source.relativePath,content:source.content,contentSha256:source.contentSha256,byteSize:source.byteSize,mimeType:source.mimeType,summary:source.summary});await CloudBackupRepository.markItemUploaded(id,item.item_key,result);DiagnosticsLog.info("CLOUD_BACKUP","upload-item-ok",{backupId:id,itemKey:String(item.item_key),kind:String(item.kind),byteSize:Number(result?.uploadByteSize)||0,reused:result?.reused===true})}catch(error){const retrySeconds=Math.min(300,5*Math.pow(2,Math.min(6,Math.max(0,Number(item.attempt_count)||0)))),retryAt=Date.now()+retrySeconds*1000;try{await CloudBackupRepository.markItemFailed(id,item.item_key,error,retryAt)}catch(markError){DiagnosticsLog.error("CLOUD_BACKUP","upload-failure-persist-failed",{stage:"queue-mark-failed",backupId:id,itemKey:String(item.item_key),error:markError})}DiagnosticsLog.error("CLOUD_BACKUP","upload-item-error",{stage:String(item.kind)==="manifest"?"manifest-upload":"asset-upload",backupId:id,itemKey:String(item.item_key),error});throw error}finally{if(source?.staged)await removeCloudUploadStaging(source.relativePath)}})}});const shared=operation.finally(()=>{if(cloudBackupUploadPromise===shared)cloudBackupUploadPromise=null});cloudBackupUploadPromise=shared;return shared
 }
 let cloudBackupIndexCache=null,cloudBackupIndexLoadedAt=0,cloudBackupListPromise=null,cloudBackupListStats={manifestObjectCount:0,invalidCount:0,invalidReasons:[],truncated:false};
 function validateCloudBackupEntry(entry){

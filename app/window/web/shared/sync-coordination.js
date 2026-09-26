@@ -6,8 +6,10 @@
   // Two kinds of short-lived Drive objects are used. Both are stored as syncType "lease"
   // under sync/leases/ so the existing native list/delete commands accept them.
   //  - commit lease  (sync/leases/lease-*.json): held only while a commit is uploaded.
-  //  - presence      (sync/leases/presence-*.json): "this device is editing / has unpublished
-  //    edits". Other devices treat it as read-only until it disappears or expires.
+  //  - presence      (sync/leases/presence-*.json): "this device is editing this document and its
+  //    edits arrive shortly". It names one document (project, note or mindmap) in the assetId
+  //    field; other devices keep only that document read-only until it disappears or expires.
+  //    Presences without a document (written by older app versions) lock nothing.
   const LEASE_PREFIX="sync/leases/";
   const PRESENCE_PREFIX="sync/leases/presence-";
   const PRESENCE_TTL_MS=45000;
@@ -25,18 +27,33 @@
   function isPresence(object){return text(object?.syncType)==="lease"&&text(object?.objectKey).startsWith(PRESENCE_PREFIX)}
   function isCommitLease(object){return text(object?.syncType)==="lease"&&text(object?.objectKey).startsWith(LEASE_PREFIX)&&!isPresence(object)}
 
+  // Documents that can be locked while another device edits them. The key is the sync entity key
+  // ("project:<id>", "note:<id>", "mindmap:<id>"); it travels in the assetId metadata field,
+  // which both Drive clients already copy and list (limit 100 bytes on mobile).
+  const DOCUMENT_LOCK_TYPES=new Set(["project","note","mindmap"]);
+  function lockableDocumentKey(value){
+    const key=text(value),split=key.indexOf(":");
+    if(split<1||!DOCUMENT_LOCK_TYPES.has(key.slice(0,split))||!key.slice(split+1))return "";
+    if(/[\u0000-\u001f]/.test(key)||new TextEncoder().encode(key).byteLength>100)return "";
+    return key
+  }
+  function presenceDocumentKey(object){return lockableDocumentKey(object?.assetId)}
+
   function presenceObjectKey(deviceId){return `${PRESENCE_PREFIX}${safeId(deviceId)}-${nonce()}.json`}
-  function presenceRecord({deviceId,displayName,clientProfile,sessionStartedAtMs,expiresAtMs,baseRevision=""}){
-    const key=presenceObjectKey(deviceId),started=Math.max(1,Math.floor(num(sessionStartedAtMs))),expires=Math.max(started+1,Math.floor(num(expiresAtMs))),name=shortName(displayName);
-    const content=JSON.stringify({format:"hamboard-sync-presence",formatVersion:1,deviceId:text(deviceId),displayName:name,clientProfile:text(clientProfile),sessionStartedAtMs:started,expiresAtMs:expires,baseRevision:text(baseRevision)});
-    return {objectKey:key,content,syncMetadata:{syncType:"lease",revision:key.slice(LEASE_PREFIX.length,-5),baseRevision:text(baseRevision),deviceId:text(deviceId),displayName:name,clientProfile:text(clientProfile),createdAtMs:String(started),expiresAtMs:String(expires)}}
+  function presenceRecord({deviceId,displayName,clientProfile,sessionStartedAtMs,expiresAtMs,baseRevision="",documentKey=""}){
+    const key=presenceObjectKey(deviceId),started=Math.max(1,Math.floor(num(sessionStartedAtMs))),expires=Math.max(started+1,Math.floor(num(expiresAtMs))),name=shortName(displayName),doc=lockableDocumentKey(documentKey);
+    const content=JSON.stringify({format:"hamboard-sync-presence",formatVersion:1,deviceId:text(deviceId),displayName:name,clientProfile:text(clientProfile),sessionStartedAtMs:started,expiresAtMs:expires,baseRevision:text(baseRevision),documentKey:doc});
+    const syncMetadata={syncType:"lease",revision:key.slice(LEASE_PREFIX.length,-5),baseRevision:text(baseRevision),deviceId:text(deviceId),displayName:name,clientProfile:text(clientProfile),createdAtMs:String(started),expiresAtMs:String(expires)};
+    if(doc)syncMetadata.assetId=doc;
+    return {objectKey:key,content,documentKey:doc,syncMetadata}
   }
 
-  // Latest active presence per device.
+  // Latest active presence per device. A presence that claims to last much longer than a presence
+  // can (a device whose clock runs ahead) is ignored rather than trusted to lock for minutes.
   function activePresences(objects,now=Date.now()){
     const byDevice=new Map();
     for(const object of objects||[]){
-      if(!isPresence(object)||num(object.expiresAtMs)<=now)continue;
+      if(!isPresence(object)||num(object.expiresAtMs)<=now||num(object.expiresAtMs)-now>PRESENCE_TTL_MS*2)continue;
       const deviceId=text(object.deviceId);if(!deviceId)continue;
       const previous=byDevice.get(deviceId);
       if(!previous||num(object.expiresAtMs)>num(previous.expiresAtMs))byDevice.set(deviceId,object)
@@ -55,6 +72,20 @@
       if(!own||comparePresence(other,own)<0)return other
     }
     return null
+  }
+
+  // Other devices' editing locks, one per document (Map documentKey → presence). A device holds one
+  // presence at a time, for the document it is editing. When two devices claim the same document,
+  // the earlier session keeps it: `own` ({documentKey, sessionStartedAtMs}) is this device's claim.
+  function documentLocks(objects,{deviceId,own=null,now=Date.now()}={}){
+    const self=text(deviceId),ownKey=lockableDocumentKey(own?.documentKey),ownStart=num(own?.sessionStartedAtMs),mine=ownKey&&ownStart?{createdAtMs:ownStart,deviceId:self}:null,locks=new Map();
+    for(const other of activePresences(objects,now)){
+      if(text(other.deviceId)===self)continue;
+      const key=presenceDocumentKey(other);if(!key||locks.has(key))continue;
+      if(mine&&ownKey===key&&comparePresence(mine,other)<0)continue;
+      locks.set(key,other)
+    }
+    return locks
   }
 
   function activeCommitLeases(objects,now=Date.now()){
@@ -119,7 +150,7 @@
 
   root.HamboardSyncCoordination=Object.freeze({
     LEASE_PREFIX,PRESENCE_PREFIX,PRESENCE_TTL_MS,PRESENCE_RENEW_BEFORE_MS,PRESENCE_IDLE_GRACE_MS,COMMIT_LEASE_TTL_MS,YOUNG_FORK_MS,
-    isPresence,isCommitLease,presenceObjectKey,presenceRecord,activePresences,blockingPresence,activeCommitLeases,expiredLeaseObjects,
+    isPresence,isCommitLease,lockableDocumentKey,presenceDocumentKey,presenceObjectKey,presenceRecord,activePresences,blockingPresence,documentLocks,activeCommitLeases,expiredLeaseObjects,
     compareCommits,siblingWinner,isYoungSiblingFork,commitTopology,deviceLabel
   });
 })(typeof globalThis!=="undefined"?globalThis:this);

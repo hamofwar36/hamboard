@@ -26,43 +26,119 @@ const checks=[];async function check(name,run){await run();checks.push(name);con
 const log={info(){},warn(){},error(){}};
 const tick=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-await check("publish timing: 350ms debounce, 2.5s cap while typing continuously, 10s/5s/2s polling",async()=>{
-  assert.match(constantsLine,/SYNC_POLL_INTERVAL_MS=10000/);assert.match(constantsLine,/SYNC_OUTBOX_DEBOUNCE_MS=350/);assert.match(constantsLine,/SYNC_OUTBOX_MAX_WAIT_MS=2500/);assert.match(constantsLine,/SYNC_READONLY_POLL_INTERVAL_MS=2000/);
-  let prepared=0,presenceCalls=0,scheduled=[];
-  const ctx=context({safeRunAsync:(label,task)=>task(),SyncRepository:{prepareOutbox:async()=>{prepared++;return {}}},syncPresenceAfterLocalWrite:async()=>{presenceCalls++},scheduleAutomaticSync:delay=>scheduled.push(delay),DiagnosticsLog:log},["scheduleSyncOutboxPreparation","syncMarkLocalWrite"]);
+await check("publish timing: 250ms debounce, 1.5s cap while typing continuously, 5s in front (even idle), 30s in the background",async()=>{
+  assert.match(constantsLine,/SYNC_POLL_INTERVAL_MS=5000/);assert.match(constantsLine,/SYNC_OUTBOX_DEBOUNCE_MS=250/);assert.match(constantsLine,/SYNC_OUTBOX_MAX_WAIT_MS=1500/);assert.match(constantsLine,/SYNC_READONLY_POLL_INTERVAL_MS=5000/);assert.match(constantsLine,/SYNC_BACKGROUND_POLL_INTERVAL_MS=30000/);
+  let prepared=0,scheduled=[];
+  let presenceChecks=0;
+  const ctx=context({safeRunAsync:(label,task)=>task(),SyncRepository:{prepareOutbox:async()=>{prepared++;return {}}},scheduleAutomaticSync:delay=>scheduled.push(delay),syncPresenceAfterLocalWrite:async()=>{presenceChecks++;return false},DiagnosticsLog:log},["scheduleSyncOutboxPreparation","syncMarkLocalWrite"]);
   vm.runInContext("var syncOutboxTimer=0,syncOutboxFirstRequestAt=0,syncLocalWriteSincePrepare=false,syncLastLocalWriteAt=0,syncInternalStateWrite=false",ctx);
   // Keystrokes every 200ms for 3s: the cap forces a preparation before typing stops.
   const started=Date.now();while(Date.now()-started<3000){ctx.syncMarkLocalWrite();ctx.scheduleSyncOutboxPreparation();await tick(200)}
-  assert.ok(prepared>=1,"prepared at least once during continuous typing");assert.equal(presenceCalls,prepared,"presence follows user writes");assert.ok(scheduled.every(delay=>delay===250));
+  assert.ok(prepared>=1,"prepared at least once during continuous typing");assert.ok(presenceChecks>=1,"a local edit checks whether to mark its document as being edited");assert.ok(scheduled.every(delay=>delay===250));
   vm.runInContext("syncInternalStateWrite=true",ctx);assert.equal(ctx.syncMarkLocalWrite(),false,"internal writes do not count as edits");
-  const poll=context({navigator:{onLine:true},document:{hidden:false,hasFocus:()=>true}},["syncUserIdle","syncDesiredPollInterval"]);
+  let focused=true;const poll=context({navigator:{onLine:true},document:{hidden:false,hasFocus:()=>focused}},["syncUserIdle","syncDesiredPollInterval"]);
   vm.runInContext("var syncCloudKnownConnected=true,syncRemoteLease=null,syncReturnGate=false,syncLastUserInputAt=Date.now()",poll);
-  assert.equal(poll.syncDesiredPollInterval(),10000);
-  vm.runInContext("syncLastUserInputAt=Date.now()-25000",poll);assert.equal(poll.syncDesiredPollInterval(),5000,"idle foreground polls like background");
-  vm.runInContext("syncRemoteLease={deviceId:'x'}",poll);assert.equal(poll.syncDesiredPollInterval(),2000,"read-only polls fast")
+  assert.equal(poll.syncDesiredPollInterval(),5000);
+  vm.runInContext("syncLastUserInputAt=Date.now()-25*60000",poll);assert.equal(poll.syncDesiredPollInterval(),5000,"a PC left open in front keeps seeing other devices' edits within seconds");
+  focused=false;assert.equal(poll.syncDesiredPollInterval(),30000,"a window in the background polls every 30s");focused=true;
+  vm.runInContext("syncRemoteLease={deviceId:'x'}",poll);assert.equal(poll.syncDesiredPollInterval(),5000,"read-only uses the foreground interval")
 });
 
-await check("presence decision: keep while dirty or typing, renew near expiry, release when quiet and published",async()=>{
-  const ctx=context({},["syncPresenceDecision"]),now=1_000_000,presence={expiresAtMs:now+40000};
-  assert.equal(ctx.syncPresenceDecision({now,presence,dirty:true,lastEditAt:now-60000}),"keep");
-  assert.equal(ctx.syncPresenceDecision({now,presence,dirty:false,lastEditAt:now-1000}),"keep");
-  assert.equal(ctx.syncPresenceDecision({now,presence,dirty:false,lastEditAt:now-4000}),"release");
-  assert.equal(ctx.syncPresenceDecision({now,presence:{expiresAtMs:now+5000},dirty:true,lastEditAt:now}),"renew");
-  assert.equal(ctx.syncPresenceDecision({now,presence:null}),"none")
+// Document-level locks: another device's presence names one document; only that one is read-only here.
+const presenceObject=({deviceId,documentKey="",createdAtMs=Date.now()-1000,expiresAtMs=Date.now()+40000,name="presence"})=>({syncType:"lease",objectKey:`sync/leases/presence-${deviceId}-${name}.json`,deviceId,displayName:"휴대폰",createdAtMs:String(createdAtMs),expiresAtMs:String(expiresAtMs),...(documentKey?{assetId:documentKey}:{})});
+function lockContext({view="note:n1"}={}){
+  const banners=[],notices=[];let current=view;
+  const ctx=context({DiagnosticsLog:log,safeRunAsync:(label,task)=>Promise.resolve().then(task),toast:message=>notices.push(message),document:{getElementById:()=>null,body:{classList:{add(){},remove(){}},appendChild(){}},createElement:()=>({style:{},setAttribute(){}})},
+    splitDocumentKey:snapshot=>snapshot,sessionViewSnapshot:()=>current,currentViewName:()=>"note"},
+    ["syncUpdateRemotePresence","syncCurrentDocumentKey","syncCurrentDocumentLock","syncRefreshDocumentLock","syncNoticeDocumentLocked","syncClearDocumentLocks"]);
+  vm.runInContext("var syncRemoteLease=null,syncRemoteDocLocks=new Map(),syncOwnPresence=null,syncReadonlyNoticeAt=0",ctx);
+  ctx.syncSetReadonly=lease=>{ctx.syncRemoteLease=lease||null;banners.push(lease?String(lease.assetId||""):null)};
+  ctx.syncReleasePresence=async reason=>{ctx.released=reason;ctx.syncOwnPresence=null};
+  return {ctx,banners,notices,view:key=>{current=key}}
+}
+
+await check("presence from an older version (no document) locks nothing",async()=>{
+  const {ctx}=lockContext();vm.runInContext("syncRemoteLease={deviceId:'old-phone'}",ctx);
+  assert.equal(ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-old"})],{deviceId:"device-me"}),null);
+  assert.equal(ctx.syncRemoteDocLocks.size,0);assert.equal(ctx.syncRemoteLease,null,"an older phone's editing marker no longer locks this PC")
 });
 
-await check("read-only follows another device's presence, not its commit lease, and honours an override",async()=>{
-  let readonly="unset";
-  const ctx=context({DiagnosticsLog:log,syncSetReadonly:value=>{readonly=value}},["syncUpdateRemotePresence"]);
-  vm.runInContext("var syncOwnPresence=null,syncRemoteLease=null,syncReadonlyOverride=null",ctx);
-  const now=Date.now(),device={deviceId:"device-me"};
-  const lease={syncType:"lease",objectKey:"sync/leases/lease-1.json",deviceId:"device-phone",createdAtMs:String(now),expiresAtMs:String(now+90000)};
-  ctx.syncUpdateRemotePresence([lease],device);assert.equal(readonly,null,"a commit lease alone does not lock editing");
-  const presence={syncType:"lease",objectKey:"sync/leases/presence-phone-1.json",deviceId:"mobile-phone",displayName:"iPhone",createdAtMs:String(now-1000),expiresAtMs:String(now+40000)};
-  ctx.syncUpdateRemotePresence([lease,presence],device);assert.equal(readonly?.deviceId,"mobile-phone");
-  vm.runInContext(`syncOwnPresence={sessionStartedAtMs:${now-5000}}`,ctx);ctx.syncUpdateRemotePresence([presence],device);assert.equal(readonly,null,"the device that started first keeps editing");
-  vm.runInContext(`syncOwnPresence=null;syncReadonlyOverride={deviceId:"mobile-phone",sessionStartedAtMs:${now-1000}}`,ctx);ctx.syncUpdateRemotePresence([presence],device);assert.equal(readonly,null,"override skips that session");
-  ctx.syncUpdateRemotePresence([],device);assert.equal(vm.runInContext("syncReadonlyOverride",ctx),null,"override clears when the session ends")
+await check("another device editing a note locks that note only; other documents stay editable",async()=>{
+  const {ctx,banners,view}=lockContext({view:"note:n1"});
+  const lock=ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"note:n1"})],{deviceId:"device-me"});
+  assert.equal(lock?.assetId,"note:n1","the open note is read-only");assert.deepEqual([...ctx.syncRemoteDocLocks.keys()],["note:n1"]);assert.equal(banners.at(-1),"note:n1");
+  view("note:n2");assert.equal(ctx.syncRefreshDocumentLock(),null,"another note opened on this PC is editable");assert.equal(ctx.syncRemoteLease,null);assert.equal(banners.at(-1),null,"banner removed");
+  view("project:p1");assert.equal(ctx.syncRefreshDocumentLock(),null,"a project is editable");
+  view("note:n1");assert.equal(ctx.syncRefreshDocumentLock()?.assetId,"note:n1","going back to the note shows the lock again");
+  ctx.syncUpdateRemotePresence([],{deviceId:"device-me"});assert.equal(ctx.syncRemoteLease,null,"the lock lifts when the phone's presence is gone");
+  ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"note:n1",expiresAtMs:Date.now()-1})],{deviceId:"device-me"});assert.equal(ctx.syncRemoteLease,null,"an expired presence locks nothing");
+  ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"note:n1",expiresAtMs:Date.now()+10*60000})],{deviceId:"device-me"});assert.equal(ctx.syncRemoteLease,null,"a presence from a clock far ahead is not trusted to lock for minutes");
+  ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"folder:f1"})],{deviceId:"device-me"});assert.equal(ctx.syncRemoteDocLocks.size,0,"only projects, notes and mindmaps can be locked")
+});
+
+await check("the same document claimed on two devices: the earlier editor keeps it, the later one gives up its claim",async()=>{
+  const {ctx}=lockContext({view:"mindmap:m1"});const now=Date.now();
+  ctx.syncOwnPresence={objectKey:"sync/leases/presence-me.json",documentKey:"mindmap:m1",sessionStartedAtMs:now-5000,expiresAtMs:now+40000};
+  assert.equal(ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"mindmap:m1",createdAtMs:now-1000})],{deviceId:"device-me"}),null,"this PC started first and keeps editing");
+  assert.equal(ctx.released,undefined);
+  ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"mindmap:m1",createdAtMs:now-9000})],{deviceId:"device-me"});await tick(0);
+  assert.equal(ctx.syncRemoteLease?.assetId,"mindmap:m1","the phone started first: read-only here");assert.equal(ctx.released,"earlier-editor-elsewhere")
+});
+
+await check("offline or disconnected, nothing stays locked",async()=>{
+  const {ctx}=lockContext();ctx.syncUpdateRemotePresence([presenceObject({deviceId:"mobile-phone",documentKey:"note:n1"})],{deviceId:"device-me"});
+  ctx.syncClearDocumentLocks();assert.equal(ctx.syncRemoteDocLocks.size,0);assert.equal(ctx.syncRemoteLease,null);
+  const run=functionSource("runAutomaticSync");assert.match(run,/if\(navigator\.onLine===false\)\{syncClearDocumentLocks\(\)/);assert.match(run,/if\(!driveStatus\?\.connected\)\{syncClearDocumentLocks\(\)/)
+});
+
+await check("presence names the edited document, only after typing, and never for a document another device holds",async()=>{
+  const puts=[],deletes=[];let pending=[{entityType:"note",entityId:"n1",operation:"upsert"}],current="note:n1",lastEdit=Date.now();
+  const ctx=context({DiagnosticsLog:log,safeRunAsync:(label,task)=>Promise.resolve().then(task),navigator:{onLine:true},document:{hidden:false,hasFocus:()=>true},
+    SyncRepository:{listPending:async()=>structuredClone(pending),device:async()=>({deviceId:"device-me",displayName:"작업 PC"}),runtime:async()=>({baseRevision:"rev-1"})},
+    GoogleDriveService:{putObject:async request=>{puts.push(request);return {}},deleteSyncObject:async object=>{deletes.push(object.objectKey);return {}}},
+    syncRemoteObjectRequest:object=>object,syncJsonSha256:async()=>"0".repeat(64),syncStartPresenceTicker:()=>{},splitDocumentKey:snapshot=>snapshot,sessionViewSnapshot:()=>current,currentViewName:()=>"note",
+    syncEntityKey:(type,id)=>`${type}:${id}`},
+    ["syncPresenceAfterLocalWrite","syncEnsurePresence","syncUploadBlocked","syncUserEditingNow","syncWindowFocused","syncCurrentDocumentKey"]);
+  vm.runInContext("var syncAppUpdateInProgress=false,syncConflictBlocked=false,syncAutomaticFailureCount=0,syncCloudKnownConnected=true,syncRemoteDocLocks=new Map(),syncOwnPresence=null,syncPresencePromise=null,SYNC_PRESENCE_INPUT_WINDOW_MS=5000",ctx);
+  ctx.syncLastEditInputAt=lastEdit;
+  assert.equal(await ctx.syncPresenceAfterLocalWrite(),true);
+  assert.equal(puts.length,1);assert.equal(puts[0].syncMetadata.assetId,"note:n1","the presence names the note");assert.equal(JSON.parse(puts[0].content).documentKey,"note:n1");
+  const firstStart=ctx.syncOwnPresence.sessionStartedAtMs;
+  // Same document again: no new object until renewal is due.
+  assert.equal(await ctx.syncPresenceAfterLocalWrite(),true);assert.equal(puts.length,1);
+  // Editing another document moves the claim there, with a new start.
+  await tick(2);current="project:p1";pending=[{entityType:"project",entityId:"p1",operation:"upsert"}];
+  assert.equal(await ctx.syncPresenceAfterLocalWrite(),true);assert.equal(puts.length,2);assert.equal(puts[1].syncMetadata.assetId,"project:p1");
+  assert.ok(ctx.syncOwnPresence.sessionStartedAtMs>firstStart,"a new document is a new claim");await tick(0);assert.equal(deletes.length,1,"the note's presence is withdrawn");
+  // A folder, the calendar or a memo never publish a presence.
+  current="";assert.equal(await ctx.syncPresenceAfterLocalWrite(),false);
+  // The open document changed only somewhere else (e.g. an automatic write to another item): no presence.
+  current="note:n7";assert.equal(await ctx.syncPresenceAfterLocalWrite(),false);
+  // Another device holds this document: this PC does not claim it.
+  current="note:n1";pending=[{entityType:"note",entityId:"n1",operation:"upsert"}];ctx.syncRemoteDocLocks=new Map([["note:n1",{deviceId:"mobile-phone"}]]);
+  assert.equal(await ctx.syncPresenceAfterLocalWrite(),false);assert.equal(puts.length,2);
+  // Nobody typing (reminders, widgets): no presence.
+  ctx.syncRemoteDocLocks=new Map();ctx.syncLastEditInputAt=Date.now()-60000;assert.equal(await ctx.syncPresenceAfterLocalWrite(),false)
+});
+
+await check("only writes that change a locked document are refused; other documents save normally",async()=>{
+  const modelSource=await readFile(new URL("web/shared/sync-state-model.js",root),"utf8");
+  const notices=[];let rendered=0;
+  const stored={schemaVersion:1,notes:[{id:"n1",title:"폰에서 수정 중"},{id:"n2",title:"다른 노트"}],projects:[{id:"p1",title:"작품"}],folders:[],mindmaps:[],trash:[]};
+  const ctx=context({DiagnosticsLog:log,toast:message=>notices.push(message),setTimeout:fn=>{rendered++;return 0},readState:value=>value,cloneData:value=>structuredClone(value),INITIAL_STATE:{schemaVersion:1},
+    StateRepository:{snapshot:()=>structuredClone(stored)},syncRenderCurrentState:()=>{},normalizeSyncWorkTracking:value=>value,isDataRecord:value=>!!value&&typeof value==="object"&&!Array.isArray(value)},
+    ["syncGuardStateWrite","syncChangedEntityKeys","syncStateEntityMap","syncClientProfile","syncEntityKey","syncNoticeDocumentLocked","syncWorkspaceSnapshot","dataRecords"]);
+  vm.runInContext(modelSource,ctx);vm.runInContext("var SyncStateModel=HamboardSyncStateModel,SYNC_CLIENT_PROFILES=SyncStateModel.CLIENT_PROFILES,backupRestoreBlocksWrites=false,syncConflictResolutionWrite=false,syncInternalStateWrite=false,syncReadonlyNoticeAt=0,state=null",ctx);
+  vm.runInContext("var syncRemoteDocLocks=new Map([['note:n1',{deviceId:'mobile-phone',displayName:'휴대폰',assetId:'note:n1'}]])",ctx);
+  const edit=fn=>{const next=structuredClone(stored);fn(next);return next};
+  assert.equal(ctx.syncGuardStateWrite(edit(s=>{s.notes[1].title="이 PC에서 고침"})),true,"another note saves");
+  assert.equal(ctx.syncGuardStateWrite(edit(s=>{s.projects[0].title="작품 수정"})),true,"a project saves");
+  assert.equal(ctx.syncGuardStateWrite(edit(s=>{s.folders.push({id:"f1",name:"새 폴더"})})),true,"a folder saves");
+  assert.equal(notices.length,0);
+  assert.equal(ctx.syncGuardStateWrite(edit(s=>{s.notes[0].title="덮어쓰기"})),false,"the locked note is refused");
+  assert.equal(ctx.state.notes[0].title,"폰에서 수정 중","memory goes back to the saved note");assert.match(notices[0],/휴대폰.*읽기 전용/);
+  assert.equal(ctx.syncGuardStateWrite(edit(s=>{s.trash.push({id:"t1",type:"note",item:s.notes[0]});s.notes.splice(0,1)})),false,"moving the locked note to the trash is refused as a whole");
+  vm.runInContext("syncInternalStateWrite=true",ctx);assert.equal(ctx.syncGuardStateWrite(edit(s=>{s.notes[0].title="원격 반영"})),true,"applying the other device's edits is allowed")
 });
 
 await check("commit lease handling never toggles read-only and settles before checking the winner",async()=>{
@@ -70,17 +146,15 @@ await check("commit lease handling never toggles read-only and settles before ch
   const active=functionSource("syncActiveLeases");assert.match(active,/SyncCoordination\.activeCommitLeases/);assert.match(active,/SyncCoordination\.expiredLeaseObjects/)
 });
 
-await check("return gate waits for the other device with read-only checks and lifts automatically",async()=>{
-  let probes=0,cycles=0,gate=null,hidden=false,nudged=false;
-  const remote={deviceId:"mobile-phone",displayName:"iPhone",expiresAtMs:String(Date.now()+40000),createdAtMs:String(Date.now())};
-  const ctx=context({DiagnosticsLog:log,safeRunAsync:(label,task)=>task(),syncShowReturnGate:(message,options)=>{gate={message,waiting:!!options?.waiting}},syncHideReturnGate:()=>{hidden=true},$:()=>null,
-    syncReturnProbe:async()=>{probes++;return probes<3?{remote}:{upToDate:true}},
-    runAutomaticSync:async()=>{cycles++;return {synced:true}},scheduleAutomaticSync:()=>{nudged=true}},["syncCheckOnReturn"]);
-  vm.runInContext("var syncWindowWasAway=true,syncReturnGate=false,syncCloudKnownConnected=true,syncReturnGateRun=0,syncAutomaticPromise=null,syncRemoteLease=null,SYNC_READONLY_POLL_INTERVAL_MS=20",ctx);
-  ctx.syncCheckOnReturn();
-  for(let i=0;i<200&&!hidden;i++)await tick(10);
-  assert.equal(probes,3);assert.equal(hidden,true);assert.ok(gate?.waiting,"showed the waiting message");assert.match(gate.message,/iPhone에서 수정 중입니다/);
-  assert.equal(cycles,0,"nothing new from the other device: no sync cycle inside the gate");assert.equal(nudged,true,"a normal cycle is scheduled after the gate")
+await check("return checks quietly when up to date and guards only a real remote pull",async()=>{
+  let gate=0,hidden=0,cycles=0,nudged=0,remote=false;
+  const ctx=context({DiagnosticsLog:log,safeRunAsync:(label,task)=>task(),syncShowReturnGate:()=>{gate++},syncHideReturnGate:()=>{hidden++},syncSetNoteOpenGuard:()=>{},
+    syncReturnProbe:async()=>remote?{needsPull:true,why:"remote-commits"}:{upToDate:true},
+    runAutomaticSync:async()=>{cycles++;return {synced:true}},scheduleAutomaticSync:()=>{nudged++}},["syncCheckOnReturn"]);
+  vm.runInContext("var syncWindowWasAway=true,syncReturnGate=false,syncCloudKnownConnected=true,syncReturnGateRun=0,syncAutomaticPromise=null,syncNoteOpenGuardId=''",ctx);
+  ctx.syncCheckOnReturn();await tick(0);assert.equal(gate,0);assert.equal(cycles,0);assert.ok(nudged);
+  remote=true;vm.runInContext("syncWindowWasAway=true",ctx);ctx.syncCheckOnReturn();await tick(0);
+  assert.equal(gate,1);assert.equal(cycles,1);assert.ok(hidden>=1)
 });
 
 await check("sibling commits: loser withdraws; young forks retry in seconds instead of minutes",async()=>{
@@ -112,7 +186,7 @@ await check("app update publishes, freezes automatic sync, and releases lease/pr
   assert.match(install,/await syncPrepareForAppUpdate\(\);await update\.downloadAndInstall/);assert.match(install,/syncResumeAfterAppUpdateFailure\(\)/);
   assert.match(schedule,/if\(syncAppUpdateInProgress\)return/);assert.match(automatic,/if\(syncAppUpdateInProgress\)return \{skipped:"app-update"\}/);
   assert.match(functionSource("syncWorkTrackingCaptureDue"),/reason==="app-update"/,"the update captures the latest work-tracking seconds");
-  assert.match(functionSource("syncPresenceAfterLocalWrite"),/syncAppUpdateInProgress\|\|/,"no new presence while updating")
+  assert.match(functionSource("scheduleSyncOutboxPreparation"),/await syncPresenceAfterLocalWrite\(\)/,"a local edit may mark its document as being edited")
 });
 
 await check("Windows topology (shared) sends a device whose base was GC'd to the checkpoint rebaseline, never to a partial replay",async()=>{

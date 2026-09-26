@@ -874,6 +874,7 @@
     scrollAppToTop();
     resetTopbarVisibility();
     scheduleNoteViewportSync();
+    renderSyncReadonly();
     refreshLucideIcons()
   }
   function renderAccountButton(){
@@ -3522,7 +3523,7 @@
 
   function pickMobileNoteImages(){
     if(activeDocumentType!=="note"||!activeDocumentId||noteImageInsertBusy)return;
-    if(syncEngine?.isReadonly()){noticeReadonly();return}
+    const lock=activeDocumentLock();if(lock){noticeReadonly(lock);return}
     captureMobileNoteSelection();
     const input=document.createElement("input");
     input.type="file";input.accept="image/*";input.multiple=true;input.hidden=true;
@@ -3980,6 +3981,7 @@
     const returnFolderId=!libraryScreen.hidden?activeFolderId:"";
     renderDocument(type,id,returnFolderId);
     writeRoute({view:"document",type,id:String(id||""),returnFolderId},{replace})
+    if(type==="note"&&!document.hidden&&syncEngine?.status().linked)runMobileReturnCheck()
   }
 
   function openLibrary({replace=false}={}){
@@ -4055,8 +4057,7 @@
   // document changes being applied, another device still editing, a failure to report, or a background
   // publish that may still be writing local state.
   let mobileReturnGateBlocking=false;
-  let mobileReturnGateActive=false,mobileReturnRun=0,mobileHiddenAt=0,syncToastTimer=0,syncNoticeAt=0,assetRefreshTimer=0;
-  const MOBILE_SHORT_AWAY_MS=3000;
+  let mobileReturnGateActive=false,mobileReturnRun=0,syncToastTimer=0,syncNoticeAt=0,assetRefreshTimer=0;
 
   function mobileDeviceName(){const ua=String(navigator.userAgent||"");return /iPhone/.test(ua)?"iPhone":/iPad/.test(ua)?"iPad":/Android/.test(ua)?"Android":"모바일"}
   function hasPendingMobileSaves(){return !!(noteSaveTimer||pendingNoteSave||noteHtmlSaveTimer||pendingNoteHtmlSave||blockSaveTimer)}
@@ -4074,17 +4075,22 @@
     toast.textContent=String(message||"");toast.classList.add("visible");
     clearTimeout(syncToastTimer);syncToastTimer=setTimeout(()=>toast.classList.remove("visible"),3200)
   }
-  function noticeReadonly(){
+  function noticeReadonly(lock=null){
     if(Date.now()-syncNoticeAt<2500)return;syncNoticeAt=Date.now();
-    const remote=syncEngine?._readonly?.();
-    showSyncToast(remote?`${remoteDeviceText(remote)}. 반영될 때까지 읽기 전용입니다.`:"다른 기기의 변경사항을 반영하는 중입니다. 잠시만 기다려 주세요.")
+    showSyncToast(lock?`${remoteDeviceText(lock)}. 반영될 때까지 이 문서는 읽기 전용입니다.`:"다른 기기의 변경사항을 반영하는 중입니다. 잠시만 기다려 주세요.")
   }
-  function renderSyncReadonly(remote){
+  // Only the document another device is editing (project, note or mindmap) is read-only here.
+  const LOCKABLE_DOCUMENT_FIELDS={project:"projects",note:"notes",mindmap:"mindmaps"};
+  function activeDocumentKey(){return LOCKABLE_DOCUMENT_FIELDS[activeDocumentType]&&activeDocumentId?`${activeDocumentType}:${activeDocumentId}`:""}
+  function activeDocumentLock(){const key=activeDocumentKey();return key?syncEngine?.documentLock(key)||null:null}
+  function documentJson(state,key){const split=key.indexOf(":"),field=LOCKABLE_DOCUMENT_FIELDS[key.slice(0,split)],id=key.slice(split+1),item=field?(state?.[field]||[]).find(entry=>String(entry?.id||"")===id):null;return item?JSON.stringify(item):""}
+  function renderSyncReadonly(){
+    let lock=null;try{lock=activeDocumentLock()}catch{}
     let banner=document.getElementById("mobileSyncReadonly");
-    document.body.classList.toggle("sync-remote-readonly",!!remote);
-    if(!remote){banner?.remove();return}
+    document.body.classList.toggle("sync-remote-readonly",!!lock);
+    if(!lock){banner?.remove();return}
     if(!banner){banner=element("div","mobile-sync-readonly");banner.id="mobileSyncReadonly";banner.setAttribute("role","status");document.body.append(banner)}
-    banner.textContent=`${syncCoordination.deviceLabel(remote,mobileDeviceName())} 수정 중 · 읽기 전용`
+    banner.textContent=`${syncCoordination.deviceLabel(lock,mobileDeviceName())}에서 이 문서를 수정 중 · 읽기 전용`
   }
   function rerenderCurrentView(changedKeys=null){
     try{
@@ -4117,7 +4123,6 @@
   }
   async function guardedReplaceState(value,options={}){
     if(options?.markBaseline)return baseRepository.replaceState(value,options);
-    if(syncEngine?.isReadonly()){noticeReadonly();setTimeout(()=>rerenderCurrentView(new Set(["*"])),0);throw new Error("mobile-sync-readonly")}
     if(backgroundPublishPending&&mobileReturnGateActive){noticeReadonly();setTimeout(()=>rerenderCurrentView(new Set(["*"])),0);throw new Error("mobile-sync-background-publish")}
     const generation=value&&typeof value==="object"?snapshotGenerations.get(value):undefined;
     let next=value;
@@ -4125,8 +4130,12 @@
       try{next=rebaseStaleWrite(value,generation)}
       catch(error){showSyncToast("다른 기기의 변경사항이 방금 반영되었습니다. 다시 한 번 저장해 주세요.");setTimeout(()=>rerenderCurrentView(new Set(["*"])),0);throw error}
     }
+    // A write that changes a document another device is editing is refused as a whole.
+    const before=baseRepository.snapshot(),locks=syncEngine?.lockedDocuments()||new Map();
+    for(const [key,lock] of locks)if(documentJson(before,key)!==documentJson(next,key)){noticeReadonly(lock);setTimeout(()=>rerenderCurrentView(new Set(["*"])),0);throw new Error("mobile-sync-readonly")}
+    const editedKey=activeDocumentKey(),edited=editedKey&&documentJson(before,editedKey)!==documentJson(next,editedKey)?editedKey:"";
     const result=await baseRepository.replaceState(next,options);
-    syncEngine?.notifyLocalWrite();
+    syncEngine?.notifyLocalWrite(edited);
     return result
   }
   async function engineWriteLocal(next,info={}){
@@ -4143,7 +4152,7 @@
   // to tell: remote changes being applied, another device still editing, a failure, or a slow check.
   // An up-to-date check (the usual case) finishes without any visible popup.
   const MOBILE_GATE_PULL_REVEAL_MS=700,MOBILE_GATE_SLOW_REVEAL_MS=5000;
-  let mobileGateRevealTimer=0,mobileDisconnectedNoticeShown=false;
+  let mobileGateRevealTimer=0,mobileDisconnectedNoticeShown=false,mobileReturnFailureNoticeShown=false;
   function revealMobileReturnGate(delay=0){
     const layer=document.getElementById("mobileSyncGate");if(!layer||layer.classList.contains("visible"))return;
     if(mobileGateRevealTimer){clearTimeout(mobileGateRevealTimer);mobileGateRevealTimer=0}
@@ -4163,8 +4172,7 @@
       layer.querySelector("[data-sync-gate-retry]").onclick=()=>runMobileReturnCheck({force:true});
       layer.querySelector("[data-sync-gate-skip]").onclick=()=>{
         mobileReturnRun++;
-        if(syncEngine?.isReadonly()){syncEngine.overrideRemote();logDiagnostic("warn","SYNC","다른 기기의 편집을 기다리지 않고 편집을 시작했습니다.");showSyncToast("기다리지 않고 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.")}
-        else showSyncToast("최신 내용 확인 전에 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.");
+        showSyncToast("최신 내용 확인 전에 편집합니다. 같은 문서를 고치면 충돌 복사본이 생길 수 있습니다.");
         hideMobileReturnGate()
       };
       // A plain check stays invisible; only a blocking one surfaces when it drags on.
@@ -4178,6 +4186,7 @@
   }
   function hideMobileReturnGate(){
     mobileReturnGateActive=false;mobileReturnGateBlocking=false;
+    noteReaderScreen.inert=false;
     if(mobileGateRevealTimer){clearTimeout(mobileGateRevealTimer);mobileGateRevealTimer=0}
     document.getElementById("mobileSyncGate")?.remove()
   }
@@ -4186,16 +4195,20 @@
     if(!status?.linked||status.suspended)return null;
     if(!force&&mobileReturnGateActive)return null;
     const run=++mobileReturnRun;
+    showMobileReturnGate();
+    if(activeDocumentType==="note"&&!noteReaderScreen.hidden){
+      releaseMobileInputFocus();mobileReturnGateBlocking=true;noteReaderScreen.inert=true;
+      revealMobileReturnGate(1200)
+    }
+    try{
     // What a finished background publish wrote only needs one reload under the lock; after that the
     // check itself no longer has to hold input.
     if(backgroundPublishPending&&!(await backgroundPublishMayBeRunning())){
       try{await syncEngine.reloadFromStore();backgroundPublishPending=false}catch(error){logDiagnostic("warn","SYNC","백그라운드 반영 내용을 불러오지 못했습니다.",error)}
       if(run!==mobileReturnRun)return null
     }
-    showMobileReturnGate();
-    try{
       const pendingBefore=backgroundPublishPending;
-      const result=await syncEngine.checkOnReturn({isCancelled:()=>run!==mobileReturnRun,onWaiting:remote=>{if(run===mobileReturnRun)showMobileReturnGate({waiting:remote})},onPulling:()=>{if(run===mobileReturnRun)showMobileReturnGate({pulling:true})}});
+      const result=await syncEngine.checkOnReturn({isCancelled:()=>run!==mobileReturnRun,onPulling:()=>{if(run===mobileReturnRun)showMobileReturnGate({pulling:true})}});
       if(run!==mobileReturnRun||result?.cancelled)return result;
       // The probe ran under the sync lock and reloaded anything the background publisher wrote.
       if(pendingBefore)backgroundPublishPending=false;
@@ -4205,41 +4218,49 @@
         if(force||!mobileDisconnectedNoticeShown){mobileDisconnectedNoticeShown=true;showSyncToast(result.skipped==="offline"?"오프라인이라 최신 내용을 확인하지 못했습니다.":"클라우드에 로그인되어 있지 않아 최신 내용을 확인하지 못했습니다.")}
         return result
       }
-      if(result?.waitingTimedOut){showMobileReturnGate({message:"다른 기기의 변경사항이 아직 올라오지 않았습니다. 그 기기에서 햄보드를 열어 동기화하거나, 기다리지 않고 편집할 수 있습니다."});return result}
-      if(result?.failed||result?.blocked){logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);showMobileReturnGate({message:result?.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
-      mobileDisconnectedNoticeShown=false;
+      if(result?.failed){
+        logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);
+        hideMobileReturnGate();
+        if(force||!mobileReturnFailureNoticeShown){mobileReturnFailureNoticeShown=true;showSyncToast("최신 내용을 확인하지 못했습니다. 자동으로 다시 시도합니다.")}
+        return result
+      }
+      if(result?.blocked){logDiagnostic("warn","SYNC","앱 복귀 중 최신 내용 확인이 보류되었습니다.",result);showMobileReturnGate({message:result.blocked==="branched-history"?"동기화 기록이 갈라져 있어 PC에서 먼저 정리해야 합니다. 로컬에서 편집할 수 있습니다.":"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."});return result}
+      mobileDisconnectedNoticeShown=false;mobileReturnFailureNoticeShown=false;
       hideMobileReturnGate();
       if(syncEngine.pendingChanges().length&&!publishPanelState.active){showPublishPanel("resume");syncEngine.sync("resume-publish")}
       return result
     }catch(error){
-      if(run===mobileReturnRun){logDiagnostic("error","SYNC","최신 내용 확인에 실패했습니다.",error);showMobileReturnGate({message:"최신 내용을 확인하지 못했습니다. 다시 확인하거나 로컬에서 편집하세요."})}
+      if(run===mobileReturnRun){logDiagnostic("error","SYNC","최신 내용 확인에 실패했습니다.",error);hideMobileReturnGate();if(force||!mobileReturnFailureNoticeShown){mobileReturnFailureNoticeShown=true;showSyncToast("최신 내용을 확인하지 못했습니다. 자동으로 다시 시도합니다.")}}
       return null
     }
   }
   function installMobileSyncGuards(){
     if(document.documentElement.dataset.mobileSyncGuards)return;document.documentElement.dataset.mobileSyncGuards="1";
     const editable="input,textarea,[contenteditable='true'],[contenteditable='']";
+    const documentScreens="#projectReaderScreen,#projectBlockEditorScreen,#noteReaderScreen,#mindmapReaderScreen";
     for(const type of ["beforeinput","paste","cut","drop"])document.addEventListener(type,event=>{
-      if(!(syncEngine?.isReadonly()||mobileReturnGateBlocking))return;
       const target=event.target;
       if(!target?.closest?.(editable)||target.closest("#mobileSyncGate,#librarySearch"))return;
-      event.preventDefault();noticeReadonly()
+      if(mobileReturnGateBlocking){event.preventDefault();noticeReadonly();return}
+      const lock=target.closest(documentScreens)?activeDocumentLock():null;
+      if(lock){event.preventDefault();noticeReadonly(lock)}
     },true);
     document.addEventListener("visibilitychange",()=>{
       if(!syncEngine)return;
       if(document.hidden){
-        mobileHiddenAt=Date.now();syncEngine.stopPolling();
+        syncEngine.stopPolling();
+        // Register immediately for edits already persisted in IndexedDB, before the page
+        // can be frozen. The flush below also covers edits still in an editor timer.
+        if(syncEngine.pendingChanges().length)requestBackgroundPublish("hidden").catch(error=>logDiagnostic("warn","SYNC","백그라운드 올리기를 예약하지 못했습니다.",error));
         flushPendingMobileSaves().then(async()=>{await requestBackgroundPublish("hidden");return syncEngine.leave()}).catch(error=>logDiagnostic("warn","SYNC","화면 전환 전 업로드를 미뤘습니다.",error))
       }else returnToMobileApp()
     });
-    window.addEventListener("pagehide",()=>{if(syncEngine)flushPendingMobileSaves().then(async()=>{await requestBackgroundPublish("pagehide");return syncEngine.leave()}).catch(()=>{})});
+    window.addEventListener("pagehide",()=>{if(syncEngine){if(syncEngine.pendingChanges().length)requestBackgroundPublish("pagehide").catch(()=>{});flushPendingMobileSaves().then(async()=>{await requestBackgroundPublish("pagehide");return syncEngine.leave()}).catch(()=>{})}});
     window.addEventListener("pageshow",event=>{if(event.persisted)returnToMobileApp()});
     window.addEventListener("online",()=>{if(syncEngine?.status().linked)syncEngine.sync("online")})
   }
   function returnToMobileApp(){
     if(!syncEngine)return;
-    const away=mobileHiddenAt?Date.now()-mobileHiddenAt:Infinity;mobileHiddenAt=0;
-    if(away<MOBILE_SHORT_AWAY_MS&&!backgroundPublishPending){syncEngine.startPolling();return}
     runMobileReturnCheck().finally(()=>syncEngine.startPolling({immediate:false}))
   }
   // Upload panel: shown while an image edit (or edits left from a previous visit) goes up to Drive,
@@ -4315,7 +4336,7 @@
   }
 
   function handleSyncStatus(name,detail){
-    if(name==="readonly"){renderSyncReadonly(detail);return}
+    if(name==="locks"){renderSyncReadonly();return}
     if(name==="pushing"){if(googleDrive?.status?.().connected)setIndicator("busy","올리는 중…");if(publishPanelState.stage!=="images")updatePublishPanel({stage:publishPanelState.stage==="preparing"?"images":publishPanelState.stage});return}
     if(name==="committing"){updatePublishPanel({stage:"saving"});return}
     if(name==="conflicts"){
@@ -4874,7 +4895,11 @@
 
   function renderRoute(route){
     if(!route||route.hamboard!==true){renderHome();return}
-    if(route.view==="document"){renderDocument(route.type,route.id,route.returnFolderId);return}
+    if(route.view==="document"){
+      renderDocument(route.type,route.id,route.returnFolderId);
+      if(route.type==="note"&&!document.hidden&&syncEngine?.status().linked)runMobileReturnCheck();
+      return
+    }
     if(route.view==="folder"){renderFolder(route.id,route.query||"");return}
     if(route.view==="menu"){renderMenu();return}
     if(route.view==="trash"){renderTrashScreen();return}
@@ -5361,7 +5386,7 @@
     try{
       // Forget the sync base so a different account can never be merged against it.
       await syncEngine?.unlink().catch(error=>logDiagnostic("warn","SYNC","동기화 연결 해제를 정리하지 못했습니다.",error));
-      renderSyncReadonly(null);hideMobileReturnGate();
+      renderSyncReadonly();hideMobileReturnGate();
       await googleDrive.disconnect();
       silentReconnectFailed=false;
       cloudSyncListing=null;

@@ -37,7 +37,7 @@ function createDesktop(drive,deviceId="device-pc"){
     get state(){return state},get base(){return base},
     async pull(){const objects=(await drive.listSyncTopology()).objects,path=[];let head=heads();assert.equal(head.length,1,"desktop sees a single head");let cursor=head[0];const byRev=new Map(objects.filter(o=>o.syncType==="commit").map(o=>[o.revision,o]));while(cursor&&cursor.revision!==base){path.unshift(cursor);cursor=byRev.get(cursor.baseRevision)}for(const object of path){const commit=await drive.getSyncValue(object);for(const change of commit.changes)if(change.operation==="upsert")assert.equal(sha(JSON.stringify(change.payload)),change.payloadSha256,"desktop payload hash check");state=model.applyCommitToCanonical(state,commit);base=commit.revision}return path.length},
     async commit(changes,{createdAtMs=now(),baseRevision=base}={}){const revision=`rev-pc-${createdAtMs}-${Math.random().toString(36).slice(2,6)}`,full=changes.map(c=>({...c,payloadSha256:c.operation==="upsert"?sha(JSON.stringify(c.payload)):null})),commit={format:"hamboard-sync-commit",formatVersion:1,stateSchemaVersion:1,revision,baseRevision,deviceId,clientProfile:"desktop",createdAtMs,imageQuality:"balanced",changes:full};state=model.applyCommitToCanonical(state,commit);const uploaded=await drive.putSyncValue({objectKey:`sync/commits/${revision}.json`,value:commit,syncMetadata:{syncType:"commit",revision,baseRevision,deviceId,clientProfile:"desktop",createdAtMs:String(createdAtMs)}});base=revision;return uploaded},
-    async startEditing(){const record=coord.presenceRecord({deviceId,displayName:"Windows PC",clientProfile:"desktop",sessionStartedAtMs:now(),expiresAtMs:now()+coord.PRESENCE_TTL_MS,baseRevision:base});presence=await drive.putSyncText({objectKey:record.objectKey,content:record.content,syncMetadata:record.syncMetadata});return presence},
+    async startEditing(documentKey="",{sessionStartedAtMs=now()}={}){if(presence)await drive.deleteSyncObject(presence);const record=coord.presenceRecord({deviceId,displayName:"Windows PC",clientProfile:"desktop",sessionStartedAtMs,expiresAtMs:now()+coord.PRESENCE_TTL_MS,baseRevision:base,documentKey});presence=await drive.putSyncText({objectKey:record.objectKey,content:record.content,syncMetadata:record.syncMetadata});return presence},
     async stopEditing(){if(presence)await drive.deleteSyncObject(presence);presence=null}
   }
 }
@@ -45,7 +45,7 @@ function createDesktop(drive,deviceId="device-pc"){
 function createMobile(drive,{local={schemaVersion:1,projects:[],notes:[]},meta=null,confirm=null,flushPendingSaves=null}={}){
   let state=clone(local);const events=[];const metaStore=Engine.createMemoryMetaStore(meta);
   const engine=Engine.createMobileSyncEngine({drive,syncModel:model,coordination:coord,metaStore,readLocal:()=>clone(state),writeLocal:async next=>{state=clone(next)},hooks:{onStatus:(name,detail)=>events.push([name,detail]),flushPendingSaves:flushPendingSaves||undefined},displayName:"iPhone",now,sleep:async ms=>{advance(ms)},timers:{setTimeout:()=>0,clearTimeout:()=>{}},online:()=>true});
-  return {engine,events,metaStore,get state(){return state},replace(next){state=clone(next)},edit(fn){fn(state);engine.notifyLocalWrite()},confirm}
+  return {engine,events,metaStore,get state(){return state},replace(next){state=clone(next)},edit(fn,documentKey=""){fn(state);engine.notifyLocalWrite(documentKey)},confirm}
 }
 
 const checks=[];async function check(name,run){await run();checks.push(name);console.log("  PASS",name)}
@@ -79,25 +79,26 @@ await check("phone theme change travels as user-library without touching desktop
   await pc.pull();assert.equal(pc.state.settings.mode,"dark");assert.equal(pc.state.settings.fontScale,1);assert.equal(pc.state.settings.theme,"lilac")
 });
 
-await check("commit lease is released and presence is withdrawn after the quiet period",async()=>{
+await check("commits release the upload lease; edits outside an open document publish no editing presence",async()=>{
   assert.equal([...drive.files.values()].filter(f=>coord.isCommitLease(f.meta)).length,0);
-  assert.equal([...drive.files.values()].filter(f=>coord.isPresence(f.meta)).length,1,"presence published on first edit");
-  advance(coord.PRESENCE_IDLE_GRACE_MS+10);assert.equal(await phone.engine._presenceTick(),"release");
   assert.equal([...drive.files.values()].filter(f=>coord.isPresence(f.meta)).length,0)
 });
 
-await check("returning while Windows is editing waits, then unlocks with the Windows change applied",async()=>{
-  await pc.startEditing();let waits=0;
-  const pending=phone.engine.checkOnReturn({onWaiting:async remote=>{waits++;assert.equal(remote.displayName,"Windows PC");assert.equal(phone.engine.isReadonly(),true);if(waits===2){await pc.commit([{entityType:"note",entityId:"n1",operation:"upsert",payload:{...pc.state.notes[0],content:"<p>PC에서 이어서 고침</p>"}}]);await pc.stopEditing()}}});
-  const result=await pending;assert.equal(result.synced,true);assert.ok(waits>=2);
-  assert.equal(phone.engine.isReadonly(),false);assert.equal(phone.state.notes[0].content,"<p>PC에서 이어서 고침</p>")
+await check("returning while Windows has an old app-wide editing presence does not wait or lock anything",async()=>{
+  await pc.startEditing();
+  const checked=await phone.engine.checkOnReturn();
+  assert.equal(checked.upToDate,true);
+  assert.equal(phone.engine.lockedDocuments().size,0);
+  await pc.commit([{entityType:"note",entityId:"n1",operation:"upsert",payload:{...pc.state.notes[0],content:"<p>PC에서 이어서 고침</p>"}}]);
+  const pulled=await phone.engine.checkOnReturn();assert.equal(pulled.synced,true);
+  assert.equal(phone.state.notes[0].content,"<p>PC에서 이어서 고침</p>");await pc.stopEditing()
 });
 
-await check("phone that started editing first is not blocked by a later Windows session",async()=>{
-  phone.edit(s=>{s.projects[0].title="폰이 먼저"});await phone.engine.sync("x");
-  const own=[...drive.files.values()].find(f=>coord.isPresence(f.meta)&&f.meta.deviceId.startsWith("mobile-"));assert.ok(own);
-  advance(50);await pc.startEditing();await phone.engine.sync("poll");assert.equal(phone.engine.isReadonly(),false);
-  await pc.stopEditing();await pc.pull();advance(coord.PRESENCE_IDLE_GRACE_MS+10);await phone.engine._presenceTick()
+await check("Windows presence does not prevent a phone commit",async()=>{
+  await pc.startEditing("note:n1");phone.edit(s=>{s.projects[0].title="폰에서 수정"},"project:p1");
+  assert.ok((await phone.engine.sync("phone-edit")).committed);
+  assert.equal(phone.engine.documentLock("project:p1"),null,"Windows edits a different document");
+  await pc.stopEditing();await pc.pull()
 });
 
 await check("both devices edit the same note: Windows keeps the id, phone text survives as a copy",async()=>{
@@ -190,15 +191,68 @@ await check("backup restore waits for an in-flight upload, then stays paused acr
   isolatedDrive.putSyncValue=originalPut
 });
 
-await check("expired presence from a crashed device stops blocking",async()=>{
-  await pc.startEditing();await phone.engine.sync("x");assert.equal(phone.engine.isReadonly(),true);
-  advance(coord.PRESENCE_TTL_MS+1);await phone.engine.sync("x");assert.equal(phone.engine.isReadonly(),false);await pc.stopEditing()
+await check("presence from an older version (no document) never locks anything on the phone",async()=>{
+  await pc.startEditing();await phone.engine.sync("legacy-presence");
+  assert.equal(phone.engine.lockedDocuments().size,0);assert.equal(phone.engine.documentLock("note:n1"),null);await pc.stopEditing()
 });
 
-await check("override lets the user edit without waiting, only for that session",async()=>{
-  await pc.startEditing();await phone.engine.sync("x");assert.equal(phone.engine.isReadonly(),true);
-  assert.equal(phone.engine.overrideRemote(),true);await phone.engine.sync("x");assert.equal(phone.engine.isReadonly(),false);
-  await pc.stopEditing();advance(10);await pc.startEditing();await phone.engine.sync("x");assert.equal(phone.engine.isReadonly(),true,"a new session blocks again");await pc.stopEditing()
+await check("Windows editing a note locks only that note on the phone, without holding the return check",async()=>{
+  const events=phone.events.length;await pc.startEditing("note:n1");
+  const checked=await phone.engine.checkOnReturn();assert.equal(checked.synced,true,"the return check does not wait for Windows");
+  assert.equal(phone.engine.documentLock("note:n1")?.deviceId,"device-pc","the note is read-only");
+  assert.equal(phone.engine.documentLock("project:p1"),null,"the project stays editable");
+  assert.deepEqual(phone.engine.status().locks,["note:n1"]);
+  assert.ok(phone.events.slice(events).some(([name,detail])=>name==="locks"&&detail.has("note:n1")),"the app is told which document is locked");
+  await pc.stopEditing();await phone.engine.sync("after-pc");
+  assert.equal(phone.engine.documentLock("note:n1"),null,"the lock lifts when Windows is done");
+  assert.ok(phone.events.at(-1)[0]==="result"&&phone.events.some(([name,detail])=>name==="locks"&&detail.size===0))
+});
+
+await check("the phone's presence names the edited document and moves with it; it never claims a document Windows holds",async()=>{
+  const presences=()=>[...drive.files.values()].filter(f=>coord.isPresence(f.meta)&&f.meta.deviceId===phone.engine.status().deviceId).map(f=>f.meta.assetId);
+  phone.edit(s=>{s.notes[0].title="폰에서 노트 편집"},"note:n1");await Promise.resolve();await Promise.resolve();
+  for(let i=0;i<20&&!presences().length;i++)await Promise.resolve();
+  assert.deepEqual(presences(),["note:n1"]);
+  phone.edit(s=>{s.projects[0].title="폰에서 작품 편집"},"project:p1");for(let i=0;i<40&&!presences().includes("project:p1");i++)await Promise.resolve();
+  for(let i=0;i<40&&presences().length>1;i++)await Promise.resolve();
+  assert.deepEqual(presences(),["project:p1"],"the claim moved to the project");
+  assert.ok((await phone.engine.sync("phone-edits")).committed);await pc.pull();
+  await phone.engine.releasePresence("test");
+  // Windows is editing the note: the phone does not claim it (and its own edit is still refused by the app).
+  await pc.startEditing("note:n1");await phone.engine.sync("see-pc");
+  phone.edit(()=>{},"note:n1");for(let i=0;i<20;i++)await Promise.resolve();
+  assert.deepEqual(presences(),[],"no claim on a document Windows holds");
+  await pc.stopEditing();await phone.engine.sync("after-pc")
+});
+
+await check("the same document claimed on both devices: the earlier editor keeps it",async()=>{
+  const presences=()=>[...drive.files.values()].filter(f=>coord.isPresence(f.meta)&&f.meta.deviceId===phone.engine.status().deviceId);
+  phone.edit(s=>{s.notes[0].title="폰이 먼저"},"note:n1");for(let i=0;i<20&&!presences().length;i++)await Promise.resolve();
+  assert.equal(presences().length,1);
+  const phoneStart=Number(presences()[0].meta.createdAtMs);
+  await pc.startEditing("note:n1",{sessionStartedAtMs:phoneStart+1000});await phone.engine.sync("later-pc");
+  assert.equal(phone.engine.documentLock("note:n1"),null,"the phone started first and keeps editing");
+  await pc.startEditing("note:n1",{sessionStartedAtMs:phoneStart-1000});await phone.engine.sync("earlier-pc");
+  assert.equal(phone.engine.documentLock("note:n1")?.deviceId,"device-pc","Windows started first: read-only on the phone");
+  for(let i=0;i<20&&presences().length;i++)await Promise.resolve();
+  assert.equal(presences().length,0,"the phone gives up its claim");
+  await pc.stopEditing();await phone.engine.sync("after-pc");await pc.pull()
+});
+
+await check("an upload that fails while the page is hidden is retried a few times, not dropped until the next visit",async()=>{
+  const d=createDrive(),p=createDesktop(d);await p.commit([{entityType:"note",entityId:"h1",operation:"upsert",payload:note("h1","원본")}]);
+  const scheduled=[];let state={schemaVersion:1,projects:[],notes:[]};
+  const engine=Engine.createMobileSyncEngine({drive:d,syncModel:model,coordination:coord,metaStore:Engine.createMemoryMetaStore(null),readLocal:()=>clone(state),writeLocal:async next=>{state=clone(next)},now,sleep:async ms=>{advance(ms)},timers:{setTimeout:(fn,ms)=>{scheduled.push({fn,ms});return scheduled.length},clearTimeout:()=>{}},online:()=>true});
+  await engine.init();await engine.link();engine.stopPolling();
+  const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new Error("google-drive-http-503");return value(request)};
+  state.notes[0].title="숨겨지기 직전 편집";engine.notifyLocalWrite("note:h1");scheduled.length=0;
+  assert.equal((await engine.sync("leave")).failed,true);
+  const retries=()=>scheduled.filter(item=>item.ms>=5000);
+  assert.equal(retries().length,1,"a retry is scheduled although the page is not polling");
+  for(let i=0;i<8;i++){const next=retries().at(-1);if(!next)break;scheduled.length=0;next.fn();await engine.sync("wait")}
+  assert.equal(retries().length,0,"hidden retries stop after a few attempts");
+  d.putSyncValue=value;const recovered=await engine.sync("visible-again");assert.ok(recovered.committed,"the edit goes up on the next visit");
+  scheduled.length=0;await engine.sync("clean");assert.equal(scheduled.length,0,"nothing pending and not polling: no background polls")
 });
 
 await check("first link preserves every differing local entity regardless of updatedAt",async()=>{
@@ -334,7 +388,11 @@ await check("a suspend that cannot be recorded restores polling and the cancelle
   assert.equal(engine.status().suspended,"","not paused");
   const kinds=[...scheduled.values()];assert.ok(kinds.length>=2,"poll and upload are scheduled again");
   // Fire only engine-scheduled timers, like the browser would.
-  for(let round=0;round<8&&scheduled.size;round++){const [id,{fn}]=[...scheduled][0];scheduled.delete(id);await fn();await Promise.resolve()}
+  for(let round=0;round<30;round++){
+    if(scheduled.size){const [id,{fn}]=[...scheduled][0];scheduled.delete(id);await fn()}
+    await new Promise(resolve=>setImmediate(resolve));
+    if([...d.files.values()].some(file=>file.meta.syncType==="commit"&&file.meta.clientProfile==="mobile-core"))break
+  }
   await p.pull();
   assert.equal(p.state.notes.find(n=>n.id==="s").title,"멈춤 실패 전 편집","the edit whose upload was cancelled goes up");
   assert.ok(p.state.notes.some(n=>n.id==="late"),"the edit flushed during the pause attempt goes up too")
@@ -500,16 +558,13 @@ await check("return with another device's commit: it is applied before the check
   assert.ok((await m.engine.sync("after-return")).committed)
 });
 
-await check("while uploads fail, the phone does not keep Windows read-only",async()=>{
-  const {d,m}=await linkedPhone();
-  m.edit(s=>{s.notes.find(n=>n.id==="r1").title="올라가지 못하는 편집"});
-  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,1,"presence published on edit");
+await check("failed phone uploads never leave an editing presence",async()=>{
+  const {d,m}=await linkedPhone();m.edit(s=>{s.notes.find(n=>n.id==="r1").title="올라가지 못하는 편집"});
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0);
   const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new Error("google-drive-http-500");return value(request)};
-  const failed=await m.engine.sync("push");assert.equal(failed.failed,true);
-  assert.equal(await m.engine._presenceTick(),"release");
-  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0,"presence withdrawn");
+  assert.equal((await m.engine.sync("push")).failed,true);
   m.edit(s=>{s.notes.find(n=>n.id==="r1").title="실패 중 추가 편집"});
-  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0,"no new presence while failing");
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0);
   d.putSyncValue=value;assert.ok((await m.engine.sync("recovered")).committed)
 });
 
@@ -520,7 +575,7 @@ function createSharedPhone(drive){
   const lock=createLock(),metaStore=Engine.createMemoryMetaStore(null),stored={state:{schemaVersion:1,projects:[],notes:[]}};let pageState=clone(stored.state),reloads=0;
   const page=Engine.createMobileSyncEngine({drive,syncModel:model,coordination:coord,metaStore,readLocal:()=>clone(pageState),writeLocal:async next=>{pageState=clone(next);stored.state=clone(next)},writerId:"page",exclusive:fn=>lock.run(fn),hooks:{reloadLocal:async()=>{reloads++;pageState=clone(stored.state)}},now});
   const worker=()=>{let workerState=clone(stored.state);return Engine.createMobileSyncEngine({drive,syncModel:model,coordination:coord,metaStore,readLocal:()=>clone(workerState),writeLocal:async next=>{workerState=clone(next);stored.state=clone(next)},writerId:"worker",exclusive:fn=>lock.run(fn),hooks:{reloadLocal:async()=>{workerState=clone(stored.state)}},now})};
-  return {page,worker,lock,stored,get pageState(){return pageState},get reloads(){return reloads},edit(fn){fn(pageState);stored.state=clone(pageState);page.notifyLocalWrite()}}
+  return {page,worker,lock,stored,metaStore,get pageState(){return pageState},get reloads(){return reloads},edit(fn){fn(pageState);stored.state=clone(pageState);page.notifyLocalWrite()}}
 }
 async function sharedLinked(){
   const d=createDrive(),p=createDesktop(d);await p.commit([{entityType:"note",entityId:"b1",operation:"upsert",payload:note("b1","원본")}]);
@@ -596,15 +651,16 @@ await check("with the real sync lock, the return check still waits for the backg
   release();await workerRun;await check;assert.equal(settled,true)
 });
 
-await check("background publish: the worker withdraws the page's editing presence once everything is published",async()=>{
+await check("background publish removes an old stored presence after publishing",async()=>{
   const {d,phone}=await sharedLinked();
   const value=d.putSyncValue.bind(d);d.putSyncValue=async request=>{if(request.syncMetadata.syncType==="commit")throw new TypeError("Failed to fetch");return value(request)};
-  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="편집 중 표시 남김"});await new Promise(resolve=>setTimeout(resolve,5));
+  phone.edit(s=>{s.notes.find(n=>n.id==="b1").title="편집 중 표시 남김"});
   await phone.page.sync("leave");d.putSyncValue=value;
-  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,1,"the page left its presence behind");
+  const record=coord.presenceRecord({deviceId:phone.page.status().deviceId,displayName:"모바일",sessionStartedAtMs:now(),expiresAtMs:now()+coord.PRESENCE_TTL_MS});
+  const legacy=await d.putSyncText({objectKey:record.objectKey,content:record.content,syncMetadata:record.syncMetadata});
+  await phone.metaStore.write({...phone.metaStore.peek(),presence:legacy});
   const worker=phone.worker();await worker.init();assert.ok((await worker.sync("background")).committed);
-  assert.equal(await worker.releaseStoredPresence(),true);
-  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0,"Windows no longer waits for the phone")
+  assert.equal([...d.files.values()].filter(file=>coord.isPresence(file.meta)).length,0)
 });
 
 for(const phone of sharedPhones){phone.page.stopPolling();await phone.page.releasePresence("qa-done").catch(()=>{})}

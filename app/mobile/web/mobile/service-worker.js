@@ -59,7 +59,8 @@ async function backgroundPublish(){
   const engine=engineCore.createMobileSyncEngine({
     drive,syncModel:self.HamboardSyncStateModel,coordination:self.HamboardSyncCoordination,metaStore:engineCore.createIndexedDbMetaStore(),
     readLocal:()=>state,writeLocal:async next=>{state=next;await storage.write(next)},
-    writerId:"worker",exclusive:run=>self.navigator.locks.request(SYNC_LOCK,{signal:AbortSignal.timeout(LOCK_WAIT_MS)},run),
+    // This job retries on its own (and hands failures back to the browser), so the engine does not.
+    writerId:"worker",backgroundRetry:false,exclusive:run=>self.navigator.locks.request(SYNC_LOCK,{signal:AbortSignal.timeout(LOCK_WAIT_MS)},run),
     displayName:"모바일",
     hooks:{
       reloadLocal:async()=>{state=await storage.read()},

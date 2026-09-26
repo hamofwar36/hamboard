@@ -218,7 +218,9 @@ await check("a failed image upload keeps the commit back and reports the failure
   const commitsBefore=syncDrive.log.filter(type=>type==="commit").length,result=await engine.sync("test");
   assert.equal(result.failed,true);assert.match(result.error,/google-drive-http-503/);
   assert.equal(syncDrive.log.filter(type=>type==="commit").length,commitsBefore,"no commit published");
-  assert.ok(engine.pendingChanges().length>0,"edit stays pending for the next cycle")
+  assert.ok(engine.pendingChanges().length>0,"edit stays pending for the next cycle");
+  // The engine keeps retrying a pending edit; stop it so this script can exit.
+  await engine.unlink()
 });
 
 console.log(`Mobile asset upload QA passed (${checks.length} checks).`);

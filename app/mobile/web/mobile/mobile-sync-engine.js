@@ -11,7 +11,7 @@
 
   const META_VERSION=1;
   const CONFLICT_COPY_TYPES=new Set(["project","note","mindmap","calendar-event","character","quick-memo"]);
-  const POLL_ACTIVE_MS=10000,POLL_READONLY_MS=2000,PUSH_DEBOUNCE_MS=600,PUSH_MAX_WAIT_MS=2500,LEASE_SETTLE_MS=600,PRESENCE_TICK_MS=1000;
+  const POLL_ACTIVE_MS=5000,POLL_READONLY_MS=5000,PUSH_DEBOUNCE_MS=300,PUSH_MAX_WAIT_MS=1500,LEASE_SETTLE_MS=600,PRESENCE_TICK_MS=1000,BACKGROUND_RETRY_LIMIT=5;
 
   const clone=value=>value===undefined?undefined:typeof structuredClone==="function"?structuredClone(value):JSON.parse(JSON.stringify(value));
   const text=value=>String(value??"");
@@ -179,10 +179,10 @@
 
   // ---- engine ----------------------------------------------------------------------------
 
-  function createMobileSyncEngine({drive,syncModel,coordination,metaStore,readLocal,writeLocal,hooks={},displayName="모바일",now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timers={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},online=()=>root.navigator?.onLine!==false,log=()=>{},exclusive=run=>run(),writerId="page"}={}){
+  function createMobileSyncEngine({drive,syncModel,coordination,metaStore,readLocal,writeLocal,hooks={},displayName="모바일",now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timers={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},online=()=>root.navigator?.onLine!==false,log=()=>{},exclusive=run=>run(),writerId="page",backgroundRetry=true}={}){
     if(!drive||!syncModel||!coordination||!metaStore||!readLocal||!writeLocal)throw new Error("mobile-sync-engine-dependencies-missing");
     const profile=syncModel.CLIENT_PROFILES.mobileCore,desktop=syncModel.CLIENT_PROFILES.desktop;
-    let meta=null,running=null,rerun=false,pollTimer=0,pushTimer=0,pushFirstAt=0,presenceTimer=0,presenceBusy=null,ownPresence=null,remoteBlocking=null,override=null,lastLocalEditAt=0,writeSeq=0,cleanSeq=0,polling=false,lastResult=null,pauseRequested=false,suspendPromise=null;
+    let meta=null,running=null,rerun=false,pollTimer=0,pushTimer=0,pushFirstAt=0,presenceTimer=0,presenceBusy=null,ownPresence=null,remoteLocks=new Map(),lastLocalEditAt=0,writeSeq=0,cleanSeq=0,polling=false,backgroundRetries=0,lastResult=null,failureCount=0,pauseRequested=false,suspendPromise=null;
 
     const emit=(name,detail)=>{try{hooks.onStatus?.(name,detail)}catch{}};
     const saveMeta=async()=>{await metaStore.write(meta)};
@@ -216,8 +216,11 @@
       if(otherWrote){await hooks.reloadLocal?.();log("info","local-reloaded",{writer:text(stored.localWriter)})}
       return otherWrote
     }
-    function status(){return {linked:!!meta?.linked,suspended:text(meta?.suspended)||(pauseRequested?"pausing":""),deviceId:deviceId(),baseRevision:text(meta?.baseRevision),lastSyncAtMs:Number(meta?.lastSyncAtMs)||0,readonly:isReadonly()?clone(remoteBlocking):null,dirty:linked()&&(writeSeq!==cleanSeq||!!pushTimer),busy:!!running,ownPresence:!!ownPresence}}
-    function isReadonly(){return !!remoteBlocking&&linked()}
+    function status(){return {linked:!!meta?.linked,suspended:text(meta?.suspended)||(pauseRequested?"pausing":""),deviceId:deviceId(),baseRevision:text(meta?.baseRevision),lastSyncAtMs:Number(meta?.lastSyncAtMs)||0,locks:linked()?[...remoteLocks.keys()]:[],dirty:linked()&&(writeSeq!==cleanSeq||!!pushTimer),busy:!!running,ownPresence:!!ownPresence}}
+    // Another device is editing this document (project, note or mindmap): it stays read-only here.
+    function documentLock(key){if(!linked())return null;const lock=remoteLocks.get(text(key));return lock?clone(lock):null}
+    function clearRemoteLocks(){if(!remoteLocks.size)return;remoteLocks=new Map();emit("locks",new Map())}
+    function lockedDocuments(){return linked()?new Map([...remoteLocks].map(([key,lock])=>[key,clone(lock)])):new Map()}
     function pendingChanges(state=readLocal()){if(!meta?.linked)return [];return syncModel.diffClientProjection(meta.baseState||{},state,profile)}
 
     // -- reading remote ------------------------------------------------------------------
@@ -265,23 +268,30 @@
     }
 
     // -- presence -------------------------------------------------------------------------
+    // Presences name one document; only that document is locked on other devices. Presences from
+    // older versions (no document) lock nothing.
     function updateRemotePresence(objects){
-      if(override&&!coordination.activePresences(objects,now()).some(item=>text(item.deviceId)===override.deviceId&&Number(item.createdAtMs)===override.sessionStartedAtMs))override=null;
-      const blocking=coordination.blockingPresence(objects,{deviceId:deviceId(),ownSessionStartedAtMs:ownPresence?.sessionStartedAtMs||0,ignore:override,now:now()});
-      const changed=text(blocking?.objectKey)!==text(remoteBlocking?.objectKey);remoteBlocking=blocking||null;
-      if(changed)emit("readonly",remoteBlocking?clone(remoteBlocking):null);
-      return remoteBlocking
+      const locks=coordination.documentLocks(objects,{deviceId:deviceId(),own:ownPresence,now:now()});
+      const changed=[...locks].map(([key,lock])=>`${key}=${text(lock.objectKey)}`).sort().join("|")!==[...remoteLocks].map(([key,lock])=>`${key}=${text(lock.objectKey)}`).sort().join("|");
+      remoteLocks=locks;
+      if(changed)emit("locks",lockedDocuments());
+      // Another device claimed this document first: stop claiming it here.
+      if(ownPresence?.documentKey&&locks.has(ownPresence.documentKey))releasePresence("earlier-editor-elsewhere").catch(()=>{});
+      return locks
     }
-    async function publishPresence(reason){
-      if(presenceBusy)return presenceBusy;
+    async function publishPresence(reason,documentKey=ownPresence?.documentKey||""){
+      documentKey=coordination.lockableDocumentKey(documentKey);if(!documentKey)return null;
+      if(presenceBusy)return presenceBusy.then(current=>current?.documentKey===documentKey?current:publishPresence(reason,documentKey));
+      const sameDocument=ownPresence?.documentKey===documentKey;
       presenceBusy=(async()=>{
         try{
-          const sessionStartedAtMs=ownPresence?.sessionStartedAtMs||now(),record=coordination.presenceRecord({deviceId:deviceId(),displayName,clientProfile:"mobile-core",sessionStartedAtMs,expiresAtMs:now()+coordination.PRESENCE_TTL_MS,baseRevision:text(meta?.baseRevision)});
+          // A new document starts a new claim; renewing keeps the start so the earlier editor keeps winning.
+          const sessionStartedAtMs=sameDocument&&ownPresence?.sessionStartedAtMs||now(),record=coordination.presenceRecord({deviceId:deviceId(),displayName,clientProfile:"mobile-core",sessionStartedAtMs,expiresAtMs:now()+coordination.PRESENCE_TTL_MS,baseRevision:text(meta?.baseRevision),documentKey});
           const uploaded=await drive.putSyncText({objectKey:record.objectKey,content:record.content,syncMetadata:record.syncMetadata});
-          const previous=ownPresence;ownPresence={...uploaded,sessionStartedAtMs,expiresAtMs:Number(record.syncMetadata.expiresAtMs)};
+          const previous=ownPresence;ownPresence={...uploaded,documentKey,sessionStartedAtMs,expiresAtMs:Number(record.syncMetadata.expiresAtMs)};
           if(meta){meta.presence=clone(ownPresence);await saveMeta().catch(()=>{})}
           if(previous?.remoteObjectId)drive.deleteSyncObject(previous).catch(error=>log("warn","presence-previous-delete-deferred",error));
-          log("info","presence-published",{reason});startPresenceTicker();return ownPresence
+          log("info","presence-published",{reason,documentKey});startPresenceTicker();return ownPresence
         }catch(error){log("warn","presence-publish-failed",error);return null}
         finally{presenceBusy=null}
       })();
@@ -310,10 +320,13 @@
     function stopPresenceTicker(){if(presenceTimer){timers.clearTimeout(presenceTimer);presenceTimer=0}}
 
     // -- local writes ---------------------------------------------------------------------
-    function notifyLocalWrite(){
+    // documentKey: the document the user edited, when the write changed it. The first edit publishes a
+    // presence for it so other devices keep that one document read-only until the edit is uploaded.
+    function notifyLocalWrite(documentKey=""){
       if(!linked()||pauseRequested)return;
       writeSeq++;lastLocalEditAt=now();
-      if(!ownPresence&&!remoteBlocking&&!uploadBlocked()&&connected()&&online())publishPresence("local-edit");
+      const key=coordination.lockableDocumentKey(documentKey);
+      if(key&&!remoteLocks.has(key)&&ownPresence?.documentKey!==key&&!uploadBlocked()&&connected()&&online())publishPresence("local-edit",key);
       schedulePush()
     }
     function schedulePush(delay=PUSH_DEBOUNCE_MS){
@@ -383,8 +396,11 @@
         if(pauseRequested)return {skipped:"suspended"};
         if(!meta?.linked)return {skipped:"not-linked"};
         if(meta.suspended)return {skipped:"suspended"};
-        if(!online())return {skipped:"offline"};
-        if(!connected()){phase="reconnect";const reconnected=await hooks.ensureConnected?.().catch(error=>{log("warn","reconnect-failed",{reason,error});return false});if(!reconnected||!connected())return {skipped:"disconnected"}}
+        // Offline or disconnected, nothing tells us another device is still editing: nothing stays locked.
+        if(!online()){clearRemoteLocks();return {skipped:"offline"}}
+        if(!connected()){phase="reconnect";const reconnected=await hooks.ensureConnected?.().catch(error=>{log("warn","reconnect-failed",{reason,error});return false});if(!reconnected||!connected()){clearRemoteLocks();return {skipped:"disconnected"}}}
+        // A presence stored by an earlier page session (or one the page left when it was hidden) is stale here.
+        if(meta?.presence&&!ownPresence&&!presenceBusy)await releaseStoredPresence("stale-presence-cleanup");
         phase="flush-local-saves";await hooks.flushPendingSaves?.();
         for(let attempt=0;attempt<3;attempt++){
           phase="list-remote";const objects=await listTopology();updateRemotePresence(objects);
@@ -406,27 +422,42 @@
       if(pauseRequested)return Promise.resolve({skipped:"suspended"});
       if(running){rerun=true;return running}
       rerun=false;
-      const operation=runExclusive(async()=>{await refreshFromStore();return cycle(reason,options)}).then(result=>{lastResult=result;emit("result",result);return result},error=>{const result={failed:true,error:text(error?.message||error)};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
-      running=operation.finally(()=>{running=null;const again=rerun;rerun=false;const retry=Number(lastResult?.retryInMs)||0;if(again)schedulePoll(250);else if(retry)schedulePoll(retry);else if(polling)schedulePoll(pollInterval())});
+      const operation=runExclusive(async()=>{await refreshFromStore();return cycle(reason,options)}).then(result=>{
+        if(result.failed){
+          failureCount++;
+          const throttled=/429|rate.limit|quota/i.test(result.error||"");
+          result={...result,retryInMs:throttled?60000:Math.min(60000,5000*2**Math.min(failureCount-1,4))}
+        }else if(result.skipped==="offline"||result.skipped==="disconnected")result={...result,retryInMs:10000};
+        else if(result.synced)failureCount=0;
+        lastResult=result;emit("result",result);return result
+      },error=>{failureCount++;const result={failed:true,error:text(error?.message||error),retryInMs:Math.min(60000,5000*2**Math.min(failureCount-1,4))};lastResult=result;log("error","sync-failed",error);emit("result",result);return result});
+      // Regular polls run only while polling (page visible). A rerun or retry still runs while hidden when
+      // this device has edits left to upload, so a failed or deferred upload is not dropped until the next
+      // visit; a few attempts only, since a hidden page may linger for hours.
+      running=operation.finally(()=>{
+        running=null;const again=rerun;rerun=false;const retry=Number(lastResult?.retryInMs)||0;
+        if(lastResult?.synced&&!pendingChanges().length)backgroundRetries=0;
+        if(!polling){if(!backgroundRetry||!(again||retry)||backgroundRetries>=BACKGROUND_RETRY_LIMIT||!pendingChanges().length)return;backgroundRetries++}
+        if(again)schedulePoll(Math.max(250,retry));else if(retry)schedulePoll(retry);else schedulePoll(pollInterval())
+      });
       return running
     }
 
     // -- polling & lifecycle --------------------------------------------------------------
-    function pollInterval(){return remoteBlocking?POLL_READONLY_MS:POLL_ACTIVE_MS}
+    function pollInterval(){return remoteLocks.size?POLL_READONLY_MS:POLL_ACTIVE_MS}
     function schedulePoll(delay){if(pauseRequested||!linked())return;if(pollTimer)timers.clearTimeout(pollTimer);pollTimer=timers.setTimeout(()=>{pollTimer=0;sync("poll").catch(()=>{})},Math.max(0,delay))}
-    function startPolling({immediate=true}={}){if(pauseRequested||!linked())return;polling=true;if(immediate)schedulePoll(0);else if(!pollTimer)schedulePoll(pollInterval())}
+    function startPolling({immediate=true}={}){if(pauseRequested||!linked())return;polling=true;backgroundRetries=0;if(immediate)schedulePoll(0);else if(!pollTimer)schedulePoll(pollInterval())}
     function stopPolling(){polling=false;if(pollTimer){timers.clearTimeout(pollTimer);pollTimer=0}}
 
-    // Returning to the app: keep editing blocked until the latest remote state is applied, and
-    // while another device is still editing, wait for it (onWaiting is called each round).
     // Read-only check for the return gate: one listing, no waiting on a running cycle, no upload.
+    // It also refreshes which documents other devices are editing (those stay read-only on their own;
+    // the return check never waits for another device).
     async function probeReturn(){
       if(!meta?.linked)return {skipped:"not-linked"};
       if(meta.suspended||pauseRequested)return {skipped:"suspended"};
       if(!online())return {skipped:"offline"};
       if(!connected()){const reconnected=await hooks.ensureConnected?.().catch(()=>false);if(!reconnected||!connected())return {skipped:"disconnected"}}
       const objects=await listTopology();updateRemotePresence(objects);
-      if(isReadonly())return {remote:clone(remoteBlocking)};
       const topo=topology(objects,meta.baseRevision);
       if(topo.error||topo.recoveredMissingBase)return {needsPull:true,why:topo.error||"base-missing"};
       // Commits after our base made by this device (an upload that is still finishing) are not news.
@@ -443,25 +474,28 @@
       }
       return {needsPull:true,why:"remote-commits",remoteCommits}
     }
-    async function checkOnReturn({onWaiting=()=>{},onPulling=()=>{},maxWaitMs=coordination.PRESENCE_TTL_MS+5000,isCancelled=()=>false}={}){
-      const started=now();
+    async function checkOnReturn({onPulling=()=>{},isCancelled=()=>false}={}){
       for(;;){
         if(isCancelled())return {cancelled:true};
         let probe;
         try{probe=await runExclusive(async()=>{await refreshFromStore();return probeReturn()},"probe")}catch(error){log("error","return-probe-failed",{error});return {failed:true,error:text(error?.message||error),phase:"return-probe"}}
         if(isCancelled())return {cancelled:true};
         if(probe.skipped)return probe;
-        if(probe.remote){if(now()-started>maxWaitMs)return {waitingTimedOut:true};onWaiting(probe.remote);await sleep(POLL_READONLY_MS);continue}
         // Up to date: let the user in; anything this device has not uploaded goes in a normal cycle.
         if(probe.upToDate){if(probe.irrelevantRemote)schedulePoll(0);else if(pendingChanges().length)schedulePush(0);return {synced:true,upToDate:true,...(probe.irrelevantRemote?{irrelevantRemote:probe.irrelevantRemote}:{})}}
         // Another device changed something: apply it first (pull only, after any running cycle).
+        if(running){
+          await running;
+          if(isCancelled())return {cancelled:true};
+          // An upload already in flight may have pulled this revision while we waited.
+          probe=await runExclusive(async()=>probeReturn(),"probe");
+          if(isCancelled())return {cancelled:true};
+          if(probe.skipped)return probe;
+          if(probe.upToDate)return {synced:true,upToDate:true}
+        }
         onPulling(probe);
-        if(running)await running;
-        if(isCancelled())return {cancelled:true};
         const result=await sync("return",{pullOnly:true});
         if(isCancelled())return {cancelled:true};
-        if(result?.failed||["offline","disconnected","not-linked","suspended"].includes(result?.skipped)||result?.blocked)return result;
-        if(isReadonly()){if(now()-started>maxWaitMs)return {...result,waitingTimedOut:true};onWaiting(clone(remoteBlocking));await sleep(POLL_READONLY_MS);continue}
         return result
       }
     }
@@ -469,11 +503,9 @@
     // behind so other devices do not keep waiting for its time-out.
     async function releaseStoredPresence(reason="background-published"){
       const presence=meta?.presence;if(!presence?.remoteObjectId)return false;
-      if(pendingChanges().length)return false;
       try{await drive.deleteSyncObject(presence);meta.presence=null;await saveMeta();log("info","presence-released",{reason});return true}
       catch(error){log("warn","presence-release-deferred",error);return false}
     }
-    function overrideRemote(){if(!remoteBlocking)return false;override={deviceId:text(remoteBlocking.deviceId),sessionStartedAtMs:Number(remoteBlocking.createdAtMs)||0};remoteBlocking=null;emit("readonly",null);return true}
 
     // Leaving the page: publish now and, if nothing is left, withdraw presence right away.
     async function leave(){
@@ -550,7 +582,7 @@
           log("warn","suspend-failed-sync-restored",{hasPending,wasPolling});
           throw error
         }
-        await releasePresence("suspended");stopPresenceTicker();remoteBlocking=null;emit("readonly",null);
+        await releasePresence("suspended");stopPresenceTicker();remoteLocks=new Map();emit("locks",new Map());
         return status()
       })();
       const shared=operation.finally(()=>{if(suspendPromise===shared)suspendPromise=null});suspendPromise=shared;return shared
@@ -566,9 +598,9 @@
       log("info","sync-resumed",{reason:text(reason)});
       return status()
     }
-    async function unlink(){stopPolling();if(pushTimer){timers.clearTimeout(pushTimer);pushTimer=0;pushFirstAt=0}await releasePresence("unlink");meta={...meta,linked:false,suspended:"",baseRevision:"",baseState:null};remoteBlocking=null;await saveMeta();pauseRequested=false;emit("readonly",null);return status()}
+    async function unlink(){stopPolling();if(pushTimer){timers.clearTimeout(pushTimer);pushTimer=0;pushFirstAt=0}await releasePresence("unlink");meta={...meta,linked:false,suspended:"",baseRevision:"",baseState:null};remoteLocks=new Map();await saveMeta();pauseRequested=false;emit("locks",new Map());return status()}
 
-    return Object.freeze({init,status,isReadonly,pendingChanges,notifyLocalWrite,sync,startPolling,stopPolling,checkOnReturn,overrideRemote,leave,link,resetFromCloud,suspend,resume,unlink,releasePresence,releaseStoredPresence,reloadFromStore:()=>runExclusive(refreshFromStore),_presenceTick:presenceTick,_readonly:()=>clone(remoteBlocking)})
+    return Object.freeze({init,status,documentLock,lockedDocuments,pendingChanges,notifyLocalWrite,sync,startPolling,stopPolling,checkOnReturn,leave,link,resetFromCloud,suspend,resume,unlink,releasePresence,releaseStoredPresence,reloadFromStore:()=>runExclusive(refreshFromStore),_presenceTick:presenceTick})
   }
 
   root.HamboardMobileSyncEngine=Object.freeze({createMobileSyncEngine,createIndexedDbMetaStore,createMemoryMetaStore,mergeStates,topology,entityRows});

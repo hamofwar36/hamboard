@@ -32,7 +32,7 @@ window.HamboardProjectRepository=Object.freeze({...repoCore,createIndexedDbState
 const engineCore=window.HamboardMobileSyncEngine,metaStore=engineCore.createMemoryMetaStore(null);
 window.HamboardMobileSyncEngine=Object.freeze({...engineCore,createIndexedDbMetaStore:()=>metaStore});
 const assets=new Map();let failAssetCheck=false;
-window.HamboardMobileAssetRepository=Object.freeze({createIndexedDbAssetRepository:()=>({get:async id=>assets.get(id)||null,put:async record=>{assets.set(record.id,record)},putMany:async rows=>{for(const row of rows)assets.set(row.id,row)},missing:async ids=>{if(failAssetCheck)throw new Error("simulated-network-drop");return ids.filter(id=>!assets.has(id))}})});
+window.HamboardMobileAssetRepository=Object.freeze({collectStateAssetIds:()=>[],createMobileAssetUploader:()=>({uploadReferenced:async()=>{},markCommitted:async()=>{},verifyRecent:async()=>{}}),createIndexedDbAssetRepository:()=>({get:async id=>assets.get(id)||null,put:async record=>{assets.set(record.id,record)},putMany:async rows=>{for(const row of rows)assets.set(row.id,row)},missing:async ids=>{if(failAssetCheck)throw new Error("simulated-network-drop");return ids.filter(id=>!assets.has(id))}})});
 
 // Fake Drive shared by the phone and the simulated PC.
 const files=new Map(),backupEntries=[];let seq=0;

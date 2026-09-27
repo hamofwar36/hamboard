@@ -4265,7 +4265,7 @@
   }
   // Upload panel: shown while an image edit (or edits left from a previous visit) goes up to Drive,
   // so nobody turns the screen off halfway. Editing stays possible; it closes once Drive has everything.
-  const PUBLISH_SLOW_MS=10000,PUBLISH_DONE_HIDE_MS=1400;
+  const PUBLISH_SLOW_MS=60000,PUBLISH_DONE_HIDE_MS=1400;
   const publishPanelState={active:false,reason:"",stage:"",images:null,slowTimer:0,hideTimer:0};
   function publishPanelElement(){
     let panel=document.getElementById("mobilePublishPanel");
